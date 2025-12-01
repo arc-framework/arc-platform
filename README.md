@@ -49,7 +49,9 @@ A.R.C. is a polyglot platform managed by a single powerful CLI. We map industry-
 | **Flags** | **Mystique** | **Unleash** | The Shapeshifter. Changes app behavior flags instantly without redeploying. |
 | **Events** | **Dr. Strange** | **Pulsar** | Time Stone. Replays event history and manages the durable stream. |
 | **Messaging** | **The Flash** | **NATS** | The Nervous System. High-speed, ephemeral messaging for the cluster. |
-| **Resilience** | **T-800** | **Chaos Mesh** | **(NEW)** The Terminator. Randomly kills pods and lags networks to test survival. |
+| **Real-Time** | **Daredevil** | **LiveKit** | The Radar. Sees the world through sound waves (WebRTC). |
+| **Delivery** | **Hedwig** | **Mailer** | Mail Delivery. Delivers the message (emails) no matter what. |
+| **Resilience** | **T-800** | **Chaos Mesh** | **(NEW)** The Terminator. Randomly kills pods to test survival. |
 
 ### 🧠 Data & Memory (The Mind)
 
@@ -59,23 +61,36 @@ A.R.C. is a polyglot platform managed by a single powerful CLI. We map industry-
 | **Working Mem** | **Sonic** | **Redis** | Context Cache. "Gotta go fast." Holds the immediate agent context. |
 | **Semantic** | **Cerebro** | **Qdrant** | The Finder. Vector database connecting thoughts via semantic search. |
 | **Storage** | **Tardis** | **MinIO** | Infinite Storage. S3-compatible object storage for files/media. |
+| **Pioneer** | **Pathfinder** | **Migrate** | Maps the database schema before anyone else enters. |
 
 ### 🤖 The AI Workforce (Core & Workers)
 
 Your agents aren't just scripts; they are specialized workers in a distributed system.
 
-* **Sherlock (The Reasoner):** The core **LangGraph** engine. "I cannot make bricks without clay." Handles the complex reasoning loops.
-* **Scarlett (The Voice):** The **Voice Agent** core. Turns raw data into human connection (Her).
-* **RoboCop (The Guard):** **RuleGo** guardrails. Enforces "Prime Directives" to stop the agent from going rogue.
-* **Gordon Ramsay (The Critic):** A specialized worker that yells at your LLM until the output is perfect (QA/Refinement loop).
-* **Ivan Drago (The Gym):** An adversarial trainer that attacks your agent's prompts and logic to test for jailbreaks.
+| Role | Codename | Technology | Description |
+| :--- | :--- | :--- | :--- |
+| **Reasoner** | **Sherlock** | **LangGraph** | The Core Engine. "Data! I cannot make bricks without clay." |
+| **Voice** | **Scarlett** | **Voice Agent** | The Voice. Turns raw data into human connection (Her). |
+| **Guard** | **RoboCop** | **RuleGo** | Safety. Enforces "Prime Directives" to stop the agent from shooting civilians. |
+| **Critic** | **Gordon Ramsay**| **QA Worker** | "This output is RAW!" Yells until the LLM's answer is perfect. |
+| **Gym** | **Ivan Drago** | **Adv. Trainer**| "I must break you." Attacks the Agent's logic to find weaknesses. |
+| **Translator**| **Uhura** | **Semantic** | Converts human speech/intent to system commands (SQL/API). |
+| **Mechanic** | **Statham** | **Healer** | Self-Healing. Slides under the car to fix leaks while running. |
+| **Janitor** | **The Wolf** | **Ops** | "I solve problems." Cleans up the mess efficiently. |
+| **Manager** | **Alfred** | **Billing** | Tracks the budget and manages the estate. |
+| **Sentry** | **Sentry** | **Ingress** | The Watchtower. Handles incoming RTMP/SIP streams for LiveKit. |
+| **Scribe** | **Scribe** | **Egress** | The Recorder. Archives LiveKit sessions to tape. |
 
 ### 📊 Observability (The Eyes)
 
-* **Black Widow (OTEL):** Intercepts all signals and traces without being seen.
-* **Dr. House (Prometheus):** Diagnostics. Trusts the vitals (metrics), not the patient.
-* **Watson (Loki):** The Chronicler. Writes down every log line for later deduction.
-* **Columbo (Tempo):** The Detective. Follows the request path (traces) across microservices.
+| Role | Codename | Technology | Description |
+| :--- | :--- | :--- | :--- |
+| **Collector** | **Black Widow** | **OTEL** | The Spy. Intercepts all signals and traces without being seen. |
+| **Metrics** | **Dr. House** | **Prometheus** | Diagnostics. Trusts the vitals, not the patient. |
+| **Logs** | **Watson** | **Loki** | The Chronicler. Writes down every messy detail for later deduction. |
+| **Traces** | **Columbo** | **Tempo** | The Detective. "Just one more thing." Follows the request path. |
+| **UI** | **Friday** | **Grafana** | The visual interface overlay for all metrics and logs. |
+| **Shipper** | **Hermes** | **Promtail** | The Messenger. Delivers the logs to Watson. |
 
 ---
 
