@@ -114,10 +114,10 @@ We've designed A.R.C. to have the power of a microservice architecture, with the
 
 ## 🤝 Contributing
 
-We are building A.R.C. in the open. We'd love your help. Please read our **[CONTRIBUTING.md](httpsS://github.com/arc-framework/.github/blob/main/CONTRIBUTING.md)** to get started.
+We are building A.R.C. in the open. We'd love your help. Please read our **[CONTRIBUTING.md](https://github.com/arc-framework/.github/blob/main/CONTRIBUTING.md)** to get started.
 
-All community interaction is governed by our **[CODE_OF_CONDUCT.md](httpsS://github.com/arc-framework/.github/blob/main/CODE_OF_CONDUCT.md)**.
+All community interaction is governed by our **[CODE_OF_CONDUCT.md](https://github.com/arc-framework/.github/blob/main/CODE_OF_CONDUCT.md)**.
 
 ## 📜 License
 
-A.R.C. is open-source under the **[Apache 2.0 License](httpsS://github.com/arc-framework/arc/blob/main/LICENSE)**.
+A.R.C. is open-source under the **[Apache 2.0 License](https://github.com/arc-framework/arc/blob/main/LICENSE)**.
