@@ -23,7 +23,7 @@
 | **OTEL**       | `arc-otel`         | INFRA   | `otel/opentelemetry-collector` | **Black Widow**   | **The Spy.** Intercepts all signals and traces without being seen.                            |
 | **Prometheus** | `arc-metrics`      | INFRA   | `prom/prometheus`              | **Dr. House**     | **Diagnostics.** Doesn't trust you; trusts the vitals. "It's never DNS."                      |
 | **Loki**       | `arc-logs`         | INFRA   | `grafana/loki`                 | **Watson**        | **The Chronicler.** Writes down every messy detail for later deduction.                       |
-| **Tempo**      | `arc-traces`       | INFRA   | `grafana/tempo`                | **Columbo**       | **The Detective.** "Just one more thing." Follows the request path.                           |
+| **Jaeger**     | `arc-traces`       | INFRA   | `grafana/tempo`                | **Columbo**       | **The Detective.** "Just one more thing." Follows the request path.                           |
 | **Grafana**    | `arc-viz`          | INFRA   | `grafana/grafana`              | **Friday**        | **The UI.** The visual interface overlay for the metrics.                                     |
 | **Promtail**   | `arc-log-shipper`  | INFRA   | `grafana/promtail`             | **Hermes**        | **The Messenger.** Delivers the logs to Watson.                                               |
 | **Chaos**      | `arc-chaos`        | INFRA   | `chaos-mesh/chaos-mesh`        | **T-800**         | **The Terminator.** "It absolutely will not stop until you are dead." Tests infra resilience. |
