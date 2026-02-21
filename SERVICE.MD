@@ -27,15 +27,15 @@
 | **Grafana**    | `arc-viz`          | INFRA   | `grafana/grafana`              | **Friday**        | **The UI.** The visual interface overlay for the metrics.                                     |
 | **Promtail**   | `arc-log-shipper`  | INFRA   | `grafana/promtail`             | **Hermes**        | **The Messenger.** Delivers the logs to Watson.                                               |
 | **Chaos**      | `arc-chaos`        | INFRA   | `chaos-mesh/chaos-mesh`        | **T-800**         | **The Terminator.** "It absolutely will not stop until you are dead." Tests infra resilience. |
-| **Brain**      | `arc-brain`        | CORE    | `./core/engine`                | **Sherlock**      | **The Reasoner.** "Data! I cannot make bricks without clay." (LangGraph).                     |
-| **Voice Agt**  | `arc-voice-agent`  | CORE    | `./core/voice`                 | **Scarlett**      | **The Voice.** Turns raw data into human connection (Her).                                    |
-| **Janitor**    | `arc-janitor`      | CORE    | `./core/ops`                   | **The Wolf**      | **The Fixer.** "I solve problems." Cleans up the mess efficiently.                            |
-| **Billing**    | `arc-billing`      | CORE    | `./plugins/billing`            | **Alfred**        | **The Manager.** Tracks the budget and manages the estate.                                    |
-| **Guard**      | `arc-guard`        | CORE    | `./core/guardrails`            | **RoboCop**       | **Safety.** "Prime Directives." Stops the agent from shooting civilians.                      |
-| **Critic**     | `arc-critic`       | WORKER  | `./workers/critic`             | **Gordon Ramsay** | **QA.** "This output is RAW!" Yells until the answer is perfect.                              |
-| **Gym**        | `arc-gym`          | WORKER  | `./workers/gym`                | **Ivan Drago**    | **Adversarial Trainer.** "I must break you." Attacks the Agent's logic.                       |
-| **Semantic**   | `arc-semantic`     | WORKER  | `./workers/semantic`           | **Uhura**         | **Translator.** Converts human speech to system commands (SQL/API).                           |
-| **Mechanic**   | `arc-mechanic`     | WORKER  | `./workers/healer`             | **Statham**       | **Self-Healing.** Slides under the car to fix the leak while running.                         |
+| **Brain**      | `arc-brain`        | SERVICE | `./services/reasoner`          | **Sherlock**      | **The Reasoner.** "Data! I cannot make bricks without clay." (LangGraph).                     |
+| **Voice Agt**  | `arc-voice-agent`  | SERVICE | `./services/voice`             | **Scarlett**      | **The Voice.** Turns raw data into human connection (Her).                                    |
+| **Janitor**    | `arc-janitor`      | SERVICE | `./services/ops`               | **The Wolf**      | **The Fixer.** "I solve problems." Cleans up the mess efficiently.                            |
+| **Billing**    | `arc-billing`      | SERVICE | `./services/billing`           | **Alfred**        | **The Manager.** Tracks the budget and manages the estate.                                    |
+| **Guard**      | `arc-guard`        | SERVICE | `./services/guardrails`        | **RoboCop**       | **Safety.** "Prime Directives." Stops the agent from shooting civilians.                      |
+| **Critic**     | `arc-critic`       | SERVICE | `./services/critic`            | **Gordon Ramsay** | **QA.** "This output is RAW!" Yells until the answer is perfect.                              |
+| **Gym**        | `arc-gym`          | SERVICE | `./services/gym`               | **Ivan Drago**    | **Adversarial Trainer.** "I must break you." Attacks the Agent's logic.                       |
+| **Semantic**   | `arc-semantic`     | SERVICE | `./services/semantic`          | **Uhura**         | **Translator.** Converts human speech to system commands (SQL/API).                           |
+| **Mechanic**   | `arc-mechanic`     | SERVICE | `./services/healer`            | **Statham**       | **Self-Healing.** Slides under the car to fix the leak while running.                         |
 | **Migrate**    | `arc-migrate`      | SIDECAR | `script`                       | **Pathfinder**    | **Pioneer.** Maps the database schema before anyone else enters.                              |
 | **Ingress**    | `arc-ingress`      | SIDECAR | `livekit/ingress`              | **Sentry**        | **The Watchtower.** Handles incoming RTMP/SIP streams.                                        |
 | **Egress**     | `arc-egress`       | SIDECAR | `livekit/egress`               | **Scribe**        | **The Recorder.** Archives the session to tape.                                               |

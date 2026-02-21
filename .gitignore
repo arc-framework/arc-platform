@@ -216,6 +216,7 @@ CLAUDE.md
 # The .work-docs/ scratch inside each spec is still ephemeral.
 !specs/
 specs/**/.work-docs/
+specs/**/.speckit.json
 
 # Claude session temp files
 *.claude-tmp

@@ -1,0 +1,21 @@
+# A.R.C. Service Profiles
+# Profiles select which services compose a running platform.
+# Usage: make up PROFILE=think | arc run --profile reason
+
+# ─── think ──────────────────────────────────────────────────────
+# Basic reasoning — minimal services to run an agent
+think:
+  description: 'Minimal viable platform — just enough to think'
+  services: '*'
+
+# ─── reason ─────────────────────────────────────────────────────
+# Full reasoning stack — observability, identity, bootstrap
+reason:
+  description: 'Development stack — observability and identity included'
+  services: '*'
+
+# ─── ultra-instinct ─────────────────────────────────────────────
+# Everything — voice, real-time, chaos testing, the full roster
+ultra-instinct:
+  description: 'Full power — every service, every capability'
+  services: '*'
