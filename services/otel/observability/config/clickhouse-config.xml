@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<!--
+  ClickHouse custom configuration for SigNoz observability stack.
+  Mounted as config.d/memory.xml (overlay on top of default config).
+  Minimum system requirement: 4 GB RAM allocated to ClickHouse.
+-->
+<clickhouse>
+    <!-- Maximum memory the server may use: 4 GB minimum for SigNoz -->
+    <max_server_memory_usage>4294967296</max_server_memory_usage>
+
+    <!-- Path where executable user-defined functions (UDFs) live.
+         histogramQuantile binary is placed here by init-clickhouse. -->
+    <!-- /opt/arc/ is outside the data volume — binary won't be shadowed by mounts -->
+    <user_scripts_path>/opt/arc/user_scripts/</user_scripts_path>
+
+    <!-- Glob pattern for UDF registration files. Matches custom-function.xml
+         mounted at /etc/clickhouse-server/custom-function.xml. -->
+    <user_defined_executable_functions_config>*function.xml</user_defined_executable_functions_config>
+
+    <!-- Disable mlock — not available in Docker without CAP_IPC_LOCK -->
+    <mlock_executable>false</mlock_executable>
+
+    <!-- Disable anonymous usage statistics sent to ClickHouse, Inc. -->
+    <send_crash_reports>
+        <enabled>false</enabled>
+    </send_crash_reports>
+</clickhouse>
