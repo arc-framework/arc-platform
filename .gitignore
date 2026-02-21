@@ -1,0 +1,312 @@
+# ─── A.R.C. Platform .gitignore ──────────────────────────────────────────────
+# Monorepo: Go (cli, sdk, services/bootstrap) · Python (services/reasoner,
+# voice, tts · sdk/python) · Node (docs) · Docker (all services)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+# ═══════════════════════════════════════════════════════════════
+# SECRETS & CREDENTIALS  (never commit these)
+# ═══════════════════════════════════════════════════════════════
+
+.env
+.env.*
+.env.local
+.env.*.local
+.secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+credentials.json
+service-account*.json
+*_secret.json
+*_credentials.json
+
+
+# ═══════════════════════════════════════════════════════════════
+# GO  (cli/ · sdk/go/ · services/bootstrap/)
+# ═══════════════════════════════════════════════════════════════
+
+# Compiled binaries — monorepo outputs land in bin/ or dist/
+bin/
+dist/
+build/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test artifacts
+*.test
+*.out
+coverage.txt
+coverage.html
+
+# Go module download cache (use go.sum, not the cache)
+vendor/
+
+# GoDoc temp files
+/tmp/
+
+
+# ═══════════════════════════════════════════════════════════════
+# PYTHON  (services/reasoner · voice · tts · sdk/python)
+# ═══════════════════════════════════════════════════════════════
+
+# Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.env/
+.direnv/
+
+# Distribution / packaging
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+wheels/
+share/python-wheels/
+
+# Type checking
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pytype/
+.pyre/
+
+# Testing
+.pytest_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+nosetests.xml
+pytest_cache/
+
+# Jupyter (sdk/python data exploration)
+.ipynb_checkpoints
+*.ipynb_checkpoints/
+
+# Ruff cache
+.ruff_cache/
+
+# PyInstaller
+*.manifest
+*.spec
+
+
+# ═══════════════════════════════════════════════════════════════
+# NODE / NPM  (docs/ — Docusaurus)
+# ═══════════════════════════════════════════════════════════════
+
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm/
+.yarn/
+.pnp.*
+.pnp.js
+
+# Docusaurus build output
+docs/.docusaurus/
+docs/build/
+
+# Next.js (if added later)
+.next/
+out/
+
+# Parcel
+.parcel-cache/
+
+# TypeScript
+*.tsbuildinfo
+
+
+# ═══════════════════════════════════════════════════════════════
+# DOCKER  (all services)
+# ═══════════════════════════════════════════════════════════════
+
+# Local compose overrides — machine-specific port/mount tweaks
+docker-compose.override.yml
+docker-compose.override.yaml
+
+# Docker build context temp files
+.dockerignore.local
+
+
+# ═══════════════════════════════════════════════════════════════
+# INFRASTRUCTURE / SERVICES
+# ═══════════════════════════════════════════════════════════════
+
+# Terraform (Chaos Mesh / future IaC)
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+*.tfvars
+!*.tfvars.example
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Helm local values overrides
+*-values.local.yaml
+*-values.local.yml
+
+# Local k8s configs
+kubeconfig.local
+*.kubeconfig
+
+# Database dumps / data volumes (never commit data)
+*.sql.gz
+*.dump
+data/
+pgdata/
+
+
+# ═══════════════════════════════════════════════════════════════
+# CLAUDE CODE  (personal tooling — share when ready)
+# ═══════════════════════════════════════════════════════════════
+
+# Claude Code config, agents, skills, MCP settings.
+# Intentionally personal for now — share with team deliberately
+# when conventions are stable (copy to a shared dotfiles repo,
+# team wiki, or un-ignore here).
+.claude/
+CLAUDE.md
+# ─── EXCEPTION: keep .mcp.json committed ────────────────────
+# MCP server definitions are project infrastructure (no secrets).
+.mcp.json
+
+# ═══════════════════════════════════════════════════════════════
+# SPECKIT  (personal workflow tooling — share when ready)
+# ═══════════════════════════════════════════════════════════════
+
+# SpecKit config, constitution, templates, memory, scripts.
+# Same rationale as .claude/ — opinionated, personal for now.
+.specify/
+
+# ─── EXCEPTION: keep specs/ committed ───────────────────────
+# Feature specs (specs/{NNN}-{feature}/) are team artifacts.
+# The .work-docs/ scratch inside each spec is still ephemeral.
+!specs/
+specs/**/.work-docs/
+
+# Claude session temp files
+*.claude-tmp
+
+
+# ═══════════════════════════════════════════════════════════════
+# EDITORS & IDEs
+# ═══════════════════════════════════════════════════════════════
+
+# JetBrains
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# VS Code  (keep .vscode/extensions.json for recommendations)
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json.example
+
+# Vim / Neovim
+*.swp
+*.swo
+*~
+.netrwhist
+Session.vim
+
+# Emacs
+*#
+.#*
+\#*#
+
+# Sublime Text
+*.sublime-workspace
+
+
+# ═══════════════════════════════════════════════════════════════
+# OPERATING SYSTEM
+# ═══════════════════════════════════════════════════════════════
+
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+.AppleDouble
+.LSOverride
+Icon
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+.directory
+.Trash-*
+
+
+# ═══════════════════════════════════════════════════════════════
+# LOGS & TEMP
+# ═══════════════════════════════════════════════════════════════
+
+*.log
+*.logs
+logs/
+tmp/
+temp/
+.tmp/
+.temp/
+.cache/
+*.pid
+*.seed
+*.pid.lock
+
+
+# ═══════════════════════════════════════════════════════════════
+# WHAT IS INTENTIONALLY *NOT* IGNORED
+# ═══════════════════════════════════════════════════════════════
+
+# .mcp.json                 ← MCP server config (no secrets, committed via !.mcp.json above)
+# specs/                    ← feature spec artifacts (committed via !specs/ above)
+# services/profiles.yaml    ← profile composition definitions (committed)
+# services/**/service.yaml  ← per-service metadata + codename (committed)
+# go.sum                    ← dependency lock file (must be committed)
+# **/testdata/              ← test fixtures (committed)
+#
+# ─── TO SHARE .claude/ OR .specify/ WITH THE TEAM ──────────
+# Option A: Remove the ignore lines above (un-ignore everything)
+# Option B: Copy to a shared dotfiles/tooling repo
+# Option C: Add individual !.claude/agents/*.md exceptions here
