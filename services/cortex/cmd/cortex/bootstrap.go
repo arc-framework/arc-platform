@@ -8,9 +8,11 @@ import (
 	"os"
 	"time"
 
+	"arc-framework/cortex/internal/clients"
 	"arc-framework/cortex/internal/orchestrator"
 	"arc-framework/cortex/internal/telemetry"
 
+	"github.com/sony/gobreaker"
 	"github.com/spf13/cobra"
 )
 
@@ -49,14 +51,38 @@ func runBootstrap(cmd *cobra.Command, args []string) error {
 
 	slog.Info("starting bootstrap")
 
-	if err := orchestrator.RunBootstrap(ctx); err != nil {
+	// Build circuit breakers with default settings (3 consecutive failures trip
+	// the breaker). TASK-040 will move this wiring into a proper DI layer.
+	cbSettings := gobreaker.Settings{Name: "bootstrap"}
+	pg := clients.NewPostgresClient(cfg.Bootstrap.Postgres, gobreaker.NewCircuitBreaker(cbSettings))
+	nats := clients.NewNATSClient(cfg.Bootstrap.NATS, gobreaker.NewCircuitBreaker(cbSettings))
+	pulsar := clients.NewPulsarClient(cfg.Bootstrap.Pulsar, gobreaker.NewCircuitBreaker(cbSettings))
+	redis := clients.NewRedisClient(cfg.Bootstrap.Redis, gobreaker.NewCircuitBreaker(cbSettings))
+
+	o := orchestrator.New(pg, nats, pulsar, redis)
+
+	result, err := o.RunBootstrap(ctx)
+	if err != nil {
 		printResult("error", err.Error())
 		return fmt.Errorf("bootstrap failed: %w", err)
 	}
 
-	printResult("ok", "")
+	if result.Status == orchestrator.StatusError {
+		printBootstrapResult(result)
+		return fmt.Errorf("bootstrap completed with errors")
+	}
+
+	printBootstrapResult(result)
 	slog.Info("bootstrap completed successfully")
 	return nil
+}
+
+func printBootstrapResult(result *orchestrator.BootstrapResult) {
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(result); err != nil {
+		fmt.Fprintf(os.Stdout, `{"status":%q}`+"\n", result.Status)
+	}
 }
 
 func printResult(status, errMsg string) {
