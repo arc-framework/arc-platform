@@ -8,6 +8,9 @@ think:
   description: 'Minimal viable platform — just enough to think'
   services:
     - cortex
+    - flash
+    - strange
+    - sonic
 
 # ─── reason ─────────────────────────────────────────────────────
 # Full reasoning stack — observability, identity, bootstrap
