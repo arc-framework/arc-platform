@@ -9,10 +9,14 @@ COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download
 
-# Build — module and compiler caches persist between builds on the same host.
+# Copy source and generate Swagger docs, then compile.
+# swag is installed here so the docs/ package (imported by server.go) is always
+# generated from the in-tree annotations rather than shipped in the build context.
 COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
+    go install github.com/swaggo/swag/cmd/swag@v1.16.4 && \
+    swag init -g cmd/cortex/main.go -o docs --quiet && \
     CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o cortex ./cmd/cortex
 
 # ── Final ─────────────────────────────────────────────────────────────────────
