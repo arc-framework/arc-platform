@@ -5,6 +5,7 @@
 COMPOSE_OTEL := docker compose -f services/otel/docker-compose.yml
 REGISTRY     := ghcr.io
 ORG          := arc-framework
+OTEL_VERSION ?= latest
 
 # ARC-managed images — built by otel-build, pushed by otel-push.
 # arc-friday-migrator is a controlled re-tag of the upstream schema-migrator.
@@ -22,7 +23,7 @@ FRIDAY_EMAIL    ?= admin@arc.local
 FRIDAY_PASSWORD ?= Admin@Arc123!
 
 .PHONY: otel-help otel-up otel-up-telemetry otel-up-observability otel-down \
-        otel-health otel-logs otel-ps otel-build otel-build-fresh otel-push otel-user otel-clean otel-nuke
+        otel-health otel-logs otel-ps otel-build otel-build-fresh otel-push otel-tag otel-user otel-clean otel-nuke
 
 ## otel-help: OTEL observability stack (arc-friday + collector + ClickHouse + ZooKeeper)
 otel-help:
@@ -131,6 +132,18 @@ otel-push:
 	  docker push $$img || { printf "$(COLOR_ERR)✗ Push failed: $$img$(COLOR_OFF)\n"; exit 1; }; \
 	done
 	@printf "$(COLOR_OK)✓$(COLOR_OFF) All otel images pushed\n"
+
+## otel-tag: Tag locally built :latest images with a version (usage: make otel-tag OTEL_VERSION=otel-v0.1.0)
+otel-tag:
+	@[ -n "$(OTEL_VERSION)" ] && [ "$(OTEL_VERSION)" != "latest" ] \
+	  || { printf "$(COLOR_ERR)✗ Set OTEL_VERSION to a real version, e.g. otel-v0.1.0$(COLOR_OFF)\n"; exit 1; }
+	@for img in $(OTEL_IMAGES); do \
+	  VERSIONED="$${img%:*}:$(OTEL_VERSION)"; \
+	  docker tag $$img $$VERSIONED \
+	    && printf "$(COLOR_OK)✓$(COLOR_OFF) $$img → $$VERSIONED\n" \
+	    || { printf "$(COLOR_ERR)✗ Tag failed: $$img$(COLOR_OFF)\n"; exit 1; }; \
+	done
+	@printf "$(COLOR_OK)✓$(COLOR_OFF) Tagged all otel images as $(OTEL_VERSION)\n"
 
 ## otel-user: Create the default arc-friday admin user (idempotent — skips if already exists)
 ## Override defaults: make otel-user FRIDAY_EMAIL=you@example.com FRIDAY_PASSWORD=secret

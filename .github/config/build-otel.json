@@ -1,0 +1,81 @@
+{
+  "settings": {
+    "registry": "ghcr.io",
+    "org": "arc-framework",
+    "image_prefix": "ghcr.io/arc-framework",
+    "description": "OTEL stack (arc-friday-*) custom-build images — A.R.C. Platform"
+  },
+  "images": [
+    {
+      "name": "arc-friday",
+      "type": "custom",
+      "dockerfile": "Dockerfile",
+      "context": "services/otel/observability",
+      "platforms": ["linux/amd64", "linux/arm64"],
+      "trigger_paths": [
+        "services/otel/observability/Dockerfile",
+        "services/otel/observability/config/prometheus.yml"
+      ],
+      "generate_sbom": true,
+      "required": true,
+      "description": "arc-friday query service and UI — bakes prometheus.yml"
+    },
+    {
+      "name": "arc-friday-collector",
+      "type": "custom",
+      "dockerfile": "Dockerfile",
+      "context": "services/otel/telemetry",
+      "platforms": ["linux/amd64", "linux/arm64"],
+      "trigger_paths": [
+        "services/otel/telemetry/Dockerfile",
+        "services/otel/telemetry/config/"
+      ],
+      "generate_sbom": true,
+      "required": true,
+      "description": "OTEL collector — bakes otel-collector-config.yaml and opamp config"
+    },
+    {
+      "name": "arc-friday-clickhouse",
+      "type": "custom",
+      "dockerfile": "clickhouse.Dockerfile",
+      "context": "services/otel/observability",
+      "platforms": ["linux/amd64", "linux/arm64"],
+      "trigger_paths": [
+        "services/otel/observability/clickhouse.Dockerfile",
+        "services/otel/observability/config/clickhouse-config.xml",
+        "services/otel/observability/config/clickhouse-cluster.xml",
+        "services/otel/observability/config/clickhouse-users.xml",
+        "services/otel/observability/config/custom-function.xml"
+      ],
+      "generate_sbom": true,
+      "required": true,
+      "description": "ClickHouse signal store — bakes all config XML and downloads histogramQuantile UDF at build time"
+    },
+    {
+      "name": "arc-friday-migrator",
+      "type": "retag",
+      "dockerfile": "migrator.Dockerfile",
+      "context": "services/otel/observability",
+      "platforms": ["linux/amd64", "linux/arm64"],
+      "trigger_paths": [
+        "services/otel/observability/migrator.Dockerfile"
+      ],
+      "generate_sbom": false,
+      "required": true,
+      "description": "Schema migrator — label-only re-tag of signoz/signoz-schema-migrator"
+    },
+    {
+      "name": "arc-friday-zookeeper",
+      "type": "retag",
+      "dockerfile": "zookeeper.Dockerfile",
+      "context": "services/otel/observability",
+      "platforms": ["linux/amd64"],
+      "trigger_paths": [
+        "services/otel/observability/zookeeper.Dockerfile"
+      ],
+      "generate_sbom": false,
+      "required": true,
+      "description": "ZooKeeper coordination — label-only re-tag of signoz/zookeeper:3.7.1 (amd64 only — no upstream arm64)"
+    }
+  ]
+}
