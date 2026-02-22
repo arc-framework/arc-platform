@@ -187,6 +187,11 @@ func (o *Orchestrator) RunDeepHealth(ctx context.Context) map[string]ProbeResult
 	return results
 }
 
+// IsBootstrapInProgress returns true while a bootstrap run is active.
+func (o *Orchestrator) IsBootstrapInProgress() bool {
+	return o.bootstrapInProgress.Load()
+}
+
 // IsReady returns true if the last bootstrap completed with StatusOK.
 func (o *Orchestrator) IsReady() bool {
 	o.resultMu.RLock()

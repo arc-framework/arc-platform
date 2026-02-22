@@ -10,9 +10,12 @@ import (
 	"syscall"
 	"time"
 
+	"arc-framework/cortex/internal/api"
+	"arc-framework/cortex/internal/clients"
+	"arc-framework/cortex/internal/orchestrator"
 	"arc-framework/cortex/internal/telemetry"
 
-	"github.com/gin-gonic/gin"
+	"github.com/sony/gobreaker"
 	"github.com/spf13/cobra"
 )
 
@@ -50,19 +53,21 @@ func runServer(cmd *cobra.Command, args []string) error {
 		}()
 	}
 
-	// Placeholder Gin router — full API added in TASK-031.
-	gin.SetMode(gin.ReleaseMode)
-	router := gin.New()
-	router.Use(gin.Recovery())
+	// Build clients and orchestrator. TASK-040 will move this into a proper DI layer.
+	cbSettings := gobreaker.Settings{Name: "server"}
+	pg := clients.NewPostgresClient(cfg.Bootstrap.Postgres, gobreaker.NewCircuitBreaker(cbSettings))
+	nats := clients.NewNATSClient(cfg.Bootstrap.NATS, gobreaker.NewCircuitBreaker(cbSettings))
+	pulsar := clients.NewPulsarClient(cfg.Bootstrap.Pulsar, gobreaker.NewCircuitBreaker(cbSettings))
+	redis := clients.NewRedisClient(cfg.Bootstrap.Redis, gobreaker.NewCircuitBreaker(cbSettings))
 
-	router.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "healthy"})
-	})
+	o := orchestrator.New(pg, nats, pulsar, redis)
+
+	router := api.NewRouter(o)
 
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	srv := &http.Server{
 		Addr:         addr,
-		Handler:      router,
+		Handler:      router.Handler(),
 		ReadTimeout:  cfg.Server.ReadTimeout,
 		WriteTimeout: cfg.Server.WriteTimeout,
 	}
