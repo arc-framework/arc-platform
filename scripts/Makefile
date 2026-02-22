@@ -5,6 +5,7 @@
 # Usage:
 #   make help               Show available targets
 #   make packages-list      Preview packages (dry-run)
+#   make pr                 Generate PR description
 #   make check              Syntax + shellcheck validation
 #   make packages-delete ORG=my-org
 # ─────────────────────────────────────────────────────────────────────────────
@@ -15,6 +16,7 @@ ORG ?= arc-framework
 
 .PHONY: help \
         packages-list packages-list-json packages-delete \
+        pr pr-json \
         check check-syntax check-lint \
         list permissions
 
@@ -42,6 +44,18 @@ packages-list-json:
 ## Override: make packages-delete ORG=my-org
 packages-delete:
 	@ARC_CONFIRM_DESTRUCTIVE=1 $(SCRIPTS_DIR)/delete-org-packages.sh --no-dry-run $(ORG)
+
+# ─── PR Description ─────────────────────────────────────────────────────────
+
+BASE ?= main
+
+## pr: 📝 Generate PR description from branch changes
+pr:
+	@$(SCRIPTS_DIR)/generate-pr-description.sh $(BASE)
+
+## pr-json: 📝 Generate PR description (JSON output)
+pr-json:
+	@$(SCRIPTS_DIR)/generate-pr-description.sh --json $(BASE)
 
 # ─── Validation ──────────────────────────────────────────────────────────────
 

@@ -23,7 +23,7 @@ FRIDAY_EMAIL    ?= admin@arc.local
 FRIDAY_PASSWORD ?= Admin@Arc123!
 
 .PHONY: otel-help otel-up otel-up-telemetry otel-up-observability otel-down \
-        otel-health otel-logs otel-ps otel-build otel-build-fresh otel-push otel-tag otel-user otel-clean otel-nuke
+        otel-health otel-logs otel-ps otel-build otel-build-fresh otel-push otel-publish otel-tag otel-user otel-clean otel-nuke
 
 ## otel-help: OTEL observability stack (arc-friday + collector + ClickHouse + ZooKeeper)
 otel-help:
@@ -132,6 +132,21 @@ otel-push:
 	  docker push $$img || { printf "$(COLOR_ERR)✗ Push failed: $$img$(COLOR_OFF)\n"; exit 1; }; \
 	done
 	@printf "$(COLOR_OK)✓$(COLOR_OFF) All otel images pushed\n"
+
+## otel-publish: Push images and set all GHCR packages to public (requires: gh auth with write:packages scope)
+otel-publish: otel-push
+	@printf "$(COLOR_INFO)→$(COLOR_OFF) Setting GHCR packages to public...\n"
+	@for img in $(OTEL_IMAGES); do \
+	  PKG=$$(basename $${img%%:*}); \
+	  gh api \
+	    --method PATCH \
+	    -H "Accept: application/vnd.github+json" \
+	    "/orgs/$(ORG)/packages/container/$$PKG" \
+	    -f visibility=public \
+	    && printf "$(COLOR_OK)✓$(COLOR_OFF) $$PKG → public\n" \
+	    || printf "$(COLOR_ERR)✗$(COLOR_OFF) $$PKG failed — run: gh auth status\n"; \
+	done
+	@printf "$(COLOR_OK)✓$(COLOR_OFF) All otel packages are public at ghcr.io/$(ORG)/\n"
 
 ## otel-tag: Tag locally built :latest images with a version (usage: make otel-tag OTEL_VERSION=otel-v0.1.0)
 otel-tag:

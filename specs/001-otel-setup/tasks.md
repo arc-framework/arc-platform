@@ -171,7 +171,7 @@ graph TD
 
 ## Phase 4: Integration
 
-- [ ] **[TASK-040]** [SERVICES] [P1] End-to-end validation — run the full stack and verify all success criteria
+- [x] **[TASK-040]** [SERVICES] [P1] End-to-end validation — run the full stack and verify all success criteria
   - Dependencies: TASK-030
   - Module: `arc-platform/` (root; validation only, no file changes)
   - Acceptance — all of the following pass:
@@ -217,7 +217,7 @@ graph TD
     - Note: ClickHouse and ZooKeeper are internal-only (not accessible from host)
     - No dead links
 
-- [ ] **[TASK-999]** [REVIEW] [P1] Reviewer agent verification
+- [x] **[TASK-999]** [REVIEW] [P1] Reviewer agent verification
   - Dependencies: TASK-900, TASK-901 (all tasks)
   - Module: all affected modules
   - Acceptance — reviewer agent confirms all of the following:
@@ -302,7 +302,7 @@ graph TD
 | Setup | 1 | 1 | 0 |
 | Foundational | 2 | 2 | 2 |
 | Implementation | 5 | 5 | 4 |
-| Integration | 1 | 0 | 0 |
-| Polish | 3 | 2 | 2 |
+| Integration | 1 | 1 | 0 |
+| Polish | 3 | 3 | 2 |
 | Image Strategy | 6 | 6 | 3 |
-| **Total** | **18** | **16** | **11** |
+| **Total** | **18** | **18** | **11** |

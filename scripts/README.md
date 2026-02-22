@@ -11,6 +11,7 @@ Utility scripts for the A.R.C. platform. All scripts follow the standards below.
 | Script | Safety Tier | Description | Usage |
 |--------|-------------|-------------|-------|
 | `delete-org-packages.sh` | Destructive | Delete all container images from a GitHub org | `./scripts/delete-org-packages.sh [--no-dry-run] [ORG]` |
+| `generate-pr-description.sh` | Read-only | Generate monorepo-aware PR description from branch changes | `./scripts/generate-pr-description.sh [BASE_BRANCH]` |
 
 ### Makefile Targets
 
@@ -23,6 +24,8 @@ Run via `make -C scripts <target>` or `cd scripts && make <target>`:
 | `check` | Validate all scripts (syntax + shellcheck) |
 | `packages-list` | Dry-run preview of org container packages |
 | `packages-delete` | Delete all packages (triggers safety gates) |
+| `pr` | Generate a PR description from branch changes |
+| `pr-json` | Generate PR description in JSON mode |
 | `permissions` | Ensure all scripts are `chmod +x` |
 
 ---
