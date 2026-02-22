@@ -16,34 +16,34 @@ import (
 // bootstrap is already running.
 var ErrBootstrapInProgress = errors.New("bootstrap already in progress")
 
-// pgProber is satisfied by *clients.PostgresClient.
-type pgProber interface {
+// PGProber is satisfied by *clients.PostgresClient.
+type PGProber interface {
 	Probe(ctx context.Context) ProbeResult
 }
 
-// natsProvisioner is satisfied by *clients.NATSClient.
-type natsProvisioner interface {
+// NATSProvisioner is satisfied by *clients.NATSClient.
+type NATSProvisioner interface {
 	ProvisionStreams(ctx context.Context) error
 	Probe(ctx context.Context) ProbeResult
 }
 
-// pulsarProvisioner is satisfied by *clients.PulsarClient.
-type pulsarProvisioner interface {
+// PulsarProvisioner is satisfied by *clients.PulsarClient.
+type PulsarProvisioner interface {
 	Provision(ctx context.Context) error
 	Probe(ctx context.Context) ProbeResult
 }
 
-// redisProber is satisfied by *clients.RedisClient.
-type redisProber interface {
+// RedisProber is satisfied by *clients.RedisClient.
+type RedisProber interface {
 	Probe(ctx context.Context) ProbeResult
 }
 
 // Orchestrator runs bootstrap phases and health probes.
 type Orchestrator struct {
-	pg     pgProber
-	nats   natsProvisioner
-	pulsar pulsarProvisioner
-	redis  redisProber
+	pg     PGProber
+	nats   NATSProvisioner
+	pulsar PulsarProvisioner
+	redis  RedisProber
 
 	bootstrapInProgress atomic.Bool
 	lastResult          *BootstrapResult
@@ -52,7 +52,7 @@ type Orchestrator struct {
 
 // New constructs an Orchestrator with the given clients. The concrete client
 // types satisfy the interfaces defined in this package.
-func New(pg pgProber, nats natsProvisioner, pulsar pulsarProvisioner, redis redisProber) *Orchestrator {
+func New(pg PGProber, nats NATSProvisioner, pulsar PulsarProvisioner, redis RedisProber) *Orchestrator {
 	return &Orchestrator{
 		pg:     pg,
 		nats:   nats,

@@ -92,10 +92,10 @@ func TestRunBootstrap(t *testing.T) {
 
 	tests := []struct {
 		name           string
-		pg             pgProber
-		nats           natsProvisioner
-		pulsar         pulsarProvisioner
-		redis          redisProber
+		pg             PGProber
+		nats           NATSProvisioner
+		pulsar         PulsarProvisioner
+		redis          RedisProber
 		wantStatus     string
 		wantPhaseCount int
 		wantErrPhases  []string
@@ -290,12 +290,12 @@ func TestRunDeepHealth(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name      string
-		pg        pgProber
-		nats      natsProvisioner
-		pulsar    pulsarProvisioner
-		redis     redisProber
-		wantOK    map[string]bool
+		name   string
+		pg     PGProber
+		nats   NATSProvisioner
+		pulsar PulsarProvisioner
+		redis  RedisProber
+		wantOK map[string]bool
 	}{
 		{
 			name:   "all healthy",

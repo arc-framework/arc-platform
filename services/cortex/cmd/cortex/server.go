@@ -10,12 +10,6 @@ import (
 	"syscall"
 	"time"
 
-	"arc-framework/cortex/internal/api"
-	"arc-framework/cortex/internal/clients"
-	"arc-framework/cortex/internal/orchestrator"
-	"arc-framework/cortex/internal/telemetry"
-
-	"github.com/sony/gobreaker"
 	"github.com/spf13/cobra"
 )
 
@@ -33,41 +27,20 @@ func runServer(cmd *cobra.Command, args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// Initialise OTEL provider. A missing/unreachable collector is non-fatal —
-	// InitProvider dials non-blocking, so startup continues regardless.
-	tp, err := telemetry.InitProvider(
-		ctx,
-		cfg.Telemetry.OTLPEndpoint,
-		cfg.Telemetry.ServiceName,
-		cfg.Telemetry.OTLPInsecure,
-	)
-	if err != nil {
-		slog.Warn("OTEL provider init failed — telemetry disabled", "err", err)
-	} else {
+	if app.otelProvider != nil {
 		defer func() {
 			shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			if shutErr := tp.Shutdown(shutCtx); shutErr != nil {
-				slog.Warn("OTEL shutdown error", "err", shutErr)
+			if err := app.otelProvider.Shutdown(shutCtx); err != nil {
+				slog.Warn("OTEL shutdown error", "err", err)
 			}
 		}()
 	}
 
-	// Build clients and orchestrator. TASK-040 will move this into a proper DI layer.
-	cbSettings := gobreaker.Settings{Name: "server"}
-	pg := clients.NewPostgresClient(cfg.Bootstrap.Postgres, gobreaker.NewCircuitBreaker(cbSettings))
-	nats := clients.NewNATSClient(cfg.Bootstrap.NATS, gobreaker.NewCircuitBreaker(cbSettings))
-	pulsar := clients.NewPulsarClient(cfg.Bootstrap.Pulsar, gobreaker.NewCircuitBreaker(cbSettings))
-	redis := clients.NewRedisClient(cfg.Bootstrap.Redis, gobreaker.NewCircuitBreaker(cbSettings))
-
-	o := orchestrator.New(pg, nats, pulsar, redis)
-
-	router := api.NewRouter(o)
-
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	srv := &http.Server{
 		Addr:         addr,
-		Handler:      router.Handler(),
+		Handler:      app.router.Handler(),
 		ReadTimeout:  cfg.Server.ReadTimeout,
 		WriteTimeout: cfg.Server.WriteTimeout,
 	}

@@ -17,6 +17,9 @@ var (
 
 	// cfg is populated by PersistentPreRunE and shared with all subcommands.
 	cfg *config.Config
+
+	// app holds all wired dependencies; populated by PersistentPreRunE.
+	app *AppContext
 )
 
 var rootCmd = &cobra.Command{
@@ -47,6 +50,11 @@ func init() {
 		} else if cfg.Telemetry.LogLevel != "" {
 			// Re-init logger with config file value if the flag was not explicitly set.
 			initLogger(cfg.Telemetry.LogLevel)
+		}
+
+		app, err = buildAppContext(cfg)
+		if err != nil {
+			return fmt.Errorf("building app context: %w", err)
 		}
 
 		return nil
