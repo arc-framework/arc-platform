@@ -23,6 +23,9 @@ include services/otel/otel.mk
 # future: include services/gateway/gateway.mk
 # future: include services/persistence/persistence.mk
 
+# ─── Utilities ────────────────────────────────────────────────────────────────
+include scripts/scripts.mk
+
 # ─── Help ─────────────────────────────────────────────────────────────────────
 .DEFAULT_GOAL := help
 .PHONY: help
