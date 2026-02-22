@@ -4,7 +4,11 @@ import (
 	"log/slog"
 	"net/http"
 
+	_ "arc-framework/cortex/docs" // register generated Swagger spec
+
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
 // Router wraps a configured Gin engine and exposes it as an http.Handler.
@@ -33,6 +37,9 @@ func NewRouter(o orchestratorService) *Router {
 	engine.GET("/health", h.Health)
 	engine.GET("/health/deep", h.DeepHealth)
 	engine.GET("/ready", h.Ready)
+
+	// Swagger UI — http://localhost:8081/swagger/index.html
+	engine.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	return &Router{engine: engine}
 }
