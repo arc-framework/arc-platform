@@ -15,9 +15,12 @@ think:
 # ─── reason ─────────────────────────────────────────────────────
 # Full reasoning stack — observability, identity, bootstrap
 reason:
-  description: 'Development stack — observability and identity included'
+  description: 'Development stack — think profile + observability'
   services:
     - cortex
+    - flash
+    - strange
+    - sonic
     - otel
 
 # ─── ultra-instinct ─────────────────────────────────────────────
