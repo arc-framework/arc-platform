@@ -222,6 +222,10 @@ specs/**/.speckit.json
 # Claude session temp files
 *.claude-tmp
 
+# Generated PR descriptions (make scripts-pr output — review before use, never commit)
+pr-description.md
+specs/**/pr-description.md
+
 
 # ═══════════════════════════════════════════════════════════════
 # EDITORS & IDEs
