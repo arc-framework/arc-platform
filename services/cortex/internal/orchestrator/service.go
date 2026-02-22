@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"sync"
 	"sync/atomic"
 
@@ -78,6 +79,8 @@ func (o *Orchestrator) RunBootstrap(ctx context.Context) (*BootstrapResult, erro
 	ctx, span := otel.Tracer("arc-cortex").Start(ctx, "cortex.bootstrap")
 	defer span.End()
 
+	slog.InfoContext(ctx, "bootstrap started")
+
 	// Use a plain errgroup (no context) so a phase failure does not cancel
 	// the context passed to sibling phases.
 	var g errgroup.Group
@@ -85,6 +88,7 @@ func (o *Orchestrator) RunBootstrap(ctx context.Context) (*BootstrapResult, erro
 	g.Go(func() error {
 		probe := o.pg.Probe(ctx)
 		phase := probeToPhase("postgres", probe)
+		logPhase(ctx, phase)
 		result.Lock()
 		result.Phases["postgres"] = phase
 		result.Unlock()
@@ -94,6 +98,7 @@ func (o *Orchestrator) RunBootstrap(ctx context.Context) (*BootstrapResult, erro
 	g.Go(func() error {
 		err := o.nats.ProvisionStreams(ctx)
 		phase := provisionToPhase("nats", err)
+		logPhase(ctx, phase)
 		result.Lock()
 		result.Phases["nats"] = phase
 		result.Unlock()
@@ -103,6 +108,7 @@ func (o *Orchestrator) RunBootstrap(ctx context.Context) (*BootstrapResult, erro
 	g.Go(func() error {
 		err := o.pulsar.Provision(ctx)
 		phase := provisionToPhase("pulsar", err)
+		logPhase(ctx, phase)
 		result.Lock()
 		result.Phases["pulsar"] = phase
 		result.Unlock()
@@ -112,6 +118,7 @@ func (o *Orchestrator) RunBootstrap(ctx context.Context) (*BootstrapResult, erro
 	g.Go(func() error {
 		probe := o.redis.Probe(ctx)
 		phase := probeToPhase("redis", probe)
+		logPhase(ctx, phase)
 		result.Lock()
 		result.Phases["redis"] = phase
 		result.Unlock()
@@ -133,8 +140,10 @@ func (o *Orchestrator) RunBootstrap(ctx context.Context) (*BootstrapResult, erro
 	span.SetAttributes(attribute.String("bootstrap.status", result.Status))
 	if result.Status == StatusError {
 		span.SetStatus(codes.Error, "one or more bootstrap phases failed")
+		slog.WarnContext(ctx, "bootstrap completed with errors", "status", result.Status)
 	} else {
 		span.SetStatus(codes.Ok, "")
+		slog.InfoContext(ctx, "bootstrap completed", "status", result.Status)
 	}
 
 	o.resultMu.Lock()
@@ -197,6 +206,16 @@ func (o *Orchestrator) IsReady() bool {
 	o.resultMu.RLock()
 	defer o.resultMu.RUnlock()
 	return o.lastResult != nil && o.lastResult.Status == StatusOK
+}
+
+// logPhase emits a trace-correlated log for a bootstrap phase result.
+// Errors log at WARN so they are visible without being fatal.
+func logPhase(ctx context.Context, p PhaseResult) {
+	if p.Status == StatusOK {
+		slog.InfoContext(ctx, "bootstrap phase ok", "phase", p.Name)
+		return
+	}
+	slog.WarnContext(ctx, "bootstrap phase failed", "phase", p.Name, "error", p.Error)
 }
 
 // probeToPhase converts a ProbeResult to a PhaseResult.

@@ -17,7 +17,7 @@ func TestLoad_Defaults(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, 8081, cfg.Server.Port)
-	assert.Equal(t, "arc-widow:4317", cfg.Telemetry.OTLPEndpoint)
+	assert.Equal(t, "arc-friday-collector:4317", cfg.Telemetry.OTLPEndpoint)
 	assert.Equal(t, "arc-cortex", cfg.Telemetry.ServiceName)
 	assert.Equal(t, "arc-oracle", cfg.Bootstrap.Postgres.Host)
 	assert.Equal(t, "nats://arc-flash:4222", cfg.Bootstrap.NATS.URL)

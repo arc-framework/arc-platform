@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"arc-framework/cortex/internal/config"
+	"arc-framework/cortex/internal/telemetry"
 
 	"github.com/spf13/cobra"
 )
@@ -85,5 +86,5 @@ func initLogger(level string) {
 	}
 
 	handler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: lvl})
-	slog.SetDefault(slog.New(handler))
+	slog.SetDefault(slog.New(telemetry.NewTraceHandler(handler)))
 }
