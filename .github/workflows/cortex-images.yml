@@ -4,10 +4,18 @@ name: Cortex Image Pipeline
 # Builds on every cortex-related push; pushes to GHCR on main branch merges.
 # For a full versioned release, push a tag: git tag cortex/v1.2.3 && git push --tags
 #
+# Parallelism:
+#   test, lint, build all run concurrently — no job depends on another except security → build.
+#
+# Change detection (per-job skipping):
+#   go     (.go, go.mod, go.sum) → test + lint
+#   docker (Dockerfile)          → build always includes docker changes
+#   any    (services/cortex/**)  → build
+#
 # Triggers:
-#   push (main, dev)   — quality gate + build + push when cortex files change
-#   pull_request       — quality gate + build only (no push), validates Dockerfile
-#   workflow_dispatch  — manual run; mode=release forces push regardless of branch
+#   push (main, dev)   — detect changes, run relevant jobs, push image on main
+#   pull_request       — detect changes, run relevant jobs, build only (no push)
+#   workflow_dispatch  — always runs all jobs; mode=release forces push
 
 on:
   push:
@@ -33,67 +41,100 @@ env:
 
 jobs:
 
-  # ── Resolve pipeline mode ──────────────────────────────────────────────────
-  prepare:
-    name: Prepare
+  # ── Detect file-level changes and resolve push mode ───────────────────────
+  changes:
+    name: Detect Changes
     runs-on: ubuntu-latest
     outputs:
+      go:         ${{ steps.filter.outputs.go == 'true'     || github.event_name == 'workflow_dispatch' }}
+      any:        ${{ steps.filter.outputs.any == 'true'    || github.event_name == 'workflow_dispatch' }}
       push-image: ${{ steps.mode.outputs.push-image }}
     steps:
-      - name: Resolve pipeline mode
+      - uses: actions/checkout@v4
+
+      - name: Detect changed paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            go:
+              - 'services/cortex/**/*.go'
+              - 'services/cortex/go.mod'
+              - 'services/cortex/go.sum'
+            any:
+              - 'services/cortex/**'
+
+      - name: Resolve push mode
         id: mode
         run: |
           EVENT="${{ github.event_name }}"
           REF="${{ github.ref }}"
           MODE="${{ github.event.inputs.mode || 'ci' }}"
 
-          # Push on: main branch merges OR manual release mode
           if [ "$MODE" = "release" ] || ([ "$EVENT" = "push" ] && [ "$REF" = "refs/heads/main" ]); then
             echo "push-image=true" >> $GITHUB_OUTPUT
           else
             echo "push-image=false" >> $GITHUB_OUTPUT
           fi
 
-  # ── Go quality gate — tests + lint ────────────────────────────────────────
-  quality:
-    name: Quality Gate
+  # ── Test (parallel) — only when Go source changed ─────────────────────────
+  test:
+    name: Test
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-go@v5
         with:
           go-version-file: services/cortex/go.mod
           cache-dependency-path: services/cortex/go.sum
-
       - name: Run tests
-        run: cd services/cortex && go test ./... -count=1 -race
+        run: |
+          cd services/cortex
+          if [[ "${{ github.ref }}" == "refs/heads/main" || "${{ github.ref }}" == "refs/heads/dev" ]]; then
+            go test ./... -count=1 -race
+          else
+            go test ./... -count=1
+          fi
 
-      - name: Run lint
-        uses: golangci/golangci-lint-action@v6
+  # ── Lint (parallel) — only when Go source changed ─────────────────────────
+  lint:
+    name: Lint
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/cortex/go.mod
+          cache-dependency-path: services/cortex/go.sum
+      - uses: golangci/golangci-lint-action@v6
         with:
           working-directory: services/cortex
 
-  # ── Build arc-cortex ───────────────────────────────────────────────────────
-  build-arc-cortex:
-    name: arc-cortex
-    needs: [prepare, quality]
+  # ── Build (parallel) — any cortex file change ─────────────────────────────
+  build:
+    name: Build arc-cortex
+    needs: changes
+    if: needs.changes.outputs.any == 'true'
     uses: ./.github/workflows/_reusable-build.yml
     with:
       service-name: arc-cortex
       service-path: services/cortex
       dockerfile: Dockerfile
       platforms: linux/amd64,linux/arm64
-      push-image: ${{ needs.prepare.outputs.push-image == 'true' }}
-      generate-sbom: ${{ needs.prepare.outputs.push-image == 'true' }}
+      push-image: ${{ needs.changes.outputs.push-image == 'true' }}
+      generate-sbom: ${{ needs.changes.outputs.push-image == 'true' }}
       image-prefix: ghcr.io/arc-framework
     secrets: inherit
 
-  # ── Security scan (non-blocking in CI; releases use cortex-release.yml) ───
+  # ── Security (after build, non-blocking in CI) ────────────────────────────
   security:
     name: Security Scan
-    needs: [build-arc-cortex]
-    if: always() && !cancelled()
+    needs: [build]
+    if: always() && !cancelled() && needs.build.result == 'success'
     uses: ./.github/workflows/_reusable-security.yml
     with:
       scan-type: fs

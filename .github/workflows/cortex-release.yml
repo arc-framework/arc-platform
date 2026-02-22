@@ -16,11 +16,10 @@ name: Cortex Release
 #   new endpoint or feature                              → MINOR
 #   bug fix, dependency update, Dockerfile tweak         → PATCH
 #
-# Pipeline:
-#   1. Quality gate — tests + lint must pass before any image is pushed
-#   2. Build arc-cortex (push-image: true, latest-tag: true)
-#   3. Security scan — CRITICAL CVEs block the release and file a GitHub issue
-#   4. Create GitHub release with image reference table
+# Parallelism:
+#   prepare, test, lint all run concurrently.
+#   build waits for all three (quality must pass before push).
+#   security runs after build; release runs after security.
 
 on:
   push:
@@ -35,57 +34,63 @@ permissions:
 
 jobs:
 
-  # ── Derive a Docker-safe image tag from the git tag ────────────────────────
+  # ── Derive Docker-safe image tag from git tag (parallel with quality) ──────
   # cortex/v0.1.0 → cortex-v0.1.0  (slashes are not valid in Docker image tags)
   prepare:
     name: Prepare Release
     runs-on: ubuntu-latest
     outputs:
-      image-tag: ${{ steps.tag.outputs.image-tag }}
-      version: ${{ steps.tag.outputs.version }}
+      image-tag:  ${{ steps.tag.outputs.image-tag }}
+      version:    ${{ steps.tag.outputs.version }}
       prerelease: ${{ steps.tag.outputs.prerelease }}
     steps:
       - name: Derive image tag and version
         id: tag
         run: |
-          GIT_TAG="${GITHUB_REF_NAME}"                     # cortex/v0.1.0
-          IMAGE_TAG="${GIT_TAG/\//-}"                      # cortex-v0.1.0
-          VERSION="${GIT_TAG#cortex/v}"                    # 0.1.0
+          GIT_TAG="${GITHUB_REF_NAME}"                # cortex/v0.1.0
+          IMAGE_TAG="${GIT_TAG/\//-}"                 # cortex-v0.1.0
+          VERSION="${GIT_TAG#cortex/v}"               # 0.1.0
 
-          echo "image-tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "image-tag=$IMAGE_TAG"   >> $GITHUB_OUTPUT
+          echo "version=$VERSION"       >> $GITHUB_OUTPUT
 
-          # Mark as pre-release if tag contains -rc, -alpha, or -beta
           if echo "$VERSION" | grep -qE '\-(rc|alpha|beta)'; then
-            echo "prerelease=true" >> $GITHUB_OUTPUT
+            echo "prerelease=true"  >> $GITHUB_OUTPUT
           else
             echo "prerelease=false" >> $GITHUB_OUTPUT
           fi
 
-  # ── Go quality gate — tests + lint must pass before push ──────────────────
-  quality:
-    name: Quality Gate
+  # ── Test (parallel with prepare + lint) ───────────────────────────────────
+  test:
+    name: Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-go@v5
         with:
           go-version-file: services/cortex/go.mod
           cache-dependency-path: services/cortex/go.sum
-
-      - name: Run tests
+      - name: Run tests with race detector
         run: cd services/cortex && go test ./... -count=1 -race
 
-      - name: Run lint
-        uses: golangci/golangci-lint-action@v6
+  # ── Lint (parallel with prepare + test) ───────────────────────────────────
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/cortex/go.mod
+          cache-dependency-path: services/cortex/go.sum
+      - uses: golangci/golangci-lint-action@v6
         with:
           working-directory: services/cortex
 
-  # ── Build and push arc-cortex ──────────────────────────────────────────────
-  build-arc-cortex:
-    name: arc-cortex
-    needs: [prepare, quality]
+  # ── Build + push (after prepare + test + lint all pass) ───────────────────
+  build:
+    name: Build arc-cortex
+    needs: [prepare, test, lint]
     uses: ./.github/workflows/_reusable-build.yml
     with:
       service-name: arc-cortex
@@ -99,10 +104,10 @@ jobs:
       image-prefix: ghcr.io/arc-framework
     secrets: inherit
 
-  # ── Security scan — CRITICAL CVEs block the release ───────────────────────
+  # ── Security — CRITICAL CVEs block the release ────────────────────────────
   security:
     name: Security Gate
-    needs: [build-arc-cortex]
+    needs: [build]
     uses: ./.github/workflows/_reusable-security.yml
     with:
       scan-type: fs
@@ -114,13 +119,10 @@ jobs:
       create-issues: true
     secrets: inherit
 
-  # ── Create GitHub release ──────────────────────────────────────────────────
+  # ── GitHub release ─────────────────────────────────────────────────────────
   release:
     name: GitHub Release
-    needs:
-      - prepare
-      - build-arc-cortex
-      - security
+    needs: [prepare, build, security]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
