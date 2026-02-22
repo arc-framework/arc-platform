@@ -8,6 +8,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Note: t.Parallel() is intentionally omitted in this package.
+// These tests share process-global environment variables; t.Setenv in
+// TestLoad_EnvOverride would race with any concurrent reader.
+
 func TestLoad_Defaults(t *testing.T) {
 	cfg, err := Load("")
 	require.NoError(t, err)
