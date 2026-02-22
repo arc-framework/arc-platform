@@ -33,17 +33,22 @@ func buildAppContext(cfg *config.Config) (*AppContext, error) {
 	app := &AppContext{cfg: cfg}
 
 	// OTEL is best-effort: a missing collector must never block startup.
-	// The provider dials non-blocking so using context.Background() is safe.
-	tp, err := telemetry.InitProvider(
-		context.Background(),
-		cfg.Telemetry.OTLPEndpoint,
-		cfg.Telemetry.ServiceName,
-		cfg.Telemetry.OTLPInsecure,
-	)
-	if err != nil {
-		slog.Warn("OTEL provider init failed — telemetry disabled", "err", err)
+	// When OTLPEndpoint is empty, telemetry is disabled entirely — this avoids
+	// the SDK's 10s periodic-reader noise when no collector is running locally.
+	if cfg.Telemetry.OTLPEndpoint == "" {
+		slog.Info("OTEL telemetry disabled (no endpoint configured)")
 	} else {
-		app.otelProvider = tp
+		tp, err := telemetry.InitProvider(
+			context.Background(),
+			cfg.Telemetry.OTLPEndpoint,
+			cfg.Telemetry.ServiceName,
+			cfg.Telemetry.OTLPInsecure,
+		)
+		if err != nil {
+			slog.Warn("OTEL provider init failed — telemetry disabled", "err", err)
+		} else {
+			app.otelProvider = tp
+		}
 	}
 
 	// One circuit breaker per client so each dependency trips independently.
