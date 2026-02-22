@@ -1,0 +1,170 @@
+name: arc-platform
+
+services:
+
+  # ── ZooKeeper: ClickHouse coordination ───────────────────────────────────────
+  # NOTE: upstream zookeeper base image requires root — known deviation from NFR-4.
+  # This is an upstream constraint; non-root ZK is not supported.
+  arc-friday-zookeeper:
+    build:
+      context: ./observability
+      dockerfile: zookeeper.Dockerfile
+    image: ghcr.io/arc-framework/arc-friday-zookeeper:latest
+    container_name: arc-friday-zookeeper
+    user: root
+    environment:
+      - ZOO_SERVER_ID=1
+      - ALLOW_ANONYMOUS_LOGIN=yes
+      - ZOO_AUTOPURGE_INTERVAL=1
+      - ZOO_ENABLE_PROMETHEUS_METRICS=yes
+      - ZOO_PROMETHEUS_METRICS_PORT_NUMBER=9141
+    volumes:
+      - zookeeper-data:/bitnami/zookeeper
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s -m 2 http://localhost:8080/commands/ruok | grep error | grep null"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    networks:
+      - arc_otel_net
+    restart: unless-stopped
+
+  # ── ClickHouse: signal store ──────────────────────────────────────────────────
+  # Config and histogramQuantile UDF are baked into the image — no volume mounts
+  # needed for config. The data volume covers /var/lib/clickhouse/ only.
+  arc-friday-clickhouse:
+    build:
+      context: ./observability
+      dockerfile: clickhouse.Dockerfile
+    image: ghcr.io/arc-framework/arc-friday-clickhouse:latest
+    container_name: arc-friday-clickhouse
+    depends_on:
+      arc-friday-zookeeper:
+        condition: service_healthy
+    environment:
+      - CLICKHOUSE_SKIP_USER_SETUP=1
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse/
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "0.0.0.0:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    networks:
+      - arc_otel_net
+    restart: unless-stopped
+
+  # ── Schema migration: synchronous (must complete before arc-friday starts) ───
+  # Image: ARC-managed re-tag of the upstream schema-migrator — controlled via ghcr.io.
+  # Run `make otel-build` to produce the image before first `make otel-up`.
+  arc-friday-migrator-sync:
+    build:
+      context: ./observability
+      dockerfile: migrator.Dockerfile
+    image: ghcr.io/arc-framework/arc-friday-migrator:latest
+    container_name: arc-friday-migrator-sync
+    command:
+      - sync
+      - --dsn=tcp://arc-friday-clickhouse:9000
+      - --up=
+    depends_on:
+      arc-friday-clickhouse:
+        condition: service_healthy
+    restart: on-failure
+    networks:
+      - arc_otel_net
+
+  # ── Schema migration: asynchronous (background migrations) ───────────────────
+  # Uses the same arc-friday-migrator image as the sync service.
+  arc-friday-migrator-async:
+    image: ghcr.io/arc-framework/arc-friday-migrator:latest
+    container_name: arc-friday-migrator-async
+    command:
+      - async
+      - --dsn=tcp://arc-friday-clickhouse:9000
+      - --up=
+    depends_on:
+      arc-friday-clickhouse:
+        condition: service_healthy
+      arc-friday-migrator-sync:
+        condition: service_completed_successfully
+    restart: on-failure
+    networks:
+      - arc_otel_net
+
+  # ── Friday: arc-friday query service + UI ────────────────────────────────────
+  # Internal port: 8080. Mapped to host as 127.0.0.1:3301:8080.
+  # Prometheus config is baked into the image.
+  arc-friday:
+    build:
+      context: ./observability
+      dockerfile: Dockerfile
+    image: ghcr.io/arc-framework/arc-friday:latest
+    container_name: arc-friday
+    command:
+      - --config=/root/config/prometheus.yml
+    depends_on:
+      arc-friday-clickhouse:
+        condition: service_healthy
+      arc-friday-migrator-sync:
+        condition: service_completed_successfully
+    environment:
+      - SIGNOZ_ALERTMANAGER_PROVIDER=signoz
+      - SIGNOZ_TELEMETRYSTORE_CLICKHOUSE_DSN=tcp://arc-friday-clickhouse:9000
+      - SIGNOZ_SQLSTORE_SQLITE_PATH=/var/lib/signoz/signoz.db
+      - STORAGE=clickhouse
+      - GODEBUG=netdns=go
+      - TELEMETRY_ENABLED=false
+    ports:
+      - "127.0.0.1:3301:8080"   # arc-friday UI — localhost only, not 0.0.0.0
+    volumes:
+      - signoz-data:/var/lib/signoz/
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "localhost:8080/api/v1/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 8
+      start_period: 60s
+    networks:
+      - arc_otel_net
+    restart: unless-stopped
+
+  # ── Friday Collector: OTEL telemetry collector ────────────────────────────────
+  # Collector config is baked into the image. Receives OTLP on 4317/4318.
+  arc-friday-collector:
+    build:
+      context: ./telemetry
+      dockerfile: Dockerfile
+    image: ghcr.io/arc-framework/arc-friday-collector:latest
+    container_name: arc-friday-collector
+    user: "10001:10001"
+    command:
+      - --config=/etc/otelcol/config.yaml
+      - --manager-config=/etc/otelcol/manager-config.yaml
+      - --copy-path=/var/tmp/collector-config.yaml
+    ports:
+      - "127.0.0.1:4317:4317"   # OTLP gRPC
+      - "127.0.0.1:4318:4318"   # OTLP HTTP
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:13133/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - arc_otel_net
+    restart: unless-stopped
+
+volumes:
+  zookeeper-data:
+    name: arc-friday-zookeeper
+  clickhouse-data:
+    name: arc-friday-clickhouse
+  signoz-data:
+    name: arc-friday-sqlite
+
+networks:
+  arc_otel_net:
+    name: arc_otel_net

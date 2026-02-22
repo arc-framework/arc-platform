@@ -1,0 +1,63 @@
+# Auto-label PRs based on branch name and changed files
+# Used by: .github/workflows/pr-labeler.yml
+
+# ── Branch-based labels ──────────────────────────────────────────────────────
+
+feature:
+  - head-branch: ['^feature/.*', '^feat/.*', '^\d{3}-.*']
+
+bug:
+  - head-branch: ['^bug/.*', '^fix/.*']
+
+chore:
+  - head-branch: ['^chore/.*']
+
+performance:
+  - head-branch: ['^perf/.*']
+
+security:
+  - head-branch: ['^security/.*', '^sec/.*']
+
+# ── Monorepo area labels ────────────────────────────────────────────────────
+
+cli:
+  - changed-files:
+    - any-glob-to-any-file: ['cli/**']
+
+services:
+  - changed-files:
+    - any-glob-to-any-file: ['services/**']
+
+sdk:
+  - changed-files:
+    - any-glob-to-any-file: ['sdk/**']
+
+documentation:
+  - changed-files:
+    - any-glob-to-any-file: ['docs/**', '**/*.md']
+
+scripts:
+  - changed-files:
+    - any-glob-to-any-file: ['scripts/**']
+
+# ── Technology labels ────────────────────────────────────────────────────────
+
+docker:
+  - changed-files:
+    - any-glob-to-any-file: ['**/Dockerfile', '**/docker-compose*.yml']
+
+ci:
+  - changed-files:
+    - any-glob-to-any-file: ['.github/workflows/**', '.github/**/*.yml']
+
+testing:
+  - changed-files:
+    - any-glob-to-any-file: ['**/*_test.go', '**/test_*.py', '**/tests/**']
+
+go:
+  - changed-files:
+    - any-glob-to-any-file: ['**/*.go', 'go.mod', 'go.sum']
+
+python:
+  - changed-files:
+    - any-glob-to-any-file: ['**/*.py', '**/requirements*.txt', '**/pyproject.toml']

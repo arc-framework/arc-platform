@@ -1,0 +1,161 @@
+services:
+
+  # ── One-time init: downloads histogramQuantile UDF binary for ClickHouse ────
+  # Requires internet access on first run. Re-runs are idempotent.
+  init-clickhouse:
+    image: clickhouse/clickhouse-server:25.5.6
+    container_name: signoz-init-clickhouse
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        version="v0.0.1"
+        node_os=$$(uname -s | tr '[:upper:]' '[:lower:]')
+        node_arch=$$(uname -m | sed 's/aarch64/arm64/' | sed 's/x86_64/amd64/')
+        echo "Fetching histogramQuantile $${version} for $${node_os}/$${node_arch}"
+        cd /tmp
+        wget -O histogram-quantile.tar.gz \
+          "https://github.com/SigNoz/signoz/releases/download/histogram-quantile%2F$${version}/histogram-quantile_$${node_os}_$${node_arch}.tar.gz"
+        tar -xvzf histogram-quantile.tar.gz
+        mv histogram-quantile /var/lib/clickhouse/user_scripts/histogramQuantile
+        chmod +x /var/lib/clickhouse/user_scripts/histogramQuantile
+        echo "Done: histogramQuantile installed"
+    restart: on-failure
+    volumes:
+      - clickhouse-user-scripts:/var/lib/clickhouse/user_scripts/
+    networks:
+      - arc_otel_net
+
+  # ── ZooKeeper: ClickHouse coordination ───────────────────────────────────────
+  # NOTE: signoz/zookeeper:3.7.1 requires root — known deviation from NFR-4.
+  # This is a SigNoz upstream image constraint; non-root ZK is not supported.
+  zookeeper:
+    image: signoz/zookeeper:3.7.1
+    container_name: signoz-zookeeper
+    user: root
+    environment:
+      - ZOO_SERVER_ID=1
+      - ALLOW_ANONYMOUS_LOGIN=yes
+      - ZOO_AUTOPURGE_INTERVAL=1
+      - ZOO_ENABLE_PROMETHEUS_METRICS=yes
+      - ZOO_PROMETHEUS_METRICS_PORT_NUMBER=9141
+    volumes:
+      - zookeeper-data:/bitnami/zookeeper
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s -m 2 http://localhost:8080/commands/ruok | grep error | grep null"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    networks:
+      - arc_otel_net
+    restart: unless-stopped
+
+  # ── ClickHouse: signal store ─────────────────────────────────────────────────
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.5.6
+    container_name: signoz-clickhouse
+    depends_on:
+      init-clickhouse:
+        condition: service_completed_successfully
+      zookeeper:
+        condition: service_healthy
+    environment:
+      - CLICKHOUSE_SKIP_USER_SETUP=1
+    volumes:
+      - ./config/clickhouse-config.xml:/etc/clickhouse-server/config.d/memory.xml:ro
+      - ./config/clickhouse-cluster.xml:/etc/clickhouse-server/config.d/cluster.xml:ro
+      - ./config/custom-function.xml:/etc/clickhouse-server/custom-function.xml:ro
+      - ./config/clickhouse-users.xml:/etc/clickhouse-server/users.xml:ro
+      - clickhouse-data:/var/lib/clickhouse/
+      - clickhouse-user-scripts:/var/lib/clickhouse/user_scripts/
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "0.0.0.0:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    networks:
+      - arc_otel_net
+    restart: unless-stopped
+
+  # ── Schema migration: synchronous (must complete before SigNoz starts) ───────
+  schema-migrator-sync:
+    image: signoz/signoz-schema-migrator:v0.142.0
+    container_name: signoz-schema-migrator-sync
+    command:
+      - sync
+      - --dsn=tcp://clickhouse:9000
+      - --up=
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    restart: on-failure
+    networks:
+      - arc_otel_net
+
+  # ── Schema migration: asynchronous (background migrations) ───────────────────
+  schema-migrator-async:
+    image: signoz/signoz-schema-migrator:v0.142.0
+    container_name: signoz-schema-migrator-async
+    command:
+      - async
+      - --dsn=tcp://clickhouse:9000
+      - --up=
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      schema-migrator-sync:
+        condition: service_completed_successfully
+    restart: on-failure
+    networks:
+      - arc_otel_net
+
+  # ── SigNoz: query service + UI ───────────────────────────────────────────────
+  # Internal port: 8080. Mapped to host as 127.0.0.1:3301:8080.
+  signoz:
+    image: signoz/signoz:v0.112.0
+    container_name: signoz
+    command:
+      - --config=/root/config/prometheus.yml
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      schema-migrator-sync:
+        condition: service_completed_successfully
+    environment:
+      - SIGNOZ_ALERTMANAGER_PROVIDER=signoz
+      - SIGNOZ_TELEMETRYSTORE_CLICKHOUSE_DSN=tcp://clickhouse:9000
+      - SIGNOZ_SQLSTORE_SQLITE_PATH=/var/lib/signoz/signoz.db
+      - STORAGE=clickhouse
+      - GODEBUG=netdns=go
+      - TELEMETRY_ENABLED=false
+    ports:
+      - "127.0.0.1:3301:8080"   # SigNoz UI — localhost only, not 0.0.0.0
+    volumes:
+      - ./config/prometheus.yml:/root/config/prometheus.yml:ro
+      - signoz-data:/var/lib/signoz/
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "localhost:8080/api/v1/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 8
+      start_period: 60s
+    networks:
+      - arc_otel_net
+    restart: unless-stopped
+
+volumes:
+  zookeeper-data:
+    name: signoz-zookeeper
+  clickhouse-data:
+    name: signoz-clickhouse
+  clickhouse-user-scripts:
+    name: signoz-clickhouse-user-scripts
+  signoz-data:
+    name: signoz-sqlite
+
+networks:
+  arc_otel_net:
+    name: arc_otel_net

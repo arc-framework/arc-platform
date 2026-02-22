@@ -1,0 +1,343 @@
+name: Reusable Publish Image Group
+
+# Reusable workflow for publishing a group of vendor images
+# Handles rate limiting, retries, and multi-arch builds
+#
+# Features:
+#   - Parse JSON config for image definitions
+#   - Multi-architecture builds (amd64, arm64)
+#   - Rate limit delays between pushes
+#   - Retry logic with exponential backoff
+#   - Required vs optional image handling
+#
+# Usage:
+#   jobs:
+#     publish-observability:
+#       uses: ./.github/workflows/_reusable-publish-group.yml
+#       with:
+#         group-name: 'Observability Services'
+#         config-file: '.github/config/publish-observability.json'
+
+on:
+  workflow_call:
+    inputs:
+      group-name:
+        description: 'Display name for this group'
+        required: true
+        type: string
+      config-file:
+        description: 'Path to JSON configuration file'
+        required: true
+        type: string
+      dry-run:
+        description: 'Run without pushing images'
+        required: false
+        type: boolean
+        default: false
+      tag-suffix:
+        description: 'Suffix to add to image tags (e.g., -rc1)'
+        required: false
+        type: string
+        default: ''
+
+    outputs:
+      images-published:
+        description: 'Number of images successfully published'
+        value: ${{ jobs.summary.outputs.published }}
+      images-failed:
+        description: 'Number of images that failed'
+        value: ${{ jobs.summary.outputs.failed }}
+      status:
+        description: 'Overall status (success, partial, failure)'
+        value: ${{ jobs.summary.outputs.status }}
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository }}
+
+jobs:
+  # ============================================
+  # Job 1: Parse Configuration
+  # ============================================
+  parse-config:
+    name: Parse Config
+    runs-on: ubuntu-latest
+    outputs:
+      images: ${{ steps.parse.outputs.images }}
+      image-count: ${{ steps.parse.outputs.count }}
+      settings: ${{ steps.parse.outputs.settings }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Parse configuration file
+        id: parse
+        run: |
+          CONFIG_FILE="${{ inputs.config-file }}"
+
+          if [ ! -f "$CONFIG_FILE" ]; then
+            echo "::warning::Configuration file not found: $CONFIG_FILE"
+            echo "images=[]" >> $GITHUB_OUTPUT
+            echo "count=0" >> $GITHUB_OUTPUT
+            echo "settings={}" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          IMAGES=$(jq -c '.images' "$CONFIG_FILE")
+          COUNT=$(echo "$IMAGES" | jq 'length')
+          SETTINGS=$(jq -c '.settings // {}' "$CONFIG_FILE")
+
+          echo "images=$IMAGES" >> $GITHUB_OUTPUT
+          echo "count=$COUNT" >> $GITHUB_OUTPUT
+          echo "settings=$SETTINGS" >> $GITHUB_OUTPUT
+          echo "Found $COUNT images in ${{ inputs.group-name }}"
+
+  # ============================================
+  # Job 2: Publish Images
+  # ============================================
+  publish:
+    name: Publish
+    needs: [parse-config]
+    if: needs.parse-config.outputs.image-count != '0'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      max-parallel: 1  # Sequential to respect rate limits
+      matrix:
+        image: ${{ fromJSON(needs.parse-config.outputs.images) }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate image metadata
+        id: meta
+        run: |
+          SOURCE="${{ matrix.image.source }}"
+          TARGET="${{ matrix.image.target }}"
+          SUFFIX="${{ inputs.tag-suffix }}"
+
+          if [[ "$SOURCE" == *":"* ]]; then
+            VERSION="${SOURCE##*:}"
+          else
+            VERSION="latest"
+          fi
+
+          TARGET_REF="${{ env.REGISTRY }}/${{ github.repository_owner }}/${TARGET}"
+          TAGS="${TARGET_REF}:${VERSION}${SUFFIX}"
+          TAGS="${TAGS},${TARGET_REF}:latest${SUFFIX}"
+          SHORT_SHA="${GITHUB_SHA:0:7}"
+          TAGS="${TAGS},${TARGET_REF}:${VERSION}-${SHORT_SHA}${SUFFIX}"
+
+          echo "source=$SOURCE" >> $GITHUB_OUTPUT
+          echo "target-ref=$TARGET_REF" >> $GITHUB_OUTPUT
+          echo "tags=$TAGS" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Publishing: $SOURCE -> $TARGET_REF"
+
+      - name: Pull source image
+        id: pull
+        run: |
+          SOURCE="${{ steps.meta.outputs.source }}"
+          echo "Pulling source image: $SOURCE"
+          MAX_ATTEMPTS=3
+          ATTEMPT=1
+
+          while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+            if docker pull "$SOURCE"; then
+              echo "pulled=true" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            echo "Attempt $ATTEMPT failed, retrying in $((ATTEMPT * 30)) seconds..."
+            sleep $((ATTEMPT * 30))
+            ATTEMPT=$((ATTEMPT + 1))
+          done
+
+          echo "::error::Failed to pull $SOURCE after $MAX_ATTEMPTS attempts"
+          echo "pulled=false" >> $GITHUB_OUTPUT
+          exit 1
+
+      - name: Re-tag and push multi-arch image
+        id: build
+        if: ${{ steps.pull.outputs.pulled == 'true' && inputs.dry-run != true }}
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: /dev/stdin
+          platforms: ${{ join(matrix.image.platforms, ',') }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.title=${{ matrix.image.target }}
+            org.opencontainers.image.description=${{ matrix.image.description }}
+            arc.image.group=${{ inputs.group-name }}
+            arc.image.source=${{ matrix.image.source }}
+            arc.image.vendor=true
+        env:
+          DOCKER_BUILDKIT: 1
+
+      - name: Dry run output
+        if: ${{ inputs.dry-run == true }}
+        run: |
+          echo "DRY RUN: Would publish ${{ matrix.image.source }} -> ${{ steps.meta.outputs.target-ref }}"
+          echo "Tags: ${{ steps.meta.outputs.tags }}"
+
+      - name: Record result
+        id: record
+        if: always()
+        run: |
+          if [ "${{ steps.pull.outputs.pulled }}" != "true" ]; then
+            RESULT="failed:pull"
+          elif [ "${{ inputs.dry-run }}" = "true" ]; then
+            RESULT="skipped:dry-run"
+          elif [ "${{ steps.build.outcome }}" = "success" ]; then
+            RESULT="success"
+          else
+            RESULT="failed:push"
+          fi
+
+          echo "result=$RESULT" >> $GITHUB_OUTPUT
+
+          echo '{
+            "image": "${{ matrix.image.target }}",
+            "source": "${{ matrix.image.source }}",
+            "result": "'"$RESULT"'",
+            "required": ${{ matrix.image.required || false }}
+          }' > result-${{ strategy.job-index }}.json
+
+      - name: Upload result artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: publish-result-${{ matrix.image.target }}
+          path: result-*.json
+          retention-days: 1
+
+      - name: Rate limit delay
+        if: ${{ inputs.dry-run != true }}
+        run: |
+          SETTINGS='${{ needs.parse-config.outputs.settings }}'
+          DELAY=$(echo "$SETTINGS" | jq -r '.rate_limit_delay_seconds // 30')
+          echo "Waiting ${DELAY}s for rate limit..."
+          sleep "$DELAY"
+
+  # ============================================
+  # Job 3: Summary
+  # ============================================
+  summary:
+    name: Summary
+    needs: [parse-config, publish]
+    if: always()
+    runs-on: ubuntu-latest
+    outputs:
+      published: ${{ steps.aggregate.outputs.published }}
+      failed: ${{ steps.aggregate.outputs.failed }}
+      status: ${{ steps.aggregate.outputs.status }}
+    steps:
+      - name: Download all results
+        uses: actions/download-artifact@v4
+        with:
+          path: results
+          pattern: publish-result-*
+          merge-multiple: true
+
+      - name: Aggregate results
+        id: aggregate
+        run: |
+          PUBLISHED=0
+          FAILED=0
+          REQUIRED_FAILED=0
+
+          for file in results/*.json; do
+            if [ -f "$file" ]; then
+              RESULT=$(jq -r '.result' "$file")
+              REQUIRED=$(jq -r '.required' "$file")
+
+              if [[ "$RESULT" == "success" ]]; then
+                PUBLISHED=$((PUBLISHED + 1))
+              else
+                FAILED=$((FAILED + 1))
+                if [ "$REQUIRED" = "true" ]; then
+                  REQUIRED_FAILED=$((REQUIRED_FAILED + 1))
+                fi
+              fi
+            fi
+          done
+
+          echo "published=$PUBLISHED" >> $GITHUB_OUTPUT
+          echo "failed=$FAILED" >> $GITHUB_OUTPUT
+
+          if [ "$REQUIRED_FAILED" -gt 0 ]; then
+            echo "status=failure" >> $GITHUB_OUTPUT
+          elif [ "$FAILED" -gt 0 ]; then
+            echo "status=partial" >> $GITHUB_OUTPUT
+          else
+            echo "status=success" >> $GITHUB_OUTPUT
+          fi
+
+          echo "Published: $PUBLISHED, Failed: $FAILED (Required failed: $REQUIRED_FAILED)"
+
+      - name: Generate summary
+        run: |
+          echo "## ${{ inputs.group-name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          PUBLISHED="${{ steps.aggregate.outputs.published }}"
+          FAILED="${{ steps.aggregate.outputs.failed }}"
+          STATUS="${{ steps.aggregate.outputs.status }}"
+
+          case "$STATUS" in
+            success) echo "### ✅ All images published successfully" >> $GITHUB_STEP_SUMMARY ;;
+            partial) echo "### ⚠️ Some optional images failed" >> $GITHUB_STEP_SUMMARY ;;
+            failure) echo "### ❌ Required images failed" >> $GITHUB_STEP_SUMMARY ;;
+          esac
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Count |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| ✅ Published | $PUBLISHED |" >> $GITHUB_STEP_SUMMARY
+          echo "| ❌ Failed | $FAILED |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Image | Source | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|--------|" >> $GITHUB_STEP_SUMMARY
+
+          for file in results/*.json; do
+            if [ -f "$file" ]; then
+              IMAGE=$(jq -r '.image' "$file")
+              SOURCE=$(jq -r '.source' "$file")
+              RESULT=$(jq -r '.result' "$file")
+
+              case "$RESULT" in
+                success) STATUS_EMOJI="✅" ;;
+                skipped*) STATUS_EMOJI="⏭️" ;;
+                *) STATUS_EMOJI="❌" ;;
+              esac
+
+              echo "| $IMAGE | \`$SOURCE\` | $STATUS_EMOJI $RESULT |" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+
+      - name: Fail on required image failures
+        if: ${{ steps.aggregate.outputs.status == 'failure' }}
+        run: |
+          echo "::error::Required images failed to publish in ${{ inputs.group-name }}"
+          exit 1

@@ -1,0 +1,213 @@
+name: OTEL Image Pipeline
+
+# CI/push orchestrator for arc-friday-* images.
+# Builds on every otel-related push; pushes to GHCR on main branch merges.
+# For a full versioned release, push a tag: git tag otel/v1.2.3 && git push --tags
+#
+# Triggers:
+#   push (main, dev)   — build + push when otel files change
+#   pull_request       — build only (no push), validates Dockerfiles
+#   workflow_dispatch  — manual run; mode=release forces push regardless of branch
+#
+# Per-image change detection: only the images whose source files changed are rebuilt.
+# Manual dispatch always rebuilds all images.
+
+on:
+  push:
+    branches: [main, dev]
+    paths:
+      - 'services/otel/**'
+      - '.github/workflows/otel-images.yml'
+      - '.github/config/build-otel.json'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'services/otel/**'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'ci = build only, release = build + push'
+        required: false
+        type: choice
+        options: [ci, release]
+        default: ci
+
+env:
+  IMAGE_PREFIX: ghcr.io/arc-framework
+
+jobs:
+
+  # ── Detect which images need rebuilding and resolve pipeline mode ──────────
+  changed:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      arc-friday: ${{ steps.detect.outputs.arc-friday }}
+      arc-friday-collector: ${{ steps.detect.outputs.arc-friday-collector }}
+      arc-friday-clickhouse: ${{ steps.detect.outputs.arc-friday-clickhouse }}
+      arc-friday-migrator: ${{ steps.detect.outputs.arc-friday-migrator }}
+      arc-friday-zookeeper: ${{ steps.detect.outputs.arc-friday-zookeeper }}
+      push-image: ${{ steps.mode.outputs.push-image }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect per-image changes
+        id: detect
+        run: |
+          # Manual dispatch always rebuilds all images
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            for img in arc-friday arc-friday-collector arc-friday-clickhouse arc-friday-migrator arc-friday-zookeeper; do
+              echo "$img=true" >> $GITHUB_OUTPUT
+            done
+            exit 0
+          fi
+
+          CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || git diff --name-only HEAD)
+
+          # Returns 'true' if any of the given path prefixes appear in CHANGED
+          changed_for() {
+            local img="$1"; shift
+            for path in "$@"; do
+              if echo "$CHANGED" | grep -q "^$path"; then
+                echo "$img=true" >> $GITHUB_OUTPUT
+                return
+              fi
+            done
+            echo "$img=false" >> $GITHUB_OUTPUT
+          }
+
+          changed_for "arc-friday" \
+            "services/otel/observability/Dockerfile" \
+            "services/otel/observability/config/prometheus.yml"
+
+          changed_for "arc-friday-collector" \
+            "services/otel/telemetry/Dockerfile" \
+            "services/otel/telemetry/config/"
+
+          changed_for "arc-friday-clickhouse" \
+            "services/otel/observability/clickhouse.Dockerfile" \
+            "services/otel/observability/config/clickhouse-config.xml" \
+            "services/otel/observability/config/clickhouse-cluster.xml" \
+            "services/otel/observability/config/clickhouse-users.xml" \
+            "services/otel/observability/config/custom-function.xml"
+
+          changed_for "arc-friday-migrator" \
+            "services/otel/observability/migrator.Dockerfile"
+
+          changed_for "arc-friday-zookeeper" \
+            "services/otel/observability/zookeeper.Dockerfile"
+
+      - name: Resolve pipeline mode
+        id: mode
+        run: |
+          EVENT="${{ github.event_name }}"
+          REF="${{ github.ref }}"
+          MODE="${{ github.event.inputs.mode || 'ci' }}"
+
+          # Push on: main branch merges OR manual release mode
+          if [ "$MODE" = "release" ] || ([ "$EVENT" = "push" ] && [ "$REF" = "refs/heads/main" ]); then
+            echo "push-image=true" >> $GITHUB_OUTPUT
+          else
+            echo "push-image=false" >> $GITHUB_OUTPUT
+          fi
+
+  # ── arc-friday: bakes prometheus.yml ──────────────────────────────────────
+  build-arc-friday:
+    name: arc-friday
+    needs: changed
+    if: needs.changed.outputs.arc-friday == 'true'
+    uses: ./.github/workflows/_reusable-build.yml
+    with:
+      service-name: arc-friday
+      service-path: services/otel/observability
+      dockerfile: Dockerfile
+      platforms: linux/amd64,linux/arm64
+      push-image: ${{ needs.changed.outputs.push-image == 'true' }}
+      generate-sbom: ${{ needs.changed.outputs.push-image == 'true' }}
+      image-prefix: ghcr.io/arc-framework
+    secrets: inherit
+
+  # ── arc-friday-collector: bakes otel-collector configs ────────────────────
+  build-arc-friday-collector:
+    name: arc-friday-collector
+    needs: changed
+    if: needs.changed.outputs.arc-friday-collector == 'true'
+    uses: ./.github/workflows/_reusable-build.yml
+    with:
+      service-name: arc-friday-collector
+      service-path: services/otel/telemetry
+      dockerfile: Dockerfile
+      platforms: linux/amd64,linux/arm64
+      push-image: ${{ needs.changed.outputs.push-image == 'true' }}
+      generate-sbom: ${{ needs.changed.outputs.push-image == 'true' }}
+      image-prefix: ghcr.io/arc-framework
+    secrets: inherit
+
+  # ── arc-friday-clickhouse: bakes config XML + downloads UDF ───────────────
+  build-arc-friday-clickhouse:
+    name: arc-friday-clickhouse
+    needs: changed
+    if: needs.changed.outputs.arc-friday-clickhouse == 'true'
+    uses: ./.github/workflows/_reusable-build.yml
+    with:
+      service-name: arc-friday-clickhouse
+      service-path: services/otel/observability
+      dockerfile: clickhouse.Dockerfile
+      platforms: linux/amd64,linux/arm64
+      push-image: ${{ needs.changed.outputs.push-image == 'true' }}
+      generate-sbom: ${{ needs.changed.outputs.push-image == 'true' }}
+      image-prefix: ghcr.io/arc-framework
+    secrets: inherit
+
+  # ── arc-friday-migrator: label-only re-tag (still needs docker build) ─────
+  build-arc-friday-migrator:
+    name: arc-friday-migrator
+    needs: changed
+    if: needs.changed.outputs.arc-friday-migrator == 'true'
+    uses: ./.github/workflows/_reusable-build.yml
+    with:
+      service-name: arc-friday-migrator
+      service-path: services/otel/observability
+      dockerfile: migrator.Dockerfile
+      platforms: linux/amd64,linux/arm64
+      push-image: ${{ needs.changed.outputs.push-image == 'true' }}
+      generate-sbom: false
+      image-prefix: ghcr.io/arc-framework
+    secrets: inherit
+
+  # ── arc-friday-zookeeper: label-only re-tag, amd64 only (no upstream arm64)
+  build-arc-friday-zookeeper:
+    name: arc-friday-zookeeper
+    needs: changed
+    if: needs.changed.outputs.arc-friday-zookeeper == 'true'
+    uses: ./.github/workflows/_reusable-build.yml
+    with:
+      service-name: arc-friday-zookeeper
+      service-path: services/otel/observability
+      dockerfile: zookeeper.Dockerfile
+      platforms: linux/amd64
+      push-image: ${{ needs.changed.outputs.push-image == 'true' }}
+      generate-sbom: false
+      image-prefix: ghcr.io/arc-framework
+    secrets: inherit
+
+  # ── Security scan (non-blocking in CI; releases use otel-release.yml) ─────
+  security:
+    name: Security Scan
+    needs:
+      - build-arc-friday
+      - build-arc-friday-collector
+      - build-arc-friday-clickhouse
+    if: always() && !cancelled()
+    uses: ./.github/workflows/_reusable-security.yml
+    with:
+      scan-type: fs
+      scan-target: services/otel
+      severity: CRITICAL,HIGH,MEDIUM
+      fail-on-severity: CRITICAL
+      block-on-failure: false
+      service-name: arc-friday-stack
+      create-issues: false
+    secrets: inherit

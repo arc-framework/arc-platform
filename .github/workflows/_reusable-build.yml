@@ -1,0 +1,283 @@
+name: Reusable Build Workflow
+
+# Reusable workflow for building Docker images with caching
+# Called by: pr-checks.yml, main-deploy.yml
+#
+# Features:
+#   - 3-tier caching (tools, dependencies, Docker layers)
+#   - Multi-platform builds (amd64, arm64)
+#   - SBOM generation (when pushing)
+#   - Build time and image size tracking
+#
+# Inputs:
+#   - service-name:  Name of the service to build
+#   - service-path:  Path to the service directory (Dockerfile must be inside)
+#   - push-image:    Whether to push to registry
+#   - platforms:     Target platforms (comma-separated)
+#   - image-prefix:  Override registry/org (e.g. ghcr.io/arc-framework vs ghcr.io/org/repo)
+#   - latest-tag:    Also push :latest alongside the versioned tag (for releases)
+#   - image-tag:     Explicit tag (default: sha-{short})
+#   - generate-sbom: Generate SBOM on push
+#   - dockerfile:    Dockerfile name relative to service-path
+#
+# Outputs:
+#   - image-digest:    SHA256 digest of built image
+#   - image-size:      Size of the image in MB
+#   - build-duration:  Build time in seconds
+#   - image-ref:       Full image reference (registry/image:tag)
+
+on:
+  workflow_call:
+    inputs:
+      service-name:
+        description: 'Name of the service to build'
+        required: true
+        type: string
+      service-path:
+        description: 'Path to the service directory'
+        required: true
+        type: string
+      push-image:
+        description: 'Push image to registry'
+        required: false
+        type: boolean
+        default: false
+      platforms:
+        description: 'Target platforms (comma-separated)'
+        required: false
+        type: string
+        default: 'linux/amd64'
+      registry:
+        description: 'Container registry'
+        required: false
+        type: string
+        default: 'ghcr.io'
+      image-tag:
+        description: 'Image tag (default: github.sha)'
+        required: false
+        type: string
+        default: ''
+      generate-sbom:
+        description: 'Generate SBOM for the image'
+        required: false
+        type: boolean
+        default: true
+      dockerfile:
+        description: 'Path to Dockerfile (relative to service-path)'
+        required: false
+        type: string
+        default: 'Dockerfile'
+      image-prefix:
+        description: 'Override registry/org prefix (e.g. ghcr.io/arc-framework). Defaults to registry/github.repository'
+        required: false
+        type: string
+        default: ''
+      latest-tag:
+        description: 'Also push :latest tag alongside the versioned tag (use for releases)'
+        required: false
+        type: boolean
+        default: false
+    outputs:
+      image-digest:
+        description: 'SHA256 digest of the built image'
+        value: ${{ jobs.build.outputs.digest }}
+      image-size:
+        description: 'Size of the image in MB'
+        value: ${{ jobs.build.outputs.size }}
+      build-duration:
+        description: 'Build duration in seconds'
+        value: ${{ jobs.build.outputs.duration }}
+      image-ref:
+        description: 'Full image reference (registry/image:tag)'
+        value: ${{ jobs.build.outputs.image-ref }}
+      cache-hit:
+        description: 'Whether cache was used'
+        value: ${{ jobs.build.outputs.cache-hit }}
+
+jobs:
+  build:
+    name: Build ${{ inputs.service-name }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+      size: ${{ steps.size.outputs.size }}
+      duration: ${{ steps.duration.outputs.duration }}
+      image-ref: ${{ steps.meta.outputs.image-ref }}
+      cache-hit: ${{ steps.cache-check.outputs.cache-hit }}
+    steps:
+      - name: Record start time
+        id: start
+        run: echo "time=$(date +%s)" >> $GITHUB_OUTPUT
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate service path
+        id: validate
+        run: |
+          if [ ! -d "${{ inputs.service-path }}" ]; then
+            echo "::warning::Service path not found: ${{ inputs.service-path }}"
+            echo "valid=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          DOCKERFILE="${{ inputs.service-path }}/${{ inputs.dockerfile }}"
+          if [ ! -f "$DOCKERFILE" ]; then
+            echo "::warning::Dockerfile not found: $DOCKERFILE"
+            echo "valid=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Building from: ${{ inputs.service-path }}"
+          echo "Dockerfile: $DOCKERFILE"
+          echo "valid=true" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        if: steps.validate.outputs.valid == 'true'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        if: steps.validate.outputs.valid == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        if: steps.validate.outputs.valid == 'true' && inputs.push-image
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate image metadata
+        id: meta
+        if: steps.validate.outputs.valid == 'true'
+        run: |
+          SERVICE="${{ inputs.service-name }}"
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+
+          # image-prefix overrides the default registry/repo path
+          if [ -n "${{ inputs.image-prefix }}" ]; then
+            PREFIX="${{ inputs.image-prefix }}"
+          else
+            PREFIX="${{ inputs.registry }}/${{ github.repository }}"
+          fi
+
+          # Primary tag: explicit image-tag input, or sha-{short} as default
+          if [ -n "${{ inputs.image-tag }}" ]; then
+            PRIMARY_TAG="${{ inputs.image-tag }}"
+          else
+            PRIMARY_TAG="sha-$SHORT_SHA"
+          fi
+
+          PRIMARY_REF="$PREFIX/$SERVICE:$PRIMARY_TAG"
+          SHA_REF="$PREFIX/$SERVICE:sha-$SHORT_SHA"
+
+          echo "image-ref=$PRIMARY_REF" >> $GITHUB_OUTPUT
+
+          if [ "${{ inputs.push-image }}" = "true" ]; then
+            # Always include the sha tag for traceability
+            if [ "$PRIMARY_REF" = "$SHA_REF" ]; then
+              TAGS="$PRIMARY_REF"
+            else
+              TAGS="$PRIMARY_REF,$SHA_REF"
+            fi
+
+            # latest-tag=true (release mode): also push :latest
+            # latest-tag=false (ci mode): no extra tag
+            if [ "${{ inputs.latest-tag }}" = "true" ]; then
+              TAGS="$TAGS,$PREFIX/$SERVICE:latest"
+            fi
+
+            echo "tags=$TAGS" >> $GITHUB_OUTPUT
+          else
+            echo "tags=$PRIMARY_REF" >> $GITHUB_OUTPUT
+          fi
+
+          echo "Image reference: $PRIMARY_REF"
+
+      - name: Check cache status
+        id: cache-check
+        if: steps.validate.outputs.valid == 'true'
+        run: echo "cache-hit=unknown" >> $GITHUB_OUTPUT
+
+      - name: Build image
+        id: build
+        if: steps.validate.outputs.valid == 'true'
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ inputs.service-path }}
+          file: ${{ inputs.service-path }}/${{ inputs.dockerfile }}
+          platforms: ${{ inputs.platforms }}
+          push: ${{ inputs.push-image }}
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha,scope=${{ inputs.service-name }}
+          cache-to: type=gha,mode=max,scope=${{ inputs.service-name }}
+          sbom: ${{ inputs.generate-sbom && inputs.push-image }}
+          provenance: ${{ inputs.push-image }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
+            arc.service.name=${{ inputs.service-name }}
+            arc.build.workflow-run-id=${{ github.run_id }}
+
+      - name: Calculate image size
+        id: size
+        if: steps.validate.outputs.valid == 'true' && inputs.push-image
+        run: |
+          IMAGE_REF="${{ steps.meta.outputs.image-ref }}"
+          if docker image inspect "$IMAGE_REF" > /dev/null 2>&1; then
+            SIZE_BYTES=$(docker image inspect "$IMAGE_REF" --format='{{.Size}}')
+            SIZE_MB=$((SIZE_BYTES / 1024 / 1024))
+          else
+            SIZE_MB="N/A"
+          fi
+          echo "size=$SIZE_MB" >> $GITHUB_OUTPUT
+          echo "Image size: ${SIZE_MB}MB"
+
+      - name: Calculate build duration
+        id: duration
+        if: steps.validate.outputs.valid == 'true'
+        run: |
+          END_TIME=$(date +%s)
+          START_TIME=${{ steps.start.outputs.time }}
+          DURATION=$((END_TIME - START_TIME))
+          echo "duration=$DURATION" >> $GITHUB_OUTPUT
+          echo "Build duration: ${DURATION}s"
+
+      - name: Generate build summary
+        if: steps.validate.outputs.valid == 'true'
+        run: |
+          echo "## Build Results: ${{ inputs.service-name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Service** | \`${{ inputs.service-name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Path** | \`${{ inputs.service-path }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Platforms** | ${{ inputs.platforms }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Duration** | ${{ steps.duration.outputs.duration }}s |" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ inputs.push-image }}" = "true" ]; then
+            echo "| **Image** | \`${{ steps.meta.outputs.image-ref }}\` |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Digest** | \`${{ steps.build.outputs.digest }}\` |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Size** | ${{ steps.size.outputs.size }}MB |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| **Push** | ⏭️ Skipped (build only) |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Build completed successfully" >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload SBOM artifact
+        if: steps.validate.outputs.valid == 'true' && inputs.generate-sbom && inputs.push-image
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ inputs.service-name }}
+          path: |
+            ${{ inputs.service-path }}/*.spdx.json
+            ${{ inputs.service-path }}/*.cdx.json
+          if-no-files-found: ignore
+          retention-days: 30

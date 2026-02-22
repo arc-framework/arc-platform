@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<!--
+  ClickHouse cluster configuration for arc-friday observability stack.
+  Configures ZooKeeper connection (for replica metadata) and
+  single-node distributed cluster definition.
+-->
+<clickhouse>
+    <!-- ZooKeeper: used by ClickHouse for replicated table coordination -->
+    <zookeeper>
+        <node index="1">
+            <host>arc-friday-zookeeper</host>
+            <port>2181</port>
+        </node>
+    </zookeeper>
+
+    <!-- Cluster definition: single-shard, single-replica for local development -->
+    <remote_servers>
+        <cluster>
+            <shard>
+                <replica>
+                    <host>arc-friday-clickhouse</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </cluster>
+    </remote_servers>
+</clickhouse>

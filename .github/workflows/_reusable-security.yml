@@ -1,0 +1,271 @@
+name: Reusable Security Workflow
+
+# Reusable workflow for security scanning with Trivy
+# Called by: pr-checks.yml, main-deploy.yml, scheduled-maintenance.yml
+#
+# Features:
+#   - Filesystem and image scanning
+#   - CVE detection with configurable severity
+#   - SARIF report generation for GitHub Security tab
+#   - Automatic issue creation for critical CVEs
+#
+# Inputs:
+#   - scan-type: fs (filesystem) or image
+#   - scan-target: Path or image name to scan
+#   - severity: Severity levels to report
+#   - fail-on-severity: Severity level that fails the build
+
+on:
+  workflow_call:
+    inputs:
+      scan-type:
+        description: 'Type of scan: fs (filesystem) or image'
+        required: false
+        type: string
+        default: 'fs'
+      scan-target:
+        description: 'Target to scan (path for fs, image name for image)'
+        required: false
+        type: string
+        default: '.'
+      severity:
+        description: 'Severity levels to report (comma-separated)'
+        required: false
+        type: string
+        default: 'CRITICAL,HIGH,MEDIUM'
+      fail-on-severity:
+        description: 'Severity level that fails the build'
+        required: false
+        type: string
+        default: 'CRITICAL'
+      ignore-unfixed:
+        description: 'Ignore vulnerabilities without fixes'
+        required: false
+        type: boolean
+        default: true
+      upload-sarif:
+        description: 'Upload SARIF report to GitHub Security tab'
+        required: false
+        type: boolean
+        default: true
+      create-issues:
+        description: 'Create GitHub issues for critical CVEs'
+        required: false
+        type: boolean
+        default: false
+      block-on-failure:
+        description: 'Fail the workflow if security issues are found (default: false for non-blocking)'
+        required: false
+        type: boolean
+        default: false
+      service-name:
+        description: 'Service name (for reporting)'
+        required: false
+        type: string
+        default: 'unknown'
+    outputs:
+      cve-count:
+        description: 'Total number of CVEs found'
+        value: ${{ jobs.scan.outputs.cve-count }}
+      critical-count:
+        description: 'Number of CRITICAL CVEs'
+        value: ${{ jobs.scan.outputs.critical-count }}
+      high-count:
+        description: 'Number of HIGH CVEs'
+        value: ${{ jobs.scan.outputs.high-count }}
+      scan-status:
+        description: 'Scan status (pass/fail)'
+        value: ${{ jobs.scan.outputs.status }}
+
+jobs:
+  scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      issues: write
+    outputs:
+      cve-count: ${{ steps.count.outputs.total }}
+      critical-count: ${{ steps.count.outputs.critical }}
+      high-count: ${{ steps.count.outputs.high }}
+      status: ${{ steps.evaluate.outputs.status }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Trivy
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+
+      - name: Run Trivy scan (filesystem)
+        if: ${{ inputs.scan-type == 'fs' }}
+        id: trivy-fs
+        run: |
+          echo "Scanning filesystem: ${{ inputs.scan-target }}"
+
+          IGNORE_FLAG=""
+          if [ "${{ inputs.ignore-unfixed }}" = "true" ]; then IGNORE_FLAG="--ignore-unfixed"; fi
+
+          trivy fs \
+            --severity "${{ inputs.severity }}" \
+            $IGNORE_FLAG \
+            --format json \
+            --output trivy-results.json \
+            "${{ inputs.scan-target }}" || true
+
+          trivy fs \
+            --severity "${{ inputs.severity }}" \
+            $IGNORE_FLAG \
+            --format sarif \
+            --output trivy-results.sarif \
+            "${{ inputs.scan-target }}" || true
+
+          trivy fs \
+            --severity "${{ inputs.severity }}" \
+            $IGNORE_FLAG \
+            --format table \
+            "${{ inputs.scan-target }}" > trivy-table.txt 2>&1 || true
+
+      - name: Run Trivy scan (image)
+        if: ${{ inputs.scan-type == 'image' }}
+        id: trivy-image
+        run: |
+          echo "Scanning image: ${{ inputs.scan-target }}"
+
+          IGNORE_FLAG=""
+          if [ "${{ inputs.ignore-unfixed }}" = "true" ]; then IGNORE_FLAG="--ignore-unfixed"; fi
+
+          trivy image \
+            --severity "${{ inputs.severity }}" \
+            $IGNORE_FLAG \
+            --format json \
+            --output trivy-results.json \
+            "${{ inputs.scan-target }}" || true
+
+          trivy image \
+            --severity "${{ inputs.severity }}" \
+            $IGNORE_FLAG \
+            --format sarif \
+            --output trivy-results.sarif \
+            "${{ inputs.scan-target }}" || true
+
+          trivy image \
+            --severity "${{ inputs.severity }}" \
+            $IGNORE_FLAG \
+            --format table \
+            "${{ inputs.scan-target }}" > trivy-table.txt 2>&1 || true
+
+      - name: Count vulnerabilities
+        id: count
+        run: |
+          if [ -f trivy-results.json ]; then
+            CRITICAL=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' trivy-results.json 2>/dev/null || echo "0")
+            HIGH=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "HIGH")] | length' trivy-results.json 2>/dev/null || echo "0")
+            MEDIUM=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "MEDIUM")] | length' trivy-results.json 2>/dev/null || echo "0")
+            LOW=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "LOW")] | length' trivy-results.json 2>/dev/null || echo "0")
+            TOTAL=$((CRITICAL + HIGH + MEDIUM + LOW))
+          else
+            CRITICAL=0; HIGH=0; MEDIUM=0; LOW=0; TOTAL=0
+          fi
+
+          echo "critical=$CRITICAL" >> $GITHUB_OUTPUT
+          echo "high=$HIGH" >> $GITHUB_OUTPUT
+          echo "medium=$MEDIUM" >> $GITHUB_OUTPUT
+          echo "low=$LOW" >> $GITHUB_OUTPUT
+          echo "total=$TOTAL" >> $GITHUB_OUTPUT
+          echo "Found: $CRITICAL CRITICAL, $HIGH HIGH, $MEDIUM MEDIUM, $LOW LOW"
+
+      - name: Evaluate scan results
+        id: evaluate
+        run: |
+          CRITICAL=${{ steps.count.outputs.critical }}
+          HIGH=${{ steps.count.outputs.high }}
+          FAIL_SEVERITY="${{ inputs.fail-on-severity }}"
+          STATUS="pass"
+
+          case "$FAIL_SEVERITY" in
+            CRITICAL)
+              if [ "$CRITICAL" -gt 0 ]; then STATUS="fail"; fi ;;
+            HIGH)
+              if [ "$CRITICAL" -gt 0 ] || [ "$HIGH" -gt 0 ]; then STATUS="fail"; fi ;;
+            MEDIUM)
+              if [ "${{ steps.count.outputs.total }}" -gt 0 ]; then STATUS="fail"; fi ;;
+          esac
+
+          echo "status=$STATUS" >> $GITHUB_OUTPUT
+          echo "Scan status: $STATUS (fail-on: $FAIL_SEVERITY)"
+
+      - name: Generate scan summary
+        run: |
+          echo "## Security Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Target:** \`${{ inputs.scan-target }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Type:** ${{ inputs.scan-type }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Service:** ${{ inputs.service-name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Severity | Count |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| CRITICAL | ${{ steps.count.outputs.critical }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| HIGH | ${{ steps.count.outputs.high }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| MEDIUM | ${{ steps.count.outputs.medium }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| LOW | ${{ steps.count.outputs.low }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Total** | **${{ steps.count.outputs.total }}** |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ steps.evaluate.outputs.status }}" = "pass" ]; then
+            echo "### ✅ Scan Passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### ❌ Scan Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ -f trivy-table.txt ] && [ -s trivy-table.txt ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "<details><summary>Detailed Results</summary>" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            head -100 trivy-table.txt >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "</details>" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload SARIF to GitHub Security
+        if: ${{ inputs.upload-sarif && always() }}
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy-${{ inputs.service-name }}
+        continue-on-error: true
+
+      - name: Upload scan results artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-scan-${{ inputs.service-name }}
+          path: |
+            trivy-results.json
+            trivy-results.sarif
+            trivy-table.txt
+          retention-days: 30
+
+      - name: Create issue for critical CVEs
+        if: ${{ inputs.create-issues && steps.count.outputs.critical > 0 }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = `CRITICAL CVE detected in ${{ inputs.service-name }}`;
+            const body = `## Security Alert\n\n**${{ steps.count.outputs.critical }}** CRITICAL vulnerability(ies) detected in \`${{ inputs.service-name }}\`.\n\n### Summary\n- **CRITICAL:** ${{ steps.count.outputs.critical }}\n- **HIGH:** ${{ steps.count.outputs.high }}\n- **Target:** \`${{ inputs.scan-target }}\`\n\nSee the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.`;
+            const issues = await github.rest.issues.listForRepo({ owner: context.repo.owner, repo: context.repo.repo, state: 'open', labels: 'security,cve' });
+            const existing = issues.data.find(i => i.title === title);
+            if (!existing) {
+              await github.rest.issues.create({ owner: context.repo.owner, repo: context.repo.repo, title, body, labels: ['security', 'cve', 'critical', 'automated'] });
+            }
+
+      - name: Report security issues
+        if: ${{ steps.evaluate.outputs.status == 'fail' }}
+        run: |
+          if [ "${{ inputs.block-on-failure }}" = "true" ]; then
+            echo "::error::Security scan failed — found vulnerabilities at or above ${{ inputs.fail-on-severity }} severity"
+            exit 1
+          else
+            echo "::warning::Security scan found vulnerabilities at or above ${{ inputs.fail-on-severity }} severity (non-blocking)"
+          fi

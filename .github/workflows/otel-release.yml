@@ -1,0 +1,227 @@
+name: OTEL Release
+
+# Full release pipeline for arc-friday-* images.
+# Triggered by pushing a version tag: git tag otel/v1.2.3 && git push --tags
+#
+# Tag format:  otel/v{MAJOR}.{MINOR}.{PATCH}  (e.g. otel/v0.1.0)
+# Pre-release: otel/v1.0.0-rc1, otel/v1.0.0-alpha, otel/v1.0.0-beta
+#
+# Image tags published per image:
+#   otel-v{x.y.z}  — pinned reference for service.yaml / docker-compose.yml
+#   sha-{short}    — traceability back to the exact commit
+#   latest         — convenience tag for local dev
+#
+# Version bump rules:
+#   upstream base image version bump  → MINOR
+#   config change (baked files only)  → PATCH
+#   breaking interface change         → MAJOR
+#
+# Pipeline:
+#   1. Build all 5 images in parallel (push-image: true, latest-tag: true)
+#   2. Security scan — CRITICAL CVEs block the release and file a GitHub issue
+#   3. Create GitHub release with image reference table
+
+on:
+  push:
+    tags:
+      - 'otel/v*'
+
+permissions:
+  contents: write
+  packages: write
+  security-events: write
+  issues: write
+
+jobs:
+
+  # ── Derive a Docker-safe image tag from the git tag ────────────────────────
+  # otel/v0.1.0 → otel-v0.1.0  (slashes are not valid in Docker image tags)
+  prepare:
+    name: Prepare Release
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag: ${{ steps.tag.outputs.image-tag }}
+      version: ${{ steps.tag.outputs.version }}
+      prerelease: ${{ steps.tag.outputs.prerelease }}
+    steps:
+      - name: Derive image tag and version
+        id: tag
+        run: |
+          GIT_TAG="${GITHUB_REF_NAME}"                     # otel/v0.1.0
+          IMAGE_TAG="${GIT_TAG/\//-}"                      # otel-v0.1.0
+          VERSION="${GIT_TAG#otel/v}"                      # 0.1.0
+
+          echo "image-tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+          # Mark as pre-release if tag contains -rc, -alpha, or -beta
+          if echo "$VERSION" | grep -qE '\-(rc|alpha|beta)'; then
+            echo "prerelease=true" >> $GITHUB_OUTPUT
+          else
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+          fi
+
+  # ── Build all 5 images in parallel ────────────────────────────────────────
+
+  build-arc-friday:
+    name: arc-friday
+    needs: prepare
+    uses: ./.github/workflows/_reusable-build.yml
+    with:
+      service-name: arc-friday
+      service-path: services/otel/observability
+      dockerfile: Dockerfile
+      platforms: linux/amd64,linux/arm64
+      push-image: true
+      latest-tag: true
+      image-tag: ${{ needs.prepare.outputs.image-tag }}
+      generate-sbom: true
+      image-prefix: ghcr.io/arc-framework
+    secrets: inherit
+
+  build-arc-friday-collector:
+    name: arc-friday-collector
+    needs: prepare
+    uses: ./.github/workflows/_reusable-build.yml
+    with:
+      service-name: arc-friday-collector
+      service-path: services/otel/telemetry
+      dockerfile: Dockerfile
+      platforms: linux/amd64,linux/arm64
+      push-image: true
+      latest-tag: true
+      image-tag: ${{ needs.prepare.outputs.image-tag }}
+      generate-sbom: true
+      image-prefix: ghcr.io/arc-framework
+    secrets: inherit
+
+  build-arc-friday-clickhouse:
+    name: arc-friday-clickhouse
+    needs: prepare
+    uses: ./.github/workflows/_reusable-build.yml
+    with:
+      service-name: arc-friday-clickhouse
+      service-path: services/otel/observability
+      dockerfile: clickhouse.Dockerfile
+      platforms: linux/amd64,linux/arm64
+      push-image: true
+      latest-tag: true
+      image-tag: ${{ needs.prepare.outputs.image-tag }}
+      generate-sbom: true
+      image-prefix: ghcr.io/arc-framework
+    secrets: inherit
+
+  build-arc-friday-migrator:
+    name: arc-friday-migrator
+    needs: prepare
+    uses: ./.github/workflows/_reusable-build.yml
+    with:
+      service-name: arc-friday-migrator
+      service-path: services/otel/observability
+      dockerfile: migrator.Dockerfile
+      platforms: linux/amd64,linux/arm64
+      push-image: true
+      latest-tag: true
+      image-tag: ${{ needs.prepare.outputs.image-tag }}
+      generate-sbom: false
+      image-prefix: ghcr.io/arc-framework
+    secrets: inherit
+
+  build-arc-friday-zookeeper:
+    name: arc-friday-zookeeper
+    needs: prepare
+    uses: ./.github/workflows/_reusable-build.yml
+    with:
+      service-name: arc-friday-zookeeper
+      service-path: services/otel/observability
+      dockerfile: zookeeper.Dockerfile
+      platforms: linux/amd64
+      push-image: true
+      latest-tag: true
+      image-tag: ${{ needs.prepare.outputs.image-tag }}
+      generate-sbom: false
+      image-prefix: ghcr.io/arc-framework
+    secrets: inherit
+
+  # ── Security scan — CRITICAL CVEs block the release ───────────────────────
+  security:
+    name: Security Gate
+    needs:
+      - build-arc-friday
+      - build-arc-friday-collector
+      - build-arc-friday-clickhouse
+    uses: ./.github/workflows/_reusable-security.yml
+    with:
+      scan-type: fs
+      scan-target: services/otel
+      severity: CRITICAL,HIGH
+      fail-on-severity: CRITICAL
+      block-on-failure: true
+      service-name: arc-friday-release
+      create-issues: true
+    secrets: inherit
+
+  # ── Create GitHub release ──────────────────────────────────────────────────
+  release:
+    name: GitHub Release
+    needs:
+      - prepare
+      - build-arc-friday
+      - build-arc-friday-collector
+      - build-arc-friday-clickhouse
+      - build-arc-friday-migrator
+      - build-arc-friday-zookeeper
+      - security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate release notes
+        run: |
+          IMAGE_TAG="${{ needs.prepare.outputs.image-tag }}"
+          VERSION="${{ needs.prepare.outputs.version }}"
+          PREFIX="ghcr.io/arc-framework"
+
+          cat > release-notes.md << EOF
+          ## arc-friday OTEL Stack — ${VERSION}
+
+          ### Images
+
+          All images published to \`${PREFIX}\`:
+
+          | Image | Versioned Tag | Also Tagged |
+          |-------|--------------|-------------|
+          | \`arc-friday\` | \`${IMAGE_TAG}\` | \`latest\`, \`sha-*\` |
+          | \`arc-friday-collector\` | \`${IMAGE_TAG}\` | \`latest\`, \`sha-*\` |
+          | \`arc-friday-clickhouse\` | \`${IMAGE_TAG}\` | \`latest\`, \`sha-*\` |
+          | \`arc-friday-migrator\` | \`${IMAGE_TAG}\` | \`latest\`, \`sha-*\` |
+          | \`arc-friday-zookeeper\` | \`${IMAGE_TAG}\` | \`latest\`, \`sha-*\` |
+
+          ### Pull
+
+          \`\`\`bash
+          docker pull ${PREFIX}/arc-friday:${IMAGE_TAG}
+          \`\`\`
+
+          ### Upstream Versions Baked In
+
+          | Component | Version |
+          |-----------|---------|
+          | SigNoz | \`v0.112.0\` |
+          | OTEL Collector | \`v0.142.0\` |
+          | ClickHouse | \`25.5.6\` |
+          | ZooKeeper | \`3.7.1\` |
+
+          ### Local Dev
+
+          Update \`services/otel/docker-compose.yml\` image tags to \`${IMAGE_TAG}\`, or use \`latest\` to track the newest release.
+          EOF
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: 'OTEL Stack ${{ needs.prepare.outputs.version }}'
+          body_path: release-notes.md
+          draft: false
+          prerelease: ${{ needs.prepare.outputs.prerelease == 'true' }}

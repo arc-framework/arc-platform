@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<!--
+  Custom executable function registration for ClickHouse.
+  Registers histogramQuantile UDF — used by arc-friday metrics queries.
+  Binary is placed in user_scripts_path by init-clickhouse at startup.
+  ClickHouse discovers this file via user_defined_executable_functions_config glob (*function.xml).
+-->
+<functions>
+    <function>
+        <type>executable</type>
+        <name>histogramQuantile</name>
+        <return_type>Float64</return_type>
+        <argument>
+            <type>Array(Float64)</type>
+            <name>buckets</name>
+        </argument>
+        <argument>
+            <type>Array(Float64)</type>
+            <name>counts</name>
+        </argument>
+        <argument>
+            <type>Float64</type>
+            <name>quantile</name>
+        </argument>
+        <format>CSV</format>
+        <command>./histogramQuantile</command>
+    </function>
+</functions>

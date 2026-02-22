@@ -1,0 +1,36 @@
+{
+  "settings": {
+    "rate_limit_delay_seconds": 30,
+    "description": "Observability stack vendor images — weekly re-tag from upstream"
+  },
+  "images": [
+    {
+      "source": "signoz/signoz:v0.112.0",
+      "target": "arc-friday",
+      "description": "Friday observability UI — SigNoz query service and frontend",
+      "platforms": ["linux/amd64", "linux/arm64"],
+      "required": true
+    },
+    {
+      "source": "signoz/signoz-otel-collector:v0.142.0",
+      "target": "arc-friday-collector",
+      "description": "Friday telemetry collector — SigNoz OTEL collector with OpAMP",
+      "platforms": ["linux/amd64", "linux/arm64"],
+      "required": true
+    },
+    {
+      "source": "clickhouse/clickhouse-server:25.5.6",
+      "target": "arc-friday-clickhouse",
+      "description": "Friday signal store — ClickHouse with ARC config and histogramQuantile UDF baked in",
+      "platforms": ["linux/amd64", "linux/arm64"],
+      "required": true
+    },
+    {
+      "source": "signoz/zookeeper:3.7.1",
+      "target": "arc-friday-zookeeper",
+      "description": "Friday coordination — ZooKeeper for ClickHouse replicated table metadata",
+      "platforms": ["linux/amd64", "linux/arm64"],
+      "required": true
+    }
+  ]
+}
