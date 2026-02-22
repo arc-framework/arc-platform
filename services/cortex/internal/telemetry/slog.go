@@ -42,3 +42,53 @@ func (t *TraceHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 func (t *TraceHandler) WithGroup(name string) slog.Handler {
 	return &TraceHandler{Handler: t.Handler.WithGroup(name)}
 }
+
+// TeeHandler fans out each log record to multiple slog.Handlers.
+// Used to write logs to both stdout (JSONHandler) and the OTEL log pipeline.
+type TeeHandler struct {
+	handlers []slog.Handler
+}
+
+// NewTeeHandler returns a handler that forwards every record to all given handlers.
+func NewTeeHandler(handlers ...slog.Handler) *TeeHandler {
+	return &TeeHandler{handlers: handlers}
+}
+
+// Enabled returns true if any child handler is enabled for the given level.
+func (t *TeeHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	for _, h := range t.handlers {
+		if h.Enabled(ctx, level) {
+			return true
+		}
+	}
+	return false
+}
+
+// Handle delivers the record to every enabled child handler.
+// Records are cloned before each delivery to prevent mutation races.
+func (t *TeeHandler) Handle(ctx context.Context, r slog.Record) error {
+	for _, h := range t.handlers {
+		if h.Enabled(ctx, r.Level) {
+			h.Handle(ctx, r.Clone()) //nolint:errcheck
+		}
+	}
+	return nil
+}
+
+// WithAttrs returns a new TeeHandler with the attrs propagated to all children.
+func (t *TeeHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	handlers := make([]slog.Handler, len(t.handlers))
+	for i, h := range t.handlers {
+		handlers[i] = h.WithAttrs(attrs)
+	}
+	return &TeeHandler{handlers: handlers}
+}
+
+// WithGroup returns a new TeeHandler with the group propagated to all children.
+func (t *TeeHandler) WithGroup(name string) slog.Handler {
+	handlers := make([]slog.Handler, len(t.handlers))
+	for i, h := range t.handlers {
+		handlers[i] = h.WithGroup(name)
+	}
+	return &TeeHandler{handlers: handlers}
+}

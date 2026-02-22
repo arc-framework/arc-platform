@@ -48,6 +48,11 @@ func buildAppContext(cfg *config.Config) (*AppContext, error) {
 			slog.Warn("OTEL provider init failed — telemetry disabled", "err", err)
 		} else {
 			app.otelProvider = tp
+			// Fan out: keep stdout (existing TraceHandler+JSONHandler) and add OTEL logs.
+			slog.SetDefault(slog.New(telemetry.NewTeeHandler(
+				slog.Default().Handler(),
+				tp.LogHandler,
+			)))
 		}
 	}
 
