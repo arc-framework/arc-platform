@@ -38,7 +38,10 @@ func NewRouter(o orchestratorService) *Router {
 	engine.GET("/health/deep", h.DeepHealth)
 	engine.GET("/ready", h.Ready)
 
-	// API docs — http://localhost:8081/api-docs/index.html
+	// API docs — http://localhost:8081/api-docs
+	engine.GET("/api-docs", func(c *gin.Context) {
+		c.Redirect(http.StatusMovedPermanently, "/api-docs/index.html")
+	})
 	engine.GET("/api-docs/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	return &Router{engine: engine}
