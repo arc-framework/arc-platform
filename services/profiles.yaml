@@ -6,13 +6,16 @@
 # Basic reasoning — minimal services to run an agent
 think:
   description: 'Minimal viable platform — just enough to think'
-  services: '*'
+  services:
+    - cortex
 
 # ─── reason ─────────────────────────────────────────────────────
 # Full reasoning stack — observability, identity, bootstrap
 reason:
   description: 'Development stack — observability and identity included'
-  services: '*'
+  services:
+    - cortex
+    - otel
 
 # ─── ultra-instinct ─────────────────────────────────────────────
 # Everything — voice, real-time, chaos testing, the full roster
