@@ -1,3 +1,3 @@
-# OpAMP manager config: connects collector to SigNoz for remote config management
-# SigNoz listens on port 4320 for OpAMP WebSocket connections (container-to-container only)
+# OpAMP manager config: connects collector to arc-friday for remote config management
+# arc-friday listens on port 4320 for OpAMP WebSocket connections (container-to-container only)
 server_endpoint: ws://arc-friday:4320/v1/opamp

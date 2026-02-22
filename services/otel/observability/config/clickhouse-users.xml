@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <!--
-  ClickHouse user configuration for SigNoz observability stack.
+  ClickHouse user configuration for arc-friday observability stack.
   Allows the default (no-password) user to connect from any container IP.
 -->
 <clickhouse>

@@ -3,8 +3,8 @@ name: arc-platform
 services:
 
   # ── ZooKeeper: ClickHouse coordination ───────────────────────────────────────
-  # NOTE: signoz/zookeeper:3.7.1 (base) requires root — known deviation from NFR-4.
-  # This is a SigNoz upstream constraint; non-root ZK is not supported.
+  # NOTE: upstream zookeeper base image requires root — known deviation from NFR-4.
+  # This is an upstream constraint; non-root ZK is not supported.
   arc-friday-zookeeper:
     build:
       context: ./observability
@@ -56,8 +56,8 @@ services:
       - arc_otel_net
     restart: unless-stopped
 
-  # ── Schema migration: synchronous (must complete before SigNoz starts) ────────
-  # Image: ARC-managed re-tag of signoz/signoz-schema-migrator — controlled via ghcr.io.
+  # ── Schema migration: synchronous (must complete before arc-friday starts) ───
+  # Image: ARC-managed re-tag of the upstream schema-migrator — controlled via ghcr.io.
   # Run `make otel-build` to produce the image before first `make otel-up`.
   arc-friday-migrator-sync:
     build:
@@ -94,7 +94,7 @@ services:
     networks:
       - arc_otel_net
 
-  # ── Friday: SigNoz query service + UI ────────────────────────────────────────
+  # ── Friday: arc-friday query service + UI ────────────────────────────────────
   # Internal port: 8080. Mapped to host as 127.0.0.1:3301:8080.
   # Prometheus config is baked into the image.
   arc-friday:
@@ -118,7 +118,7 @@ services:
       - GODEBUG=netdns=go
       - TELEMETRY_ENABLED=false
     ports:
-      - "127.0.0.1:3301:8080"   # SigNoz UI — localhost only, not 0.0.0.0
+      - "127.0.0.1:3301:8080"   # arc-friday UI — localhost only, not 0.0.0.0
     volumes:
       - signoz-data:/var/lib/signoz/
     healthcheck:

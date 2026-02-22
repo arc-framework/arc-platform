@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <!--
-  ClickHouse cluster configuration for SigNoz observability stack.
+  ClickHouse cluster configuration for arc-friday observability stack.
   Configures ZooKeeper connection (for replica metadata) and
   single-node distributed cluster definition.
 -->

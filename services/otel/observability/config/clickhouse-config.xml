@@ -1,11 +1,11 @@
 <?xml version="1.0"?>
 <!--
-  ClickHouse custom configuration for SigNoz observability stack.
+  ClickHouse custom configuration for arc-friday observability stack.
   Mounted as config.d/memory.xml (overlay on top of default config).
   Minimum system requirement: 4 GB RAM allocated to ClickHouse.
 -->
 <clickhouse>
-    <!-- Maximum memory the server may use: 4 GB minimum for SigNoz -->
+    <!-- Maximum memory the server may use: 4 GB minimum for arc-friday -->
     <max_server_memory_usage>4294967296</max_server_memory_usage>
 
     <!-- Path where executable user-defined functions (UDFs) live.

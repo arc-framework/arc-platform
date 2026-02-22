@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!--
   Custom executable function registration for ClickHouse.
-  Registers histogramQuantile UDF — used by SigNoz metrics queries.
+  Registers histogramQuantile UDF — used by arc-friday metrics queries.
   Binary is placed in user_scripts_path by init-clickhouse at startup.
   ClickHouse discovers this file via user_defined_executable_functions_config glob (*function.xml).
 -->

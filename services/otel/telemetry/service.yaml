@@ -1,5 +1,5 @@
 codename: widow
-tech: signoz-otel-collector
+tech: arc-friday-collector
 upstream: signoz/signoz-otel-collector
 ports:
   - 4317   # OTLP gRPC

@@ -1,4 +1,4 @@
-# Prometheus configuration for SigNoz query service
+# Prometheus configuration for arc-friday query service
 global:
   scrape_interval: 5s
   evaluation_interval: 15s
