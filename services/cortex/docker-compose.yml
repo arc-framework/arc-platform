@@ -1,0 +1,39 @@
+name: arc-platform
+
+services:
+
+  # ── Cortex: platform bootstrap service ───────────────────────────────────────
+  # Provisions Postgres, NATS, Pulsar, and Redis on startup, then exposes
+  # a health / status HTTP API on port 8081.
+  #
+  # Networks:
+  #   arc_net      — reaches infra services (arc-oracle, arc-flash, arc-strange, arc-sonic)
+  #   arc_otel_net — reaches arc-friday-collector for OTLP telemetry
+  #
+  # Infra services (arc-oracle, arc-flash, arc-sonic, arc-strange) are defined
+  # in their own service stacks. Start the relevant profile first, then:
+  #   make cortex-docker-up
+  arc-cortex:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/arc-framework/arc-cortex:latest
+    container_name: arc-cortex
+    ports:
+      - "127.0.0.1:8081:8081"   # HTTP API — localhost only
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - arc_net
+      - arc_otel_net
+    restart: unless-stopped
+
+networks:
+  arc_net:
+    external: true   # created by the platform infra stack
+  arc_otel_net:
+    external: true   # created by: make otel-up

@@ -3,6 +3,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 # REGISTRY, ORG, BUILD_FLAGS inherited from root Makefile / otel.mk
+COMPOSE_CORTEX := docker compose -f services/cortex/docker-compose.yml
 CORTEX_IMAGE   := $(REGISTRY)/$(ORG)/arc-cortex
 CORTEX_VERSION ?= latest
 CORTEX_DIR     := services/cortex
@@ -20,7 +21,8 @@ CORTEX_LOCAL_ENV := \
 # To enable with arc-friday-collector: make cortex-run CORTEX_TELEMETRY_OTLP_ENDPOINT=127.0.0.1:4317
 
 .PHONY: cortex-help cortex-build cortex-build-fresh cortex-push cortex-publish cortex-tag \
-        cortex-bin cortex-run cortex-bootstrap-local cortex-test cortex-lint cortex-check
+        cortex-bin cortex-run cortex-bootstrap-local cortex-test cortex-lint cortex-check \
+        cortex-docker-up cortex-docker-down cortex-docker-logs cortex-docker-ps cortex-docker-bootstrap
 
 ## cortex-help: Cortex bootstrap service (arc-cortex — provisions Postgres, NATS, Pulsar, Redis)
 cortex-help:
@@ -114,3 +116,33 @@ cortex-run: cortex-bin
 cortex-bootstrap-local: cortex-bin
 	@printf "$(COLOR_INFO)→$(COLOR_OFF) Running cortex bootstrap against localhost infra...\n"
 	@$(CORTEX_LOCAL_ENV) $(CORTEX_BIN) bootstrap
+
+# ─── Docker Compose ───────────────────────────────────────────────────────────
+# Requires: make otel-up (creates arc_otel_net) and the platform infra stack
+# (creates arc_net with arc-oracle, arc-flash, arc-sonic, arc-strange).
+# Service names resolve automatically inside Docker — no env var overrides needed.
+
+## cortex-docker-up: Start arc-cortex in Docker (requires arc_otel_net + arc_net)
+cortex-docker-up: cortex-build
+	@printf "$(COLOR_INFO)→$(COLOR_OFF) Starting arc-cortex in Docker...\n"
+	$(COMPOSE_CORTEX) up -d
+	@printf "$(COLOR_OK)✓$(COLOR_OFF) arc-cortex started — API on http://localhost:8081\n"
+
+## cortex-docker-down: Stop arc-cortex container
+cortex-docker-down:
+	@printf "$(COLOR_INFO)→$(COLOR_OFF) Stopping arc-cortex...\n"
+	$(COMPOSE_CORTEX) down
+	@printf "$(COLOR_OK)✓$(COLOR_OFF) Stopped\n"
+
+## cortex-docker-logs: Stream arc-cortex logs
+cortex-docker-logs:
+	$(COMPOSE_CORTEX) logs -f
+
+## cortex-docker-ps: Show arc-cortex container status
+cortex-docker-ps:
+	$(COMPOSE_CORTEX) ps
+
+## cortex-docker-bootstrap: Run one-shot bootstrap inside the running Docker container
+cortex-docker-bootstrap:
+	@printf "$(COLOR_INFO)→$(COLOR_OFF) Running bootstrap inside arc-cortex container...\n"
+	@docker exec arc-cortex /usr/local/bin/cortex bootstrap
