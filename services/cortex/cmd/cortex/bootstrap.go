@@ -21,13 +21,13 @@ var bootstrapCmd = &cobra.Command{
 Postgres schemas, NATS streams, Pulsar topics, and Redis configuration.
 
 The command runs once, prints a JSON result to stdout, and exits 0 on
-success or non-zero on failure. The full bootstrap logic is implemented
-in TASK-030; this wires the CLI entry point.`,
+success or non-zero on failure.`,
 	RunE: runBootstrap,
 }
 
 func runBootstrap(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), cfg.Bootstrap.Timeout)
+	defer cancel()
 
 	tp, err := telemetry.InitProvider(
 		ctx,

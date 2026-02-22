@@ -21,9 +21,8 @@ var serverCmd = &cobra.Command{
 	Short: "Start the Cortex HTTP API server",
 	Long: `Start the Cortex HTTP server on the configured port (default :8081).
 
-The server exposes a /health endpoint and will host the full platform API
-once TASK-031 is complete. It initialises OTEL telemetry on startup and
-shuts down cleanly on SIGTERM or SIGINT.`,
+The server exposes the full platform bootstrap API and initialises OTEL
+telemetry on startup. It shuts down cleanly on SIGTERM or SIGINT.`,
 	RunE: runServer,
 }
 

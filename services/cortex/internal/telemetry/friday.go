@@ -39,12 +39,6 @@ func InitProvider(ctx context.Context, endpoint, serviceName string, useInsecure
 		return nil, fmt.Errorf("building OTEL resource: %w", err)
 	}
 
-	dialOpts := []grpc.DialOption{
-		// WithBlock would hang startup if the collector is unreachable.
-		grpc.WithBlock(), // intentionally not set — non-blocking dial
-	}
-	_ = dialOpts // we build the connection options below instead
-
 	connOpts := []grpc.DialOption{}
 	if useInsecure {
 		connOpts = append(connOpts, grpc.WithTransportCredentials(insecure.NewCredentials()))
