@@ -3,6 +3,7 @@ package telemetry
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -80,6 +81,13 @@ func InitProvider(ctx context.Context, endpoint, serviceName string, useInsecure
 		sdkmetric.WithResource(res),
 	)
 	otel.SetMeterProvider(mp)
+
+	// Downgrade SDK export errors (e.g. collector temporarily unreachable) from INFO
+	// to WARN so they don't flood logs during collector restarts. The gRPC client
+	// reconnects automatically — no action is needed on export failure.
+	otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
+		slog.Warn("otel export error (will retry)", "err", err)
+	}))
 
 	shutdown := func(ctx context.Context) error {
 		// Export failures (e.g. collector unreachable) are intentionally swallowed —

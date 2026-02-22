@@ -97,7 +97,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("server.write_timeout", 10*time.Second)
 	v.SetDefault("server.shutdown_timeout", 30*time.Second)
 
-	v.SetDefault("telemetry.otlp_endpoint", "arc-widow:4317")
+	v.SetDefault("telemetry.otlp_endpoint", "arc-friday-collector:4317")
 	v.SetDefault("telemetry.otlp_insecure", true)
 	v.SetDefault("telemetry.service_name", "arc-cortex")
 	v.SetDefault("telemetry.log_level", "info")

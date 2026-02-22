@@ -17,7 +17,7 @@ CORTEX_LOCAL_ENV := \
   CORTEX_BOOTSTRAP_REDIS_HOST=localhost \
   CORTEX_TELEMETRY_OTLP_ENDPOINT=
 # ^ empty endpoint disables OTEL — avoids 10s periodic-reader noise when no collector is running.
-# To enable: make cortex-run CORTEX_TELEMETRY_OTLP_ENDPOINT=localhost:4317
+# To enable with arc-friday-collector: make cortex-run CORTEX_TELEMETRY_OTLP_ENDPOINT=127.0.0.1:4317
 
 .PHONY: cortex-help cortex-build cortex-build-fresh cortex-push cortex-publish cortex-tag \
         cortex-bin cortex-run cortex-bootstrap-local cortex-test cortex-lint cortex-check
