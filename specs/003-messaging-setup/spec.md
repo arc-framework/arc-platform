@@ -130,7 +130,7 @@ services/
 - [ ] FR-4: NATS must run with JetStream enabled; three default streams created (AGENT_COMMANDS, AGENT_EVENTS, SYSTEM_METRICS)
 - [ ] FR-5: Pulsar must run in standalone mode; admin API available on `:8082` (host-mapped from internal `:8080`)
 - [ ] FR-6: Redis must run with AOF persistence (`appendonly yes`, `appendfsync everysec`), `maxmemory 512mb`, `maxmemory-policy noeviction`
-- [ ] FR-7: Update `arc-friday-collector` config to scrape Prometheus metrics from NATS (`:8222/metrics`), Pulsar (`:8080/metrics`), and add `redis-exporter` sidecar to the redis compose (`:9121/metrics`)
+- [ ] FR-7: Update `arc-friday-collector` config to scrape Prometheus metrics from NATS (`:8222/metrics`) and Pulsar (`:8080/metrics`); Redis metrics deferred — see Tech Debt
 - [ ] FR-8: Update `services/profiles.yaml` — add messaging services to `think` profile (cortex needs them at bootstrap)
 - [ ] FR-9: Create `messaging-images.yml` CI workflow — change detection per service, parallel build for all three, `linux/amd64` in CI
 - [ ] FR-10: Create `messaging-release.yml` release workflow — tag format `messaging/vX.Y.Z`, builds all three multi-platform (`linux/amd64,linux/arm64`), creates GitHub release
@@ -185,34 +185,44 @@ receivers:
         - job_name: arc-strange
           static_configs:
             - targets: ['arc-strange:8080']
-        - job_name: arc-sonic-exporter
-          static_configs:
-            - targets: ['arc-sonic-exporter:9121']
+        # arc-sonic (Redis) — deferred, see Tech Debt TD-001
 ```
 
-The collector and messaging services must share a Docker network (`arc_platform_net`) for scraping to work.
+The collector must join `arc_platform_net` (see Network Strategy) to resolve `arc-flash` and `arc-strange` by hostname.
 
 ## Network Strategy
 
-Create a shared `arc_platform_net` network that all platform services join:
+Two networks, not three. One shared platform network for all externally-visible services; one isolated internal network for the otel storage backend.
 
 ```mermaid
 graph LR
-    subgraph arc_platform_net [arc_platform_net — shared platform network]
+    subgraph arc_platform_net [arc_platform_net — external, shared]
         flash[arc-flash]
         strange[arc-strange]
         sonic[arc-sonic]
-        collector[arc-friday-collector]
         cortex[arc-cortex]
+        collector[arc-friday-collector]
     end
-    subgraph arc_otel_net [arc_otel_net — otel internal]
-        friday[arc-friday]
+    subgraph arc_otel_net [arc_otel_net — internal to otel stack]
+        friday[arc-friday / SigNoz]
         clickhouse[arc-friday-clickhouse]
+        zookeeper[arc-friday-zookeeper]
     end
-    collector --- arc_otel_net
+    collector -. bridges .-> arc_otel_net
 ```
 
-> **Decision**: Use `arc_platform_net` as the shared data-plane network. The otel stack retains its internal `arc_otel_net` for ClickHouse/ZooKeeper/SigNoz isolation. The collector bridges both networks.
+**Rules:**
+- `arc_platform_net` is declared `external: true` in each compose file — created once (`docker network create arc_platform_net`)
+- `arc_otel_net` stays internal to the otel stack; only the collector joins both
+- Messaging services join only `arc_platform_net`
+- The collector scrapes NATS/Pulsar metrics by container hostname over `arc_platform_net`
+- `arc_otel_net` is **removed** from this feature — the old single-network `arc_otel_net` in the otel compose becomes the internal net; the collector gains `arc_platform_net`
+
+## Tech Debt
+
+| ID | Item | Rationale |
+|----|------|-----------|
+| TD-001 | Redis Prometheus metrics via `redis_exporter` sidecar | `redis_exporter` adds a sidecar container per redis instance. Deferred until we have a concrete dashboard requirement. When ready: add `oliver006/redis_exporter:latest` alongside `arc-sonic` in `services/cache/docker-compose.yml`, scrape `:9121/metrics` from the collector. |
 
 ## Edge Cases
 
