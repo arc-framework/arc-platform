@@ -88,7 +88,7 @@ graph TD
     - `services/messaging/service.yaml`
     - `services/messaging/docker-compose.yml`
   - Acceptance:
-    - Dockerfile `FROM nats:2.12.4-alpine3.22`
+    - Dockerfile `FROM nats:alpine`
     - `docker build -t arc-flash:test services/messaging/` exits 0
     - `docker inspect arc-flash:test` — User field is non-root (nats user, uid 1000)
     - `docker inspect arc-flash:test` — Labels include `arc.service.codename=flash`, `arc.service.tech=nats`
@@ -109,7 +109,7 @@ graph TD
     - `services/streaming/service.yaml`
     - `services/streaming/docker-compose.yml`
   - Acceptance:
-    - Dockerfile `FROM apachepulsar/pulsar:3.0.16`
+    - Dockerfile `FROM apachepulsar/pulsar:latest`
     - `docker build -t arc-strange:test services/streaming/` exits 0
     - `docker inspect arc-strange:test` — Labels include `arc.service.codename=strange`, `arc.service.tech=pulsar`
     - `docker compose -f services/streaming/docker-compose.yml config` exits 0
@@ -132,7 +132,7 @@ graph TD
     - `services/cache/service.yaml`
     - `services/cache/docker-compose.yml`
   - Acceptance:
-    - Dockerfile `FROM redis:7.4.7-alpine3.21`
+    - Dockerfile `FROM redis:alpine`
     - `docker build -t arc-sonic:test services/cache/` exits 0
     - `docker inspect arc-sonic:test` — User field is non-root
     - `docker inspect arc-sonic:test` — Labels include `arc.service.codename=sonic`, `arc.service.tech=redis`

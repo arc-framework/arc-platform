@@ -25,7 +25,7 @@ Add three infrastructure services — NATS (Flash), Pulsar (Strange), Redis (Son
 | Aspect | Value |
 |--------|-------|
 | Language | Config-only (YAML, Dockerfile) — no application code |
-| Base Images | `nats:2.12.4-alpine3.22`, `apachepulsar/pulsar:3.0.16`, `redis:7.4.7-alpine3.21` |
+| Base Images | `nats:alpine`, `apachepulsar/pulsar:latest`, `redis:alpine` — floating tags, consistent with platform-spike |
 | Testing | `docker compose ps`, `curl`, `redis-cli ping`, `nats stream ls` |
 | OTEL Collector | `signoz/signoz-otel-collector:v0.142.0` — add `prometheus` receiver |
 | Network | `arc_platform_net` (external bridge) + `arc_otel_net` (internal) |

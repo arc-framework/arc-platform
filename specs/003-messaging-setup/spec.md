@@ -124,9 +124,9 @@ services/
 
 ### Functional
 
-- [ ] FR-1: Create `services/messaging/` with a NATS Dockerfile pinning `nats:2.12.4-alpine3.22`, `service.yaml`, `docker-compose.yml`, and `flash.mk`
-- [ ] FR-2: Create `services/streaming/` with a Pulsar Dockerfile pinning `apachepulsar/pulsar:3.0.16`, `service.yaml`, `docker-compose.yml`, and `strange.mk`
-- [ ] FR-3: Create `services/cache/` with a Redis Dockerfile pinning `redis:7.4.7-alpine3.21`, `service.yaml`, `docker-compose.yml`, and `sonic.mk`
+- [ ] FR-1: Create `services/messaging/` with a NATS Dockerfile using `nats:alpine`, `service.yaml`, `docker-compose.yml`, and `flash.mk`
+- [ ] FR-2: Create `services/streaming/` with a Pulsar Dockerfile using `apachepulsar/pulsar:latest`, `service.yaml`, `docker-compose.yml`, and `strange.mk`
+- [ ] FR-3: Create `services/cache/` with a Redis Dockerfile using `redis:alpine`, `service.yaml`, `docker-compose.yml`, and `sonic.mk`
 - [ ] FR-4: NATS must run with JetStream enabled; three default streams created (AGENT_COMMANDS, AGENT_EVENTS, SYSTEM_METRICS)
 - [ ] FR-5: Pulsar must run in standalone mode; admin API available on `:8082` (host-mapped from internal `:8080`)
 - [ ] FR-6: Redis must run with AOF persistence (`appendonly yes`, `appendfsync everysec`), `maxmemory 512mb`, `maxmemory-policy noeviction`
