@@ -38,8 +38,8 @@ func NewRouter(o orchestratorService) *Router {
 	engine.GET("/health/deep", h.DeepHealth)
 	engine.GET("/ready", h.Ready)
 
-	// Swagger UI — http://localhost:8081/swagger/index.html
-	engine.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	// API docs — http://localhost:8081/api-docs/index.html
+	engine.GET("/api-docs/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	return &Router{engine: engine}
 }

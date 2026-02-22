@@ -21,7 +21,7 @@ CORTEX_LOCAL_ENV := \
 # To enable with arc-friday-collector: make cortex-run CORTEX_TELEMETRY_OTLP_ENDPOINT=127.0.0.1:4317
 
 .PHONY: cortex-help cortex-build cortex-build-fresh cortex-push cortex-publish cortex-tag \
-        cortex-bin cortex-run cortex-bootstrap-local cortex-test cortex-lint cortex-check \
+        cortex-bin cortex-run cortex-run-otel cortex-bootstrap-local cortex-test cortex-lint cortex-check \
         cortex-docker-up cortex-docker-down cortex-docker-logs cortex-docker-ps cortex-docker-bootstrap
 
 ## cortex-help: Cortex bootstrap service (arc-cortex — provisions Postgres, NATS, Pulsar, Redis)
@@ -110,6 +110,13 @@ cortex-run: cortex-bin
 	@printf "$(COLOR_INFO)→$(COLOR_OFF) Starting cortex server on :8081 (localhost infra)...\n"
 	@printf "  Override endpoints via CORTEX_* env vars — see cortex-help for defaults.\n"
 	@$(CORTEX_LOCAL_ENV) $(CORTEX_BIN) server
+
+## cortex-run-otel: Start cortex locally with arc-friday-collector OTEL (requires: make otel-up)
+cortex-run-otel: cortex-bin
+	@printf "$(COLOR_INFO)→$(COLOR_OFF) Starting cortex server on :8081 (localhost infra + OTEL)...\n"
+	@printf "  Traces/metrics → arc-friday-collector at 127.0.0.1:4317\n"
+	@printf "  API docs       → http://localhost:8081/api-docs/index.html\n"
+	@$(CORTEX_LOCAL_ENV) CORTEX_TELEMETRY_OTLP_ENDPOINT=127.0.0.1:4317 $(CORTEX_BIN) server
 
 ## cortex-bootstrap-local: Run one-shot bootstrap against localhost infra and print JSON result
 ## Override any endpoint: CORTEX_BOOTSTRAP_POSTGRES_HOST=myhost make cortex-bootstrap-local
