@@ -15,6 +15,7 @@ func TestBootstrapResult_ZeroValueIsUsable(t *testing.T) {
 
 	// Embedded mutex must be lock/unlock-able on a zero-value struct.
 	r.Lock()
+	r.Status = "" // touch a field to satisfy SA2001 (non-empty critical section)
 	r.Unlock()
 
 	// Phases map is nil by design; the orchestrator initialises it in TASK-030.
@@ -32,7 +33,7 @@ func TestBootstrapResult_JSONShape(t *testing.T) {
 		},
 	}
 
-	data, err := json.Marshal(r)
+	data, err := json.Marshal(&r)
 	require.NoError(t, err)
 
 	var got map[string]any
