@@ -1,0 +1,13 @@
+name: arc-cortex
+codename: cortex
+version: "0.1.0"
+description: "Bootstrap orchestrator — provisions all A.R.C. platform infrastructure at startup"
+language: go
+port: 8081
+health: http://localhost:8081/health
+depends_on:
+  - flash    # arc-flash (NATS)
+  - strange  # arc-strange (Pulsar)
+  - oracle   # arc-oracle (Postgres)
+  - sonic    # arc-sonic (Redis)
+  - widow    # arc-friday-collector (OTEL)
