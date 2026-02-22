@@ -8,7 +8,7 @@
     <!-- ZooKeeper: used by ClickHouse for replicated table coordination -->
     <zookeeper>
         <node index="1">
-            <host>zookeeper</host>
+            <host>arc-friday-zookeeper</host>
             <port>2181</port>
         </node>
     </zookeeper>
@@ -18,7 +18,7 @@
         <cluster>
             <shard>
                 <replica>
-                    <host>clickhouse</host>
+                    <host>arc-friday-clickhouse</host>
                     <port>9000</port>
                 </replica>
             </shard>

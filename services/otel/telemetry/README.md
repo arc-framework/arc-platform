@@ -37,7 +37,7 @@ Config lives at `config/otel-collector-config.yaml`.
 |---------|--------|
 | **Receivers** | `otlp` — gRPC on `:4317`, HTTP on `:4318` |
 | **Processors** | `batch` — buffers up to 10,000 spans before flushing |
-| **Exporters** | `clickhousetraces` — writes to `clickhouse:9000` on the shared `arc_otel_net` Docker network |
+| **Exporters** | `clickhousetraces` — writes to `arc-friday-clickhouse:9000` on the shared `arc_otel_net` Docker network |
 | **Extensions** | `health_check` — HTTP probe on `:13133` |
 | **Pipeline** | `traces`: otlp → batch → clickhousetraces |
 

@@ -42,7 +42,7 @@ graph TD
 
 ## Phase 1: Setup
 
-- [ ] **[TASK-001]** [SERVICES] [P1] Scaffold the `services/otel/` directory tree
+- [x] **[TASK-001]** [SERVICES] [P1] Scaffold the `services/otel/` directory tree
   - Dependencies: none
   - Module: `services/otel/`
   - Acceptance:
@@ -57,7 +57,7 @@ graph TD
 
 *Both tasks are parallel-safe — no shared files.*
 
-- [ ] **[TASK-010]** [P] [SERVICES] [P1] Write `service.yaml` for telemetry (Black Widow / widow)
+- [x] **[TASK-010]** [P] [SERVICES] [P1] Write `service.yaml` for telemetry (Black Widow / widow)
   - Dependencies: TASK-001
   - Module: `services/otel/telemetry/service.yaml`
   - Acceptance:
@@ -72,7 +72,7 @@ graph TD
     ```
   - File validates as valid YAML
 
-- [ ] **[TASK-011]** [P] [SERVICES] [P1] Write `service.yaml` for observability (Friday / friday)
+- [x] **[TASK-011]** [P] [SERVICES] [P1] Write `service.yaml` for observability (Friday / friday)
   - Dependencies: TASK-001
   - Module: `services/otel/observability/service.yaml`
   - Acceptance:
@@ -96,7 +96,7 @@ graph TD
 ### Parallel Batch A — Service Configs
 *All four tasks are parallel-safe after Phase 2.*
 
-- [ ] **[TASK-020]** [P] [SERVICES] [P1] Write `services/otel/telemetry/docker-compose.yml`
+- [x] **[TASK-020]** [P] [SERVICES] [P1] Write `services/otel/telemetry/docker-compose.yml`
   - Dependencies: TASK-010
   - Module: `services/otel/telemetry/docker-compose.yml`
   - Acceptance:
@@ -107,7 +107,7 @@ graph TD
     - Container runs as non-root user
     - Connected to shared Docker network (e.g. `arc_otel_net`)
 
-- [ ] **[TASK-021]** [P] [SERVICES] [P1] Write `services/otel/telemetry/config/otel-collector-config.yaml`
+- [x] **[TASK-021]** [P] [SERVICES] [P1] Write `services/otel/telemetry/config/otel-collector-config.yaml`
   - Dependencies: TASK-010
   - Module: `services/otel/telemetry/config/otel-collector-config.yaml`
   - Acceptance:
@@ -118,7 +118,7 @@ graph TD
     - `service.extensions` lists `health_check`
     - Config is valid YAML; collector starts without errors
 
-- [ ] **[TASK-022]** [P] [SERVICES] [P1] Write `services/otel/observability/docker-compose.yml`
+- [x] **[TASK-022]** [P] [SERVICES] [P1] Write `services/otel/observability/docker-compose.yml`
   - Dependencies: TASK-011
   - Module: `services/otel/observability/docker-compose.yml`
   - Acceptance:
@@ -134,7 +134,7 @@ graph TD
     - Mounts `./config/clickhouse-config.xml` and `./config/zookeeper.properties`
     - Connected to same shared Docker network as telemetry
 
-- [ ] **[TASK-023]** [P] [SERVICES] [P1] Write observability config files (ClickHouse + ZooKeeper)
+- [x] **[TASK-023]** [P] [SERVICES] [P1] Write observability config files (ClickHouse + ZooKeeper)
   - Dependencies: TASK-011
   - Module: `services/otel/observability/config/`
   - Acceptance:
@@ -145,7 +145,7 @@ graph TD
 ### Parallel Batch B — Orchestration
 *Single blocking task — waits for all Batch A.*
 
-- [ ] **[TASK-030]** [MAKEFILE] [P1] Write root `Makefile` with `otel-*` targets
+- [x] **[TASK-030]** [MAKEFILE] [P1] Write root `Makefile` with `otel-*` targets
   - Dependencies: TASK-020, TASK-021, TASK-022, TASK-023
   - Module: `arc-platform/Makefile` (new file)
   - Acceptance — variables:
@@ -196,7 +196,7 @@ graph TD
 
 *Both README tasks are parallel-safe.*
 
-- [ ] **[TASK-900]** [P] [DOCS] [P1] Write `services/otel/telemetry/README.md`
+- [x] **[TASK-900]** [P] [DOCS] [P1] Write `services/otel/telemetry/README.md`
   - Dependencies: TASK-040
   - Module: `services/otel/telemetry/README.md`
   - Acceptance:
@@ -206,7 +206,7 @@ graph TD
     - Collector config reference: where to find it, what receivers are open, what the export target is
     - No dead links
 
-- [ ] **[TASK-901]** [P] [DOCS] [P1] Write `services/otel/observability/README.md`
+- [x] **[TASK-901]** [P] [DOCS] [P1] Write `services/otel/observability/README.md`
   - Dependencies: TASK-040
   - Module: `services/otel/observability/README.md`
   - Acceptance:
@@ -236,13 +236,73 @@ graph TD
 
 ---
 
+## Phase 6: Image Strategy & Naming
+
+*Codifies the arc-friday-* naming convention and Approach C image strategy from platform-spike.*
+
+- [x] **[TASK-050]** [SERVICES] [P1] Fix broken hostname references baked into collector image configs
+  - Dependencies: none (prerequisite for otel-build to produce working images)
+  - Module: `services/otel/telemetry/config/`, `services/otel/observability/config/`
+  - Acceptance:
+    - `otel-collector-config.yaml`: `clickhouse:9000` → `arc-friday-clickhouse:9000`
+    - `otel-collector-opamp-config.yaml`: `signoz:4320` → `arc-friday:4320`
+    - `clickhouse-cluster.xml`: `<host>clickhouse</host>` → `<host>arc-friday-clickhouse</host>`; `<host>zookeeper</host>` → `<host>arc-friday-zookeeper</host>`
+    - `make otel-build` produces images; `make otel-up` shows all 6 containers reach healthy/exited-0 state
+
+- [x] **[TASK-051]** [SERVICES] [P1] Rename all containers and images to `arc-friday-*` in docker-compose.yml and Makefile
+  - Dependencies: TASK-050
+  - Module: `services/otel/docker-compose.yml`, `Makefile`
+  - Acceptance:
+    - `docker ps` shows: `arc-friday`, `arc-friday-collector`, `arc-friday-clickhouse`, `arc-friday-zookeeper`, `arc-friday-migrator-sync` (exited 0), `arc-friday-migrator-async` (exited 0)
+    - Images: `ghcr.io/arc-framework/arc-friday:latest`, `ghcr.io/arc-framework/arc-friday-collector:latest`, etc.
+    - All DSNs use `tcp://arc-friday-clickhouse:9000`
+    - Volumes named `arc-friday-clickhouse`, `arc-friday-zookeeper`, `arc-friday-sqlite`
+
+- [x] **[TASK-052]** [CI] [P1] Update `.github/workflows/otel-images.yml` matrix to use new image names
+  - Dependencies: TASK-051
+  - Module: `.github/workflows/otel-images.yml`
+  - Acceptance:
+    - Matrix contains: `arc-friday`, `arc-friday-collector`, `arc-friday-clickhouse`, `arc-friday-zookeeper`
+    - Each entry has correct `context` and `dockerfile` path
+    - Workflow produces images at `ghcr.io/arc-framework/arc-friday-*`
+
+- [x] **[TASK-053]** [CI] [P] Create `.github/config/publish-observability.json`
+  - Dependencies: TASK-051
+  - Module: `.github/config/publish-observability.json`
+  - Acceptance:
+    - JSON has `images` array with 4 entries: `arc-friday`, `arc-friday-collector`, `arc-friday-clickhouse`, `arc-friday-zookeeper`
+    - Each entry has `source`, `target`, `description`, `platforms`, `required` fields
+    - `settings.rate_limit_delay_seconds` is set
+    - Consumed by `_reusable-publish-group.yml` without errors
+
+- [x] **[TASK-054]** [CI] [P] Port reusable CI workflows from platform-spike
+  - Dependencies: none (parallel-safe)
+  - Module: `.github/workflows/`
+  - Acceptance:
+    - `_reusable-build.yml`: reusable Docker build with GHA caching, SBOM generation, size + duration tracking
+    - `_reusable-security.yml`: reusable Trivy scan (fs + image), SARIF upload, non-blocking by default
+    - `_reusable-publish-group.yml`: reusable vendor re-tag, reads JSON config, sequential publish with rate limit delay
+    - All three pass YAML linting (`yamllint` or GitHub Actions validation)
+
+- [x] **[TASK-055]** [DOCS] [P] Update `spec.md` with FR-13..16 and Image Strategy section
+  - Dependencies: TASK-051
+  - Module: `specs/001-otel-setup/spec.md`
+  - Acceptance:
+    - FR-13 through FR-16 added to Requirements section
+    - Image Strategy section added before Edge Cases
+    - Table of 4 images with source, Dockerfile, and baked-in config
+    - No dead file references
+
+---
+
 ## Progress Summary
 
 | Phase | Total | Done | Parallel |
 |-------|-------|------|----------|
-| Setup | 1 | 0 | 0 |
-| Foundational | 2 | 0 | 2 |
-| Implementation | 5 | 0 | 4 |
+| Setup | 1 | 1 | 0 |
+| Foundational | 2 | 2 | 2 |
+| Implementation | 5 | 5 | 4 |
 | Integration | 1 | 0 | 0 |
-| Polish | 3 | 0 | 2 |
-| **Total** | **12** | **0** | **8** |
+| Polish | 3 | 2 | 2 |
+| Image Strategy | 6 | 6 | 3 |
+| **Total** | **18** | **16** | **11** |

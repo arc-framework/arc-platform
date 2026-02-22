@@ -102,6 +102,10 @@ make otel-ps               # show container status
 - [ ] FR-10: ClickHouse and ZooKeeper are NOT exposed externally (internal Docker network only)
 - [ ] FR-11: SigNoz UI is bound to `127.0.0.1` only (not `0.0.0.0`)
 - [ ] FR-12: `make otel-down` cleanly stops and removes all otel stack containers
+- [ ] FR-13: All otel containers follow `arc-friday-*` naming — `arc-friday`, `arc-friday-collector`, `arc-friday-clickhouse`, `arc-friday-zookeeper`, `arc-friday-migrator-sync`, `arc-friday-migrator-async`
+- [ ] FR-14: All ARC images published to `ghcr.io/arc-framework/arc-friday-*` (vendor re-tag strategy — Approach C from platform-spike)
+- [ ] FR-15: Vendor images (`arc-friday`, `arc-friday-collector`, `arc-friday-clickhouse`, `arc-friday-zookeeper`) built via `.github/workflows/otel-images.yml`; weekly re-tag config at `.github/config/publish-observability.json`
+- [ ] FR-16: `make otel-build` produces locally tagged images matching `ghcr.io/arc-framework/arc-friday-*` refs so dev and CI use identical image names
 
 ### Non-Functional
 
@@ -147,6 +151,24 @@ compose_services:
   - clickhouse
   - zookeeper
 ```
+
+## Image Strategy
+
+Follows Approach C from platform-spike: two-tier model.
+
+- **ARC native services** (sherlock, scarlett, raymond): built FROM `arc-base-python-ai` or `arc-base-go-infra` — custom Dockerfiles with ARC-specific tooling baked in.
+- **Vendor/infra services** (arc-friday, arc-friday-collector, arc-friday-clickhouse, arc-friday-zookeeper): simple re-tag of upstream SigNoz/ClickHouse images under `ghcr.io/arc-framework/arc-friday-*`. ARC-specific config (ClickHouse tuning, collector endpoints, histogramQuantile UDF) is baked into the Dockerfile layers at build time. Weekly re-tag via `publish-vendor-images.yml` ensures upstream security patches propagate automatically.
+
+| Image | Source | Dockerfile | Config baked in |
+|-------|--------|------------|-----------------|
+| `arc-friday` | `signoz/signoz:v0.112.0` | `observability/Dockerfile` | `prometheus.yml` |
+| `arc-friday-collector` | `signoz/signoz-otel-collector:v0.142.0` | `telemetry/Dockerfile` | collector config + opamp config |
+| `arc-friday-clickhouse` | `clickhouse/clickhouse-server:25.5.6` | `observability/clickhouse.Dockerfile` | ClickHouse config, users.xml, `histogramQuantile` UDF binary |
+| `arc-friday-zookeeper` | `signoz/zookeeper:3.7.1` | `observability/zookeeper.Dockerfile` | ARC labels only |
+
+Re-tag config: `.github/config/publish-observability.json`
+Build workflow: `.github/workflows/otel-images.yml`
+Reusable CI primitives: `.github/workflows/_reusable-build.yml`, `_reusable-security.yml`, `_reusable-publish-group.yml`
 
 ## Edge Cases
 

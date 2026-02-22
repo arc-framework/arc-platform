@@ -1,14 +1,16 @@
+name: arc-platform
+
 services:
 
   # ── ZooKeeper: ClickHouse coordination ───────────────────────────────────────
   # NOTE: signoz/zookeeper:3.7.1 (base) requires root — known deviation from NFR-4.
   # This is a SigNoz upstream constraint; non-root ZK is not supported.
-  arc-zookeeper:
+  arc-friday-zookeeper:
     build:
       context: ./observability
       dockerfile: zookeeper.Dockerfile
-    image: ghcr.io/arc-framework/arc-zookeeper:latest
-    container_name: arc-zookeeper
+    image: ghcr.io/arc-framework/arc-friday-zookeeper:latest
+    container_name: arc-friday-zookeeper
     user: root
     environment:
       - ZOO_SERVER_ID=1
@@ -31,14 +33,14 @@ services:
   # ── ClickHouse: signal store ──────────────────────────────────────────────────
   # Config and histogramQuantile UDF are baked into the image — no volume mounts
   # needed for config. The data volume covers /var/lib/clickhouse/ only.
-  arc-clickhouse:
+  arc-friday-clickhouse:
     build:
       context: ./observability
       dockerfile: clickhouse.Dockerfile
-    image: ghcr.io/arc-framework/arc-clickhouse:latest
-    container_name: arc-clickhouse
+    image: ghcr.io/arc-framework/arc-friday-clickhouse:latest
+    container_name: arc-friday-clickhouse
     depends_on:
-      arc-zookeeper:
+      arc-friday-zookeeper:
         condition: service_healthy
     environment:
       - CLICKHOUSE_SKIP_USER_SETUP=1
@@ -55,32 +57,38 @@ services:
     restart: unless-stopped
 
   # ── Schema migration: synchronous (must complete before SigNoz starts) ────────
-  arc-schema-migrator-sync:
-    image: signoz/signoz-schema-migrator:v0.142.0
-    container_name: arc-schema-migrator-sync
+  # Image: ARC-managed re-tag of signoz/signoz-schema-migrator — controlled via ghcr.io.
+  # Run `make otel-build` to produce the image before first `make otel-up`.
+  arc-friday-migrator-sync:
+    build:
+      context: ./observability
+      dockerfile: migrator.Dockerfile
+    image: ghcr.io/arc-framework/arc-friday-migrator:latest
+    container_name: arc-friday-migrator-sync
     command:
       - sync
-      - --dsn=tcp://arc-clickhouse:9000
+      - --dsn=tcp://arc-friday-clickhouse:9000
       - --up=
     depends_on:
-      arc-clickhouse:
+      arc-friday-clickhouse:
         condition: service_healthy
     restart: on-failure
     networks:
       - arc_otel_net
 
   # ── Schema migration: asynchronous (background migrations) ───────────────────
-  arc-schema-migrator-async:
-    image: signoz/signoz-schema-migrator:v0.142.0
-    container_name: arc-schema-migrator-async
+  # Uses the same arc-friday-migrator image as the sync service.
+  arc-friday-migrator-async:
+    image: ghcr.io/arc-framework/arc-friday-migrator:latest
+    container_name: arc-friday-migrator-async
     command:
       - async
-      - --dsn=tcp://arc-clickhouse:9000
+      - --dsn=tcp://arc-friday-clickhouse:9000
       - --up=
     depends_on:
-      arc-clickhouse:
+      arc-friday-clickhouse:
         condition: service_healthy
-      arc-schema-migrator-sync:
+      arc-friday-migrator-sync:
         condition: service_completed_successfully
     restart: on-failure
     networks:
@@ -93,18 +101,18 @@ services:
     build:
       context: ./observability
       dockerfile: Dockerfile
-    image: ghcr.io/arc-framework/friday:latest
+    image: ghcr.io/arc-framework/arc-friday:latest
     container_name: arc-friday
     command:
       - --config=/root/config/prometheus.yml
     depends_on:
-      arc-clickhouse:
+      arc-friday-clickhouse:
         condition: service_healthy
-      arc-schema-migrator-sync:
+      arc-friday-migrator-sync:
         condition: service_completed_successfully
     environment:
       - SIGNOZ_ALERTMANAGER_PROVIDER=signoz
-      - SIGNOZ_TELEMETRYSTORE_CLICKHOUSE_DSN=tcp://arc-clickhouse:9000
+      - SIGNOZ_TELEMETRYSTORE_CLICKHOUSE_DSN=tcp://arc-friday-clickhouse:9000
       - SIGNOZ_SQLSTORE_SQLITE_PATH=/var/lib/signoz/signoz.db
       - STORAGE=clickhouse
       - GODEBUG=netdns=go
@@ -123,14 +131,14 @@ services:
       - arc_otel_net
     restart: unless-stopped
 
-  # ── Black Widow: OTEL collector ───────────────────────────────────────────────
+  # ── Friday Collector: OTEL telemetry collector ────────────────────────────────
   # Collector config is baked into the image. Receives OTLP on 4317/4318.
-  arc-widow:
+  arc-friday-collector:
     build:
       context: ./telemetry
       dockerfile: Dockerfile
-    image: ghcr.io/arc-framework/widow:latest
-    container_name: arc-widow
+    image: ghcr.io/arc-framework/arc-friday-collector:latest
+    container_name: arc-friday-collector
     user: "10001:10001"
     command:
       - --config=/etc/otelcol/config.yaml
@@ -151,9 +159,9 @@ services:
 
 volumes:
   zookeeper-data:
-    name: arc-zookeeper
+    name: arc-friday-zookeeper
   clickhouse-data:
-    name: arc-clickhouse
+    name: arc-friday-clickhouse
   signoz-data:
     name: arc-friday-sqlite
 

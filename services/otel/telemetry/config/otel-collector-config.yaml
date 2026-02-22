@@ -14,7 +14,7 @@ processors:
 
 exporters:
   clickhousetraces:
-    datasource: tcp://clickhouse:9000/?database=signoz_traces
+    datasource: tcp://arc-friday-clickhouse:9000/?database=signoz_traces
 
 extensions:
   health_check:

@@ -82,6 +82,7 @@ sdist/
 develop-eggs/
 .installed.cfg
 lib/
+!scripts/lib/
 lib64/
 wheels/
 share/python-wheels/
