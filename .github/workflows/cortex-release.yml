@@ -1,0 +1,176 @@
+name: Cortex Release
+
+# Full release pipeline for arc-cortex.
+# Triggered by pushing a version tag: git tag cortex/v1.2.3 && git push --tags
+#
+# Tag format:  cortex/v{MAJOR}.{MINOR}.{PATCH}  (e.g. cortex/v0.1.0)
+# Pre-release: cortex/v1.0.0-rc1, cortex/v1.0.0-alpha, cortex/v1.0.0-beta
+#
+# Image tags published:
+#   cortex-v{x.y.z}  — pinned reference for service.yaml / docker-compose.yml
+#   sha-{short}      — traceability back to the exact commit
+#   latest           — convenience tag for local dev
+#
+# Version bump rules:
+#   breaking API change (endpoint removed/incompatible)  → MAJOR
+#   new endpoint or feature                              → MINOR
+#   bug fix, dependency update, Dockerfile tweak         → PATCH
+#
+# Parallelism:
+#   prepare, test, lint all run concurrently.
+#   build waits for all three (quality must pass before push).
+#   security runs after build; release runs after security.
+
+on:
+  push:
+    tags:
+      - 'cortex/v*'
+
+permissions:
+  contents: write
+  packages: write
+  security-events: write
+  issues: write
+
+jobs:
+
+  # ── Derive Docker-safe image tag from git tag (parallel with quality) ──────
+  # cortex/v0.1.0 → cortex-v0.1.0  (slashes are not valid in Docker image tags)
+  prepare:
+    name: Prepare Release
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag:  ${{ steps.tag.outputs.image-tag }}
+      version:    ${{ steps.tag.outputs.version }}
+      prerelease: ${{ steps.tag.outputs.prerelease }}
+    steps:
+      - name: Derive image tag and version
+        id: tag
+        run: |
+          GIT_TAG="${GITHUB_REF_NAME}"                # cortex/v0.1.0
+          IMAGE_TAG="${GIT_TAG/\//-}"                 # cortex-v0.1.0
+          VERSION="${GIT_TAG#cortex/v}"               # 0.1.0
+
+          echo "image-tag=$IMAGE_TAG"   >> $GITHUB_OUTPUT
+          echo "version=$VERSION"       >> $GITHUB_OUTPUT
+
+          if echo "$VERSION" | grep -qE '\-(rc|alpha|beta)'; then
+            echo "prerelease=true"  >> $GITHUB_OUTPUT
+          else
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+          fi
+
+  # ── Test (parallel with prepare + lint) ───────────────────────────────────
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/cortex/go.mod
+          cache-dependency-path: services/cortex/go.sum
+      - name: Run tests with race detector
+        run: cd services/cortex && go test ./... -count=1 -race
+
+  # ── Lint (parallel with prepare + test) ───────────────────────────────────
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/cortex/go.mod
+          cache-dependency-path: services/cortex/go.sum
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          working-directory: services/cortex
+
+  # ── Build + push (after prepare + test + lint all pass) ───────────────────
+  build:
+    name: Build arc-cortex
+    needs: [prepare, test, lint]
+    uses: ./.github/workflows/_reusable-build.yml
+    with:
+      service-name: arc-cortex
+      service-path: services/cortex
+      dockerfile: Dockerfile
+      platforms: linux/amd64,linux/arm64
+      push-image: true
+      latest-tag: true
+      image-tag: ${{ needs.prepare.outputs.image-tag }}
+      generate-sbom: true
+      image-prefix: ghcr.io/arc-framework
+    secrets: inherit
+
+  # ── Security — CRITICAL CVEs block the release ────────────────────────────
+  security:
+    name: Security Gate
+    needs: [build]
+    uses: ./.github/workflows/_reusable-security.yml
+    with:
+      scan-type: fs
+      scan-target: services/cortex
+      severity: CRITICAL,HIGH
+      fail-on-severity: CRITICAL
+      block-on-failure: true
+      service-name: arc-cortex-release
+      create-issues: true
+    secrets: inherit
+
+  # ── GitHub release ─────────────────────────────────────────────────────────
+  release:
+    name: GitHub Release
+    needs: [prepare, build, security]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate release notes
+        run: |
+          IMAGE_TAG="${{ needs.prepare.outputs.image-tag }}"
+          VERSION="${{ needs.prepare.outputs.version }}"
+          PREFIX="ghcr.io/arc-framework"
+
+          cat > release-notes.md << EOF
+          ## arc-cortex — ${VERSION}
+
+          Platform bootstrap service that provisions Postgres, NATS, Pulsar, and Redis,
+          then exposes a health/status HTTP API on port 8081.
+
+          ### Image
+
+          | Image | Versioned Tag | Also Tagged |
+          |-------|--------------|-------------|
+          | \`arc-cortex\` | \`${IMAGE_TAG}\` | \`latest\`, \`sha-*\` |
+
+          ### Pull
+
+          \`\`\`bash
+          docker pull ${PREFIX}/arc-cortex:${IMAGE_TAG}
+          \`\`\`
+
+          ### API
+
+          | Endpoint | Description |
+          |----------|-------------|
+          | \`POST /api/v1/bootstrap\` | Trigger platform bootstrap |
+          | \`GET /health\` | Liveness probe |
+          | \`GET /health/deep\` | Deep dependency health |
+          | \`GET /ready\` | Bootstrap readiness |
+          | \`GET /api-docs\` | Swagger UI |
+
+          ### Local Dev
+
+          Update \`services/cortex/docker-compose.yml\` image tag to \`${IMAGE_TAG}\`, or use \`latest\` to track the newest release.
+          EOF
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: 'Cortex ${{ needs.prepare.outputs.version }}'
+          body_path: release-notes.md
+          draft: false
+          prerelease: ${{ needs.prepare.outputs.prerelease == 'true' }}

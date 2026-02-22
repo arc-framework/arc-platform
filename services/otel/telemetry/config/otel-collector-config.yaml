@@ -16,6 +16,13 @@ exporters:
   clickhousetraces:
     datasource: tcp://arc-friday-clickhouse:9000/?database=signoz_traces
 
+  signozclickhousemetrics:
+    dsn: tcp://arc-friday-clickhouse:9000/signoz_metrics
+
+  clickhouselogsexporter:
+    dsn: tcp://arc-friday-clickhouse:9000/signoz_logs
+    timeout: 10s
+
 extensions:
   health_check:
     endpoint: 0.0.0.0:13133
@@ -27,3 +34,11 @@ service:
       receivers: [otlp]
       processors: [batch]
       exporters: [clickhousetraces]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [signozclickhousemetrics]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [clickhouselogsexporter]

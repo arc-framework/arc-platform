@@ -1,0 +1,30 @@
+# Development artifacts
+bin/
+*.out
+coverage.out
+coverage.html
+
+# Generated docs (rebuilt in container from source)
+docs/
+
+# Test fixtures and reports
+testdata/
+*.test
+
+# Editor and OS noise
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Git
+.git/
+.gitignore
+
+# CI
+.github/
+
+# Docker itself
+Dockerfile
+.dockerignore

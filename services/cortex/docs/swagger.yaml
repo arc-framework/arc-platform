@@ -1,0 +1,108 @@
+basePath: /
+host: localhost:8081
+info:
+  contact: {}
+  description: Cortex bootstrap service — provisions Postgres, NATS, Pulsar, and Redis,
+    then exposes a health/status HTTP API.
+  title: A.R.C. Cortex API
+  version: "1.0"
+paths:
+  /api/v1/bootstrap:
+    post:
+      description: Starts a bootstrap run in the background. All 4 phases (Postgres,
+        NATS, Pulsar, Redis) run concurrently. Returns 202 immediately; poll /ready
+        or /health/deep to track completion.
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Bootstrap accepted — run started
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+        "409":
+          description: Bootstrap already in progress
+          schema:
+            properties:
+              status:
+                type: string
+            type: object
+      summary: Trigger platform bootstrap
+      tags:
+      - bootstrap
+  /health:
+    get:
+      description: Always returns 200. Indicates the process is alive. Use /health/deep
+        for dependency health.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              mode:
+                type: string
+              status:
+                type: string
+            type: object
+      summary: Liveness probe
+      tags:
+      - health
+  /health/deep:
+    get:
+      description: Probes Postgres, NATS, Pulsar, and Redis concurrently. Returns
+        503 if any probe fails.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: All dependencies healthy
+          schema:
+            properties:
+              dependencies:
+                type: object
+              status:
+                type: string
+            type: object
+        "503":
+          description: One or more dependencies unhealthy
+          schema:
+            properties:
+              dependencies:
+                type: object
+              status:
+                type: string
+            type: object
+      summary: Deep dependency health
+      tags:
+      - health
+  /ready:
+    get:
+      description: Returns 200 only after a successful bootstrap run completes. Use
+        as a Kubernetes readiness probe.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Bootstrap complete — service ready
+          schema:
+            properties:
+              ready:
+                type: boolean
+            type: object
+        "503":
+          description: Bootstrap not yet complete
+          schema:
+            properties:
+              ready:
+                type: boolean
+            type: object
+      summary: Bootstrap readiness
+      tags:
+      - health
+schemes:
+- http
+swagger: "2.0"
