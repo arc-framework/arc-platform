@@ -137,7 +137,6 @@ docs/build/
 # VitePress specs site build output
 docs/specs/.vitepress/dist/
 docs/specs/.vitepress/cache/
-docs/specs/.vitepress/*
 
 docs/specs/node_modules/
 
