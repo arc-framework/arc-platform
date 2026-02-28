@@ -39,11 +39,11 @@ Add three control plane services — Traefik v3 (Heimdall), OpenBao (Nick Fury),
 graph TB
     subgraph Host
         subgraph arc_platform_net
-            heimdall["arc-heimdall\ntraefik:v3\n:8080 proxy (host→:80)\n:8090 dashboard"]
-            fury["arc-nick-fury\nopenbao/openbao\n:8200 API + UI"]
-            mystique["arc-mystique\nunleash-server\n:4242 UI + REST"]
-            oracle["arc-oracle\npostgres:17\n:5432"]
-            sonic["arc-sonic\nredis\n:6379"]
+            heimdall["arc-gateway\ntraefik:v3\n:8080 proxy (host→:80)\n:8090 dashboard"]
+            fury["arc-vault\nopenbao/openbao\n:8200 API + UI"]
+            mystique["arc-flags\nunleash-server\n:4242 UI + REST"]
+            oracle["arc-sql-db\npostgres:17\n:5432"]
+            sonic["arc-cache\nredis\n:6379"]
         end
         dockersock["/var/run/docker.sock (ro)"]
     end
@@ -88,7 +88,7 @@ FROM traefik:v3
 LABEL org.opencontainers.image.title="ARC Heimdall — API Gateway"
 LABEL org.opencontainers.image.description="Traefik v3 ingress gateway for the A.R.C. Platform"
 LABEL org.opencontainers.image.source="https://github.com/arc-framework/arc-platform"
-LABEL arc.service.name="arc-heimdall"
+LABEL arc.service.name="arc-gateway"
 LABEL arc.service.codename="heimdall"
 LABEL arc.service.tech="traefik"
 # traefik:v3 runs as root by default. We configure internal ports ≥1024
@@ -98,7 +98,7 @@ USER 1000
 
 ```yaml
 # services/gateway/docker-compose.yml
-arc-heimdall:
+arc-gateway:
   command:
     - --api.insecure=true                          # dashboard on internal :8090
     - --api.dashboard=true
@@ -131,7 +131,7 @@ OpenBao in dev mode (`-dev` flag) is intentionally insecure: in-memory storage, 
 ```dockerfile
 # services/secrets/Dockerfile
 FROM openbao/openbao
-LABEL arc.service.name="arc-nick-fury"
+LABEL arc.service.name="arc-vault"
 LABEL arc.service.codename="nick-fury"
 LABEL arc.service.tech="openbao"
 # openbao/openbao runs as root by default.
@@ -142,7 +142,7 @@ LABEL arc.service.tech="openbao"
 
 ```yaml
 # services/secrets/docker-compose.yml
-arc-nick-fury:
+arc-vault:
   command: server -dev
   environment:
     VAULT_DEV_ROOT_TOKEN_ID: arc-dev-token
@@ -165,11 +165,11 @@ Unleash is a Node.js app. `user: "1000:1000"` in compose is the first attempt. I
 
 ```yaml
 # services/flags/docker-compose.yml
-arc-mystique:
+arc-flags:
   user: "1000:1000"   # attempt non-root; remove + add comment if Unleash refuses to start
   environment:
-    DATABASE_URL: postgresql://arc:arc@arc-oracle:5432/unleash
-    REDIS_HOST: arc-sonic
+    DATABASE_URL: postgresql://arc:arc@arc-sql-db:5432/unleash
+    REDIS_HOST: arc-cache
     REDIS_PORT: 6379
   ports:
     - "127.0.0.1:4242:4242"
@@ -187,9 +187,9 @@ arc-mystique:
 
 ```yaml
 # services/flags/service.yaml
-name: arc-mystique
+name: arc-flags
 codename: mystique
-image: ghcr.io/arc-framework/arc-mystique:latest
+image: ghcr.io/arc-framework/arc-flags:latest
 tech: unleash
 upstream: unleashorg/unleash-server
 ports:
@@ -366,8 +366,8 @@ gantt
 - [ ] Traefik dashboard accessible at `http://localhost:8090/dashboard/`
 - [ ] `curl -H "X-Vault-Token: arc-dev-token" http://localhost:8200/v1/sys/health` returns HTTP 200
 - [ ] `curl http://localhost:4242/health` returns HTTP 200
-- [ ] `docker inspect arc-heimdall | jq '.[0].Config.User'` confirms `"1000:1000"` or `"1000"`
-- [ ] `docker inspect arc-mystique | jq '.[0].Config.User'` confirms non-root or deviation documented
+- [ ] `docker inspect arc-gateway | jq '.[0].Config.User'` confirms `"1000:1000"` or `"1000"`
+- [ ] `docker inspect arc-flags | jq '.[0].Config.User'` confirms non-root or deviation documented
 - [ ] Nick Fury root deviation documented in Dockerfile comment + `nick-fury-help` output
 - [ ] All ports bind `127.0.0.1` only — verify with `docker compose ps`
 - [ ] No persistent volumes for Heimdall or Nick Fury (stateless dev services)
@@ -387,7 +387,7 @@ gantt
 | Traefik uid 1000 fails (needs root for some internal operation) | M | Fall back to root + document deviation like Pulsar in 003 |
 | Mystique uid 1000 fails (writes to privileged path at startup) | M | Remove `user:` from compose; add comment documenting root deviation |
 | Mystique startup fails because Oracle isn't ready | H | `start_period: 30s` + Unleash's built-in retry; `control-up` ensures oracle starts first via ordering |
-| `wget` absent in openbao image | M | Fall back to bash `/dev/tcp` pattern (same as arc-cerebro) |
+| `wget` absent in openbao image | M | Fall back to bash `/dev/tcp` pattern (same as arc-vector-db) |
 | Port 80 already bound on dev machine (other HTTP server) | M | Document in `heimdall-help`; user can change host port via compose override |
 | Mystique DB migration creates tables in `arc` DB instead of separate DB | L | Verify `DATABASE_URL` points to `/unleash` DB path; Oracle Dockerfile may need `CREATE DATABASE unleash` init SQL |
 | `arc_platform_net` not created before `make control-up` | H | `control-up` calls `docker network create arc_platform_net 2>/dev/null || true` first |

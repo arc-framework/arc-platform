@@ -81,10 +81,10 @@ graph TD
   - Module: `services/cortex/service.yaml`
   - Acceptance: `oracle` no longer listed in `depends_on`; remaining deps: `flash`, `strange`, `sonic`, `friday-collector`
 
-- [x] [TASK-012] [P] [SERVICES] [P1] Update `services/cache/service.yaml` health to `docker exec arc-sonic redis-cli ping`
+- [x] [TASK-012] [P] [SERVICES] [P1] Update `services/cache/service.yaml` health to `docker exec arc-cache redis-cli ping`
   - Dependencies: none
   - Module: `services/cache/service.yaml`
-  - Acceptance: `health` field reads `docker exec arc-sonic redis-cli ping`; `wait-for-health.sh` can use this without host redis-cli
+  - Acceptance: `health` field reads `docker exec arc-cache redis-cli ping`; `wait-for-health.sh` can use this without host redis-cli
 
 - [x] [TASK-015] [P] [SERVICES] [P1] Fix `services/otel/observability/service.yaml` — correct broken `depends_on` codename
   - Dependencies: none

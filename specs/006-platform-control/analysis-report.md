@@ -31,7 +31,7 @@ The 006-platform-control feature is **READY FOR IMPLEMENTATION** with **3 blocke
 
 **Compliance**: Constitution **Principle III (Modular Services)** requires each service self-contained. Mystique depends on Oracle, but **Mystique's tasks should not create files in Oracle's directory structure**.
 
-**Root Cause**: Mystique's `DATABASE_URL=postgresql://arc:arc@arc-oracle:5432/unleash` expects an `unleash` database. The init SQL must exist, but who owns it?
+**Root Cause**: Mystique's `DATABASE_URL=postgresql://arc:arc@arc-sql-db:5432/unleash` expects an `unleash` database. The init SQL must exist, but who owns it?
 
 **Recommendation**: 
 - **Option A** (Preferred): Add a task **TASK-014** to 005-data-layer to retroactively create `002_create_unleash_db.sql` as a dependency for 006. This keeps database initialization in 005.
@@ -279,7 +279,7 @@ No volume declared (Nick Fury is stateless in dev — data lost on restart is ex
 **Assessment**: 
 - ✓ Correct for dev mode
 - ✓ Documented in plan.md risks (line 389)
-- ✓ Acceptance includes verification: `no `arc-nick-fury-*` volumes`
+- ✓ Acceptance includes verification: `no `arc-vault-*` volumes`
 
 **Observation**: This is appropriate for a dev-only service, but if a future spec wants to support persistent secrets in dev (e.g., for multi-session testing), a volume will need to be added. The current design is correct but inflexible.
 
@@ -379,11 +379,11 @@ Cross-reference module paths against `services/profiles.yaml` and actual directo
 
 | Service | Path | Exists? | Profile | Status |
 |---------|------|---------|---------|--------|
-| arc-heimdall | `services/gateway/` | N (to-be-created) | think | ✓ |
-| arc-nick-fury | `services/secrets/` | N (to-be-created) | reason | ✓ |
-| arc-mystique | `services/flags/` | N (to-be-created) | reason | ✓ |
-| arc-oracle | `services/persistence/` | Y (existing) | think | ✓ |
-| arc-sonic | `services/cache/` | Y (existing) | think | ✓ |
+| arc-gateway | `services/gateway/` | N (to-be-created) | think | ✓ |
+| arc-vault | `services/secrets/` | N (to-be-created) | reason | ✓ |
+| arc-flags | `services/flags/` | N (to-be-created) | reason | ✓ |
+| arc-sql-db | `services/persistence/` | Y (existing) | think | ✓ |
+| arc-cache | `services/cache/` | Y (existing) | think | ✓ |
 
 All paths are **valid and follow the pattern** from spec 005-data-layer.
 
@@ -395,7 +395,7 @@ Scan tasks.md for vague or untestable criteria:
 
 | Task | Criterion | Issue | Recommendation |
 |------|-----------|-------|-----------------|
-| TASK-011 | "if `USER 1000` causes Traefik to fail at runtime, remove `USER 1000` and document" | Vague — how to test? | Add explicit test: `docker run --rm ghcr.io/arc-framework/arc-heimdall:latest traefik version` must succeed |
+| TASK-011 | "if `USER 1000` causes Traefik to fail at runtime, remove `USER 1000` and document" | Vague — how to test? | Add explicit test: `docker run --rm ghcr.io/arc-framework/arc-gateway:latest traefik version` must succeed |
 | TASK-012 | "if `wget` absent in openbao image, fall back to bash `/dev/tcp`" | Untestable in acceptance — error handling is conditional | Add: "Test both wget and /dev/tcp patterns; CI will verify which is available" |
 | TASK-013 | "if Unleash fails to start, remove and add comment" | Conditional acceptance — implies retry loop | Add: "If uid 1000 fails, document root deviation + justification in compose comments; verify startup logs" |
 | TASK-024 | "all three health targets; exits non-zero if any fails" | Testable but needs explicit command | Add: "`make control-health` and verify exit code via `echo $?` is 0" |

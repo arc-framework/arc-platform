@@ -128,10 +128,10 @@ The awk-based parser must handle both levels. However:
 
 ```yaml
 depends_on:
-  - flash    # arc-flash (NATS)
-  - strange  # arc-strange (Pulsar)
-  - oracle   # arc-oracle (Postgres)       ← MUST REMOVE
-  - sonic    # arc-sonic (Redis)
+  - flash    # arc-messaging (NATS)
+  - strange  # arc-streaming (Pulsar)
+  - oracle   # arc-sql-db (Postgres)       ← MUST REMOVE
+  - sonic    # arc-cache (Redis)
   - friday-collector    # arc-friday-collector (OTEL)
 ```
 
@@ -231,7 +231,7 @@ But spec.md's functional requirements list ends at FR-15. This requirement was *
 1. Add FR-16 to spec.md's functional requirements section, OR
 2. Remove from plan.md and fold the `services/cache/service.yaml` update into TASK-012
 
-Clarify in spec: Is changing sonic's health from `redis-cli ping` to `docker exec arc-sonic redis-cli ping` required for this feature?
+Clarify in spec: Is changing sonic's health from `redis-cli ping` to `docker exec arc-cache redis-cli ping` required for this feature?
 
 ---
 

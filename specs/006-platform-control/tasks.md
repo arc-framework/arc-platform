@@ -86,9 +86,9 @@ All three tasks are fully independent. Each creates: `Dockerfile`, `service.yaml
   - Dependencies: TASK-001
   - Module: `services/gateway/`
   - Acceptance:
-    - `Dockerfile`: `FROM traefik:v3`; OCI labels (`org.opencontainers.image.title`, `description`, `source`); `arc.service.name=arc-heimdall`, `arc.service.codename=heimdall`, `arc.service.tech=traefik`; `USER 1000` (non-root via non-privileged internal ports)
-    - `service.yaml`: name `arc-heimdall`, codename `heimdall`, image `ghcr.io/arc-framework/arc-heimdall:latest`, tech `traefik`, upstream `traefik:v3`, ports `[80, 8090]`, health `http://localhost:8090/ping`, depends_on `[]`
-    - `docker-compose.yml`: service `arc-heimdall`; command includes `--api.insecure=true`, `--api.dashboard=true`, `--ping=true`, `--providers.docker=true`, `--providers.docker.network=arc_platform_net`, `--providers.docker.exposedbydefault=false`, `--entrypoints.web.address=:8080`, `--entrypoints.dashboard.address=:8090`; ports `127.0.0.1:80:8080` and `127.0.0.1:8090:8090`; volumes `/var/run/docker.sock:/var/run/docker.sock:ro`; `user: "1000:1000"`; healthcheck `traefik healthcheck --ping` interval 5s, timeout 3s, retries 5, start_period 5s; no persistent volume; network `arc_platform_net` (external); `restart: unless-stopped`
+    - `Dockerfile`: `FROM traefik:v3`; OCI labels (`org.opencontainers.image.title`, `description`, `source`); `arc.service.name=arc-gateway`, `arc.service.codename=heimdall`, `arc.service.tech=traefik`; `USER 1000` (non-root via non-privileged internal ports)
+    - `service.yaml`: name `arc-gateway`, codename `heimdall`, image `ghcr.io/arc-framework/arc-gateway:latest`, tech `traefik`, upstream `traefik:v3`, ports `[80, 8090]`, health `http://localhost:8090/ping`, depends_on `[]`
+    - `docker-compose.yml`: service `arc-gateway`; command includes `--api.insecure=true`, `--api.dashboard=true`, `--ping=true`, `--providers.docker=true`, `--providers.docker.network=arc_platform_net`, `--providers.docker.exposedbydefault=false`, `--entrypoints.web.address=:8080`, `--entrypoints.dashboard.address=:8090`; ports `127.0.0.1:80:8080` and `127.0.0.1:8090:8090`; volumes `/var/run/docker.sock:/var/run/docker.sock:ro`; `user: "1000:1000"`; healthcheck `traefik healthcheck --ping` interval 5s, timeout 3s, retries 5, start_period 5s; no persistent volume; network `arc_platform_net` (external); `restart: unless-stopped`
     - `docker compose config` passes without errors
     - `docker build -f services/gateway/Dockerfile services/gateway/` succeeds
     - Note: if `USER 1000` causes Traefik to fail at runtime, remove `USER 1000` and document root deviation in Dockerfile comment (same Pulsar pattern from 003)
@@ -97,9 +97,9 @@ All three tasks are fully independent. Each creates: `Dockerfile`, `service.yaml
   - Dependencies: TASK-001
   - Module: `services/secrets/`
   - Acceptance:
-    - `Dockerfile`: `FROM openbao/openbao`; OCI labels; `arc.service.name=arc-nick-fury`, `arc.service.codename=nick-fury`, `arc.service.tech=openbao`; **Dockerfile MUST contain** this exact comment (or equivalent): `# openbao/openbao runs as root by default. Nick Fury uses -dev mode: in-memory, auto-unsealed, known root token. Root is acceptable for this DEVELOPMENT-ONLY service. For production: Raft-backed storage + TLS + non-root user.`
-    - `service.yaml`: name `arc-nick-fury`, codename `nick-fury`, image `ghcr.io/arc-framework/arc-nick-fury:latest`, tech `openbao`, upstream `openbao/openbao`, ports `[8200]`, health `http://localhost:8200/v1/sys/health`, depends_on `[]`
-    - `docker-compose.yml`: service `arc-nick-fury`; command `server -dev`; env `VAULT_DEV_ROOT_TOKEN_ID=arc-dev-token`, `VAULT_DEV_LISTEN_ADDRESS=0.0.0.0:8200`; port `127.0.0.1:8200:8200`; no volume (stateless dev); healthcheck: attempt `wget -qO- http://localhost:8200/v1/sys/health || exit 1`; if `wget` absent use bash `/dev/tcp` pattern (same as arc-cerebro); interval 5s, timeout 3s, retries 5, start_period 5s; network `arc_platform_net` (external); `restart: unless-stopped`
+    - `Dockerfile`: `FROM openbao/openbao`; OCI labels; `arc.service.name=arc-vault`, `arc.service.codename=nick-fury`, `arc.service.tech=openbao`; **Dockerfile MUST contain** this exact comment (or equivalent): `# openbao/openbao runs as root by default. Nick Fury uses -dev mode: in-memory, auto-unsealed, known root token. Root is acceptable for this DEVELOPMENT-ONLY service. For production: Raft-backed storage + TLS + non-root user.`
+    - `service.yaml`: name `arc-vault`, codename `nick-fury`, image `ghcr.io/arc-framework/arc-vault:latest`, tech `openbao`, upstream `openbao/openbao`, ports `[8200]`, health `http://localhost:8200/v1/sys/health`, depends_on `[]`
+    - `docker-compose.yml`: service `arc-vault`; command `server -dev`; env `VAULT_DEV_ROOT_TOKEN_ID=arc-dev-token`, `VAULT_DEV_LISTEN_ADDRESS=0.0.0.0:8200`; port `127.0.0.1:8200:8200`; no volume (stateless dev); healthcheck: attempt `wget -qO- http://localhost:8200/v1/sys/health || exit 1`; if `wget` absent use bash `/dev/tcp` pattern (same as arc-vector-db); interval 5s, timeout 3s, retries 5, start_period 5s; network `arc_platform_net` (external); `restart: unless-stopped`
     - `docker compose config` passes without errors
     - `docker build -f services/secrets/Dockerfile services/secrets/` succeeds
     - No volume declared (Nick Fury is stateless in dev — data lost on restart is expected and documented)
@@ -108,9 +108,9 @@ All three tasks are fully independent. Each creates: `Dockerfile`, `service.yaml
   - Dependencies: TASK-001
   - Module: `services/flags/`, `services/persistence/initdb/`
   - Acceptance:
-    - `Dockerfile`: `FROM unleashorg/unleash-server`; OCI labels; `arc.service.name=arc-mystique`, `arc.service.codename=mystique`, `arc.service.tech=unleash`; attempt `USER 1000` (non-root); if Unleash fails to start, remove and add comment: "# NOTE: unleashorg/unleash-server requires root — upstream constraint"
-    - `service.yaml`: name `arc-mystique`, codename `mystique`, image `ghcr.io/arc-framework/arc-mystique:latest`, tech `unleash`, upstream `unleashorg/unleash-server`, ports `[4242]`, health `http://localhost:4242/health`, depends_on `[oracle, sonic]`
-    - `docker-compose.yml`: service `arc-mystique`; env `DATABASE_URL=postgresql://arc:arc@arc-oracle:5432/unleash`, `REDIS_HOST=arc-sonic`, `REDIS_PORT=6379`; port `127.0.0.1:4242:4242`; no persistent volume; healthcheck `wget -qO- http://localhost:4242/health || exit 1` interval 10s, timeout 5s, retries 10, **start_period 30s** (Unleash runs DB migrations on first boot); network `arc_platform_net` (external); `restart: unless-stopped`
+    - `Dockerfile`: `FROM unleashorg/unleash-server`; OCI labels; `arc.service.name=arc-flags`, `arc.service.codename=mystique`, `arc.service.tech=unleash`; attempt `USER 1000` (non-root); if Unleash fails to start, remove and add comment: "# NOTE: unleashorg/unleash-server requires root — upstream constraint"
+    - `service.yaml`: name `arc-flags`, codename `mystique`, image `ghcr.io/arc-framework/arc-flags:latest`, tech `unleash`, upstream `unleashorg/unleash-server`, ports `[4242]`, health `http://localhost:4242/health`, depends_on `[oracle, sonic]`
+    - `docker-compose.yml`: service `arc-flags`; env `DATABASE_URL=postgresql://arc:arc@arc-sql-db:5432/unleash`, `REDIS_HOST=arc-cache`, `REDIS_PORT=6379`; port `127.0.0.1:4242:4242`; no persistent volume; healthcheck `wget -qO- http://localhost:4242/health || exit 1` interval 10s, timeout 5s, retries 10, **start_period 30s** (Unleash runs DB migrations on first boot); network `arc_platform_net` (external); `restart: unless-stopped`
     - **Oracle init SQL** (cross-service, justified): create `services/persistence/initdb/002_create_unleash_db.sql` containing `CREATE DATABASE unleash;`
       - Justification: Oracle (the database service) is the rightful owner of "what databases exist". Mystique declares the need; Oracle satisfies it via initdb. This follows the same pattern as `001_schema_migrations.sql` (created in 005 for Cortex's needs). Not a Principle III violation — initdb is Oracle's extension point for dependent services.
       - This file runs on Oracle's first boot only (Postgres skips initdb if data dir exists). To force re-creation: `make oracle-nuke && make oracle-up`
@@ -130,7 +130,7 @@ All three tasks are fully independent. Each creates: `Dockerfile`, `service.yaml
     - Targets present: `heimdall-help`, `heimdall-build`, `heimdall-build-fresh`, `heimdall-up`, `heimdall-down`, `heimdall-health`, `heimdall-logs`, `heimdall-push`, `heimdall-publish`, `heimdall-tag`, `heimdall-clean`, `heimdall-nuke`
     - `heimdall-health`: probes `curl -sf http://localhost:8090/ping`; exits 0 if healthy, 1 if not
     - `heimdall-clean` / `heimdall-nuke`: require typed confirmation (`yes` / `nuke`) before destructive action
-    - `heimdall-publish`: pushes image then prints `https://github.com/orgs/$(ORG)/packages/container/arc-heimdall/settings`
+    - `heimdall-publish`: pushes image then prints `https://github.com/orgs/$(ORG)/packages/container/arc-gateway/settings`
     - `make heimdall-help` lists all targets with descriptions; output includes note: "Port 80 binding requires Docker privilege. If startup fails with 'permission denied', change host port in a docker-compose.override.yml"
     - All targets use `COLOR_INFO`, `COLOR_OK`, `COLOR_ERR` from root Makefile
     - `make -n heimdall-up` dry-run passes
@@ -152,7 +152,7 @@ All three tasks are fully independent. Each creates: `Dockerfile`, `service.yaml
   - Acceptance:
     - Targets present: `mystique-help`, `mystique-build`, `mystique-build-fresh`, `mystique-up`, `mystique-down`, `mystique-health`, `mystique-logs`, `mystique-push`, `mystique-publish`, `mystique-tag`, `mystique-clean`, `mystique-nuke`
     - `mystique-health`: probes `curl -sf http://localhost:4242/health`; exits 0 if healthy, 1 if not
-    - `mystique-help` output includes note: "Requires arc-oracle and arc-sonic to be running"
+    - `mystique-help` output includes note: "Requires arc-sql-db and arc-cache to be running"
     - `mystique-clean` / `mystique-nuke`: require typed confirmation before destructive action
     - `make mystique-help` lists all targets
     - `make -n mystique-up` dry-run passes
@@ -207,7 +207,7 @@ Both workflows are independent and can be implemented concurrently.
     - `prepare` job: derives `image-tag` (`control/v0.1.0` → `control-v0.1.0`), `version`, `prerelease` outputs
     - `build-heimdall`, `build-nick-fury`, `build-mystique`: parallel after `prepare`; `platforms: linux/amd64,linux/arm64`; `push-image: true`, `latest-tag: true`, `image-tag: ${{ needs.prepare.outputs.image-tag }}`
     - `security-*` jobs: `block-on-failure: true`; `create-issues: true` (CRITICAL CVEs block release)
-    - `release` job: image table (arc-heimdall, arc-nick-fury, arc-mystique); creates GitHub release via `softprops/action-gh-release@v2`
+    - `release` job: image table (arc-gateway, arc-vault, arc-flags); creates GitHub release via `softprops/action-gh-release@v2`
     - Release notes include `make control-up` / `make control-health` quickstart
     - YAML parses without errors
 
@@ -218,10 +218,10 @@ Both workflows are independent and can be implemented concurrently.
 - [x] [TASK-041] [SERVICES] [P1] End-to-end verification — control plane up + health
   - Dependencies: TASK-031, TASK-032
   - Module: `services/gateway/`, `services/secrets/`, `services/flags/`
-  - Pre-condition: `arc-oracle` and `arc-sonic` must be running (`make oracle-up sonic-up` first)
+  - Pre-condition: `arc-sql-db` and `arc-cache` must be running (`make oracle-up sonic-up` first)
   - Acceptance:
     - `docker network create arc_platform_net 2>/dev/null || true` runs without error
-    - `make control-up` exits 0; `docker compose ps` shows arc-heimdall, arc-nick-fury, arc-mystique all in `healthy` state
+    - `make control-up` exits 0; `docker compose ps` shows arc-gateway, arc-vault, arc-flags all in `healthy` state
     - `make control-health` exits 0 (all three health probes pass)
     - `make control-down` exits 0; all three containers stop; no orphaned containers
     - Independent health checks pass: `make heimdall-health`, `make nick-fury-health`, `make mystique-health`
@@ -230,8 +230,8 @@ Both workflows are independent and can be implemented concurrently.
     - `curl -H "X-Vault-Token: arc-dev-token" http://localhost:8200/v1/sys/health` returns HTTP 200 with `"sealed":false`
     - `curl http://localhost:4242/health` returns HTTP 200
     - All ports bound to `127.0.0.1`: `docker compose ps` confirms
-    - No persistent volumes for Heimdall or Nick Fury: `docker volume ls | grep arc` shows no `arc-heimdall-*` or `arc-nick-fury-*`
-    - Heimdall uid verified: `docker inspect arc-heimdall --format '{{.Config.User}}'` returns `1000:1000` or `1000` (or root documented)
+    - No persistent volumes for Heimdall or Nick Fury: `docker volume ls | grep arc` shows no `arc-gateway-*` or `arc-vault-*`
+    - Heimdall uid verified: `docker inspect arc-gateway --format '{{.Config.User}}'` returns `1000:1000` or `1000` (or root documented)
     - `services/persistence/initdb/002_create_unleash_db.sql` exists; Mystique connects to Unleash DB without error
 
 ---
@@ -255,7 +255,7 @@ Both workflows are independent and can be implemented concurrently.
   - Acceptance (full checklist — reviewer runs all items without needing to open plan.md):
     - All tasks TASK-001 through TASK-900 marked `[x]` complete
     - `make control-up` exits 0 (pre-condition: oracle + sonic running via `make oracle-up sonic-up`)
-    - `docker compose ps` shows arc-heimdall, arc-nick-fury, arc-mystique all in `healthy` state
+    - `docker compose ps` shows arc-gateway, arc-vault, arc-flags all in `healthy` state
     - `make control-health` exits 0
     - `make control-down` exits 0; no orphaned containers
     - `make heimdall-up && make heimdall-health` works independently
@@ -265,11 +265,11 @@ Both workflows are independent and can be implemented concurrently.
     - `curl http://localhost:8090/dashboard/` returns HTTP 200
     - `curl -H "X-Vault-Token: arc-dev-token" http://localhost:8200/v1/sys/health` returns HTTP 200 with `"sealed":false`
     - `curl http://localhost:4242/health` returns HTTP 200
-    - `docker inspect arc-heimdall --format '{{.Config.User}}'` confirms uid 1000 (or root deviation documented)
-    - `docker inspect arc-mystique --format '{{.Config.User}}'` confirms non-root or deviation documented
+    - `docker inspect arc-gateway --format '{{.Config.User}}'` confirms uid 1000 (or root deviation documented)
+    - `docker inspect arc-flags --format '{{.Config.User}}'` confirms non-root or deviation documented
     - Nick Fury Dockerfile contains comment explaining root deviation + dev-only scope
     - All ports bind `127.0.0.1`: verify with `docker compose ps`
-    - No persistent volumes for Heimdall or Nick Fury: `docker volume ls | grep arc` shows no `arc-heimdall-*` or `arc-nick-fury-*`
+    - No persistent volumes for Heimdall or Nick Fury: `docker volume ls | grep arc` shows no `arc-gateway-*` or `arc-vault-*`
     - `services/profiles.yaml` `think` includes `heimdall`; `reason` includes `nick-fury` + `mystique`
     - `Makefile` includes `heimdall.mk`, `nick-fury.mk`, `mystique.mk`, `control.mk`
     - `publish-all` includes `heimdall-build heimdall-publish`, `nick-fury-build nick-fury-publish`, `mystique-build mystique-publish`

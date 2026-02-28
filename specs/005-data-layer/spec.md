@@ -25,13 +25,13 @@ Provision Postgres 17 (Oracle), Qdrant (Cerebro), and MinIO (Tardis) as producti
 ```mermaid
 graph TD
     subgraph arc_platform_net
-        oracle["arc-oracle\n(Postgres 17)\n:5432"]
-        cerebro["arc-cerebro\n(Qdrant)\n:6333 REST · :6334 gRPC"]
-        tardis["arc-tardis\n(MinIO)\n:9000 S3 · :9001 console"]
+        oracle["arc-sql-db\n(Postgres 17)\n:5432"]
+        cerebro["arc-vector-db\n(Qdrant)\n:6333 REST · :6334 gRPC"]
+        tardis["arc-storage\n(MinIO)\n:9000 S3 · :9001 console"]
     end
 
     cortex["arc-cortex\n(:8081)"] -->|schema bootstrap\nSQL queries| oracle
-    mystique_future["arc-mystique (future)\nUnleash flags"] -->|feature flag state| oracle
+    mystique_future["arc-flags (future)\nUnleash flags"] -->|feature flag state| oracle
     sherlock["arc-sherlock (future)\nReasoner"] -->|vector search\nembedding store| cerebro
     scarlett["arc-scarlett (future)\nVoice Agent"] -->|binary assets\nrecordings| tardis
     agents["AI Agents"] -->|semantic memory\nRAG retrieval| cerebro
@@ -86,7 +86,7 @@ services/
 **US-3**: As a CI consumer, I want Docker images for all three services built and pushed on main branch merges so the team always has fresh images.
 - **Given**: A commit merges to main touching `services/persistence/**`, `services/vector/**`, or `services/storage/**`
 - **When**: `data-images.yml` workflow runs
-- **Then**: Images `ghcr.io/arc-framework/arc-oracle`, `arc-cerebro`, `arc-tardis` are updated
+- **Then**: Images `ghcr.io/arc-framework/arc-sql-db`, `arc-vector-db`, `arc-storage` are updated
 - **Test**: Inspect GHCR after CI completes; verify `sha-*` tag present
 
 ### P2 — Should Have
@@ -115,9 +115,9 @@ services/
 - [ ] FR-1: Create `services/persistence/` with a Postgres 17 Dockerfile using `postgres:17-alpine`, `service.yaml`, `docker-compose.yml`, and `oracle.mk`
 - [ ] FR-2: Create `services/vector/` with a Qdrant Dockerfile using `qdrant/qdrant`, `service.yaml`, `docker-compose.yml`, and `cerebro.mk`
 - [ ] FR-3: Create `services/storage/` with a MinIO Dockerfile using `minio/minio`, `service.yaml`, `docker-compose.yml`, and `tardis.mk`
-- [ ] FR-4: Oracle must initialize with default DB `arc`, user `arc`, password `arc`; data persisted to named volume `arc-oracle-data`
-- [ ] FR-5: Cerebro (Qdrant) must persist vector data to named volume `arc-cerebro-data`; both REST (:6333) and gRPC (:6334) exposed on localhost
-- [ ] FR-6: Tardis (MinIO) must expose S3 API (:9000) and console (:9001); data persisted to named volume `arc-tardis-data`; root credentials via `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` env
+- [ ] FR-4: Oracle must initialize with default DB `arc`, user `arc`, password `arc`; data persisted to named volume `arc-sql-db-data`
+- [ ] FR-5: Cerebro (Qdrant) must persist vector data to named volume `arc-vector-db-data`; both REST (:6333) and gRPC (:6334) exposed on localhost
+- [ ] FR-6: Tardis (MinIO) must expose S3 API (:9000) and console (:9001); data persisted to named volume `arc-storage-data`; root credentials via `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` env
 - [ ] FR-7: Update `services/profiles.yaml` — add `oracle` + `cerebro` to `think` profile; `tardis` to `reason` profile
 - [ ] FR-8: Create `data-images.yml` CI workflow — path-filtered per service directory, builds all three, `linux/amd64` in CI
 - [ ] FR-9: Create `data-release.yml` release workflow — tag format `data/vX.Y.Z`, builds all three multi-platform (`linux/amd64,linux/arm64`), creates GitHub release
@@ -137,9 +137,9 @@ services/
 
 | Entity | Module | Description |
 |--------|--------|-------------|
-| `arc-oracle` | `services/persistence/` | Postgres 17; relational state store for Cortex, Unleash, and future services |
-| `arc-cerebro` | `services/vector/` | Qdrant; vector DB for agent embeddings and semantic search |
-| `arc-tardis` | `services/storage/` | MinIO; S3-compatible object storage for binary assets and agent outputs |
+| `arc-sql-db` | `services/persistence/` | Postgres 17; relational state store for Cortex, Unleash, and future services |
+| `arc-vector-db` | `services/vector/` | Qdrant; vector DB for agent embeddings and semantic search |
+| `arc-storage` | `services/storage/` | MinIO; S3-compatible object storage for binary assets and agent outputs |
 | `oracle.mk` | `services/persistence/` | Make targets: oracle-up/down/health/logs/build/push/publish/tag/clean/nuke |
 | `cerebro.mk` | `services/vector/` | Make targets: cerebro-up/down/health/logs/build/push/publish/tag/clean/nuke |
 | `tardis.mk` | `services/storage/` | Make targets: tardis-up/down/health/logs/build/push/publish/tag/clean/nuke |
@@ -161,20 +161,20 @@ All three services join `arc_platform_net` only — the shared bridge already us
 ```mermaid
 graph LR
     subgraph arc_platform_net [arc_platform_net — external, shared]
-        oracle[arc-oracle]
-        cerebro[arc-cerebro]
-        tardis[arc-tardis]
+        oracle[arc-sql-db]
+        cerebro[arc-vector-db]
+        tardis[arc-storage]
         cortex[arc-cortex]
-        flash[arc-flash]
-        sonic[arc-sonic]
-        strange[arc-strange]
+        flash[arc-messaging]
+        sonic[arc-cache]
+        strange[arc-streaming]
     end
 ```
 
 **Rules:**
 - `arc_platform_net` declared `external: true` in each compose file — created by `make dev` or `make flash-up`
 - Data services join `arc_platform_net` only (no `arc_otel_net`)
-- Container hostnames (`arc-oracle`, `arc-cerebro`, `arc-tardis`) are DNS-resolvable by all services on the network
+- Container hostnames (`arc-sql-db`, `arc-vector-db`, `arc-storage`) are DNS-resolvable by all services on the network
 
 ## Edge Cases
 

@@ -126,9 +126,9 @@ http:// or https://  →  curl -sf <endpoint> > /dev/null
 otherwise            →  eval <endpoint>   (e.g. redis-cli ping)
 ```
 
-**sonic edge case**: `service.yaml` has `health: redis-cli ping` which requires `redis-cli` on host. The implementation will prefer `docker exec arc-sonic redis-cli ping` as the runtime endpoint passed to `wait-for-health.sh`, overriding the YAML value in the generated registry. Alternatively, update sonic's `service.yaml` health field to `docker exec arc-sonic redis-cli ping` — **preferred** to keep single source of truth.
+**sonic edge case**: `service.yaml` has `health: redis-cli ping` which requires `redis-cli` on host. The implementation will prefer `docker exec arc-cache redis-cli ping` as the runtime endpoint passed to `wait-for-health.sh`, overriding the YAML value in the generated registry. Alternatively, update sonic's `service.yaml` health field to `docker exec arc-cache redis-cli ping` — **preferred** to keep single source of truth.
 
-> **Decision**: Update `services/cache/service.yaml` health to `docker exec arc-sonic redis-cli ping` as part of this feature (add as FR-16 in tasks).
+> **Decision**: Update `services/cache/service.yaml` health to `docker exec arc-cache redis-cli ping` as part of this feature (add as FR-16 in tasks).
 
 ### 4. Topological Sort — DFS in shell
 
@@ -204,7 +204,7 @@ arc-platform/
 │   └── check-dev-prereqs.sh               # NEW: Docker + port prereq checks
 ├── services/
 │   ├── profiles.yaml                       # PATCH: add friday-collector to think
-│   ├── cache/service.yaml                  # PATCH: health → docker exec arc-sonic
+│   ├── cache/service.yaml                  # PATCH: health → docker exec arc-cache
 │   ├── cortex/
 │   │   ├── service.yaml                    # PATCH: remove oracle from depends_on
 │   │   └── cortex.mk                       # PATCH: add cortex-up/down aliases
@@ -298,7 +298,7 @@ scripts/lib/resolve-deps.sh flash sonic strange friday-collector cortex
 # HTTP endpoint: curl -sf <endpoint>
 # Command endpoint: eval <endpoint>
 scripts/lib/wait-for-health.sh flash "http://localhost:8222/healthz" 60
-scripts/lib/wait-for-health.sh sonic "docker exec arc-sonic redis-cli ping" 30
+scripts/lib/wait-for-health.sh sonic "docker exec arc-cache redis-cli ping" 30
 
 # check-dev-prereqs.sh — validates environment
 # Checks: docker daemon, docker compose v2, ports 4222 6379 6650 8082 13133 8081

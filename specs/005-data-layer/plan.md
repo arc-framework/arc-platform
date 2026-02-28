@@ -27,7 +27,7 @@ Add three infrastructure services — Postgres 17 (Oracle), Qdrant (Cerebro), Mi
 | Base Images | `postgres:17-alpine`, `qdrant/qdrant`, `minio/minio` |
 | Testing | `docker compose ps`, `pg_isready`, `curl /readyz`, `curl /minio/health/live` |
 | Network | `arc_platform_net` (external bridge, pre-existing) — no new networks |
-| Volumes | Named volumes: `arc-oracle-data`, `arc-cerebro-data`, `arc-tardis-data` |
+| Volumes | Named volumes: `arc-sql-db-data`, `arc-vector-db-data`, `arc-storage-data` |
 | CI Pattern | Mirror `messaging-images.yml` — amd64-only CI, dorny/paths-filter per service |
 | Health Checks | Oracle: `pg_isready`; Cerebro: HTTP `/readyz`; Tardis: HTTP `/minio/health/live` |
 
@@ -48,17 +48,17 @@ graph LR
 graph TB
     subgraph Host
         subgraph arc_platform_net [arc_platform_net — external bridge, pre-existing]
-            oracle["arc-oracle\npostgres:17-alpine\n:5432"]
-            cerebro["arc-cerebro\nqdrant/qdrant\n:6333 REST · :6334 gRPC"]
-            tardis["arc-tardis\nminio/minio\n:9000 S3 · :9001 console"]
+            oracle["arc-sql-db\npostgres:17-alpine\n:5432"]
+            cerebro["arc-vector-db\nqdrant/qdrant\n:6333 REST · :6334 gRPC"]
+            tardis["arc-storage\nminio/minio\n:9000 S3 · :9001 console"]
             cortex["arc-cortex\n:8081"]
-            flash["arc-flash\n:4222"]
-            sonic["arc-sonic\n:6379"]
+            flash["arc-messaging\n:4222"]
+            sonic["arc-cache\n:6379"]
         end
     end
 
     cortex -- "sql bootstrap\npg wire :5432" --> oracle
-    mystique_future["arc-mystique (future)"] -. "pg :5432" .-> oracle
+    mystique_future["arc-flags (future)"] -. "pg :5432" .-> oracle
     sherlock_future["arc-sherlock (future)"] -. "vector :6333" .-> cerebro
     scarlett_future["arc-scarlett (future)"] -. "s3 :9000" .-> tardis
 ```
@@ -67,9 +67,9 @@ graph TB
 
 ```mermaid
 graph LR
-    oracle_c["arc-oracle\ncontainer"] --- oracle_v["arc-oracle-data\n/var/lib/postgresql/data"]
-    cerebro_c["arc-cerebro\ncontainer"] --- cerebro_v["arc-cerebro-data\n/qdrant/storage"]
-    tardis_c["arc-tardis\ncontainer"] --- tardis_v["arc-tardis-data\n/data"]
+    oracle_c["arc-sql-db\ncontainer"] --- oracle_v["arc-sql-db-data\n/var/lib/postgresql/data"]
+    cerebro_c["arc-vector-db\ncontainer"] --- cerebro_v["arc-vector-db-data\n/qdrant/storage"]
+    tardis_c["arc-storage\ncontainer"] --- tardis_v["arc-storage-data\n/data"]
 ```
 
 ## Constitution Check
@@ -97,17 +97,17 @@ arc-platform/
 │   ├── persistence/                          ← NEW (Oracle / Postgres 17)
 │   │   ├── Dockerfile                        # FROM postgres:17-alpine; OCI + arc labels; uid 70 (postgres)
 │   │   ├── service.yaml                      # name, codename, image, ports, health
-│   │   ├── docker-compose.yml                # arc-oracle; POSTGRES_* env; named volume; arc_platform_net
+│   │   ├── docker-compose.yml                # arc-sql-db; POSTGRES_* env; named volume; arc_platform_net
 │   │   └── oracle.mk                         # oracle-up/down/health/logs/build/push/publish/tag/clean/nuke
 │   ├── vector/                               ← NEW (Cerebro / Qdrant)
 │   │   ├── Dockerfile                        # FROM qdrant/qdrant; OCI + arc labels; uid 1000
 │   │   ├── service.yaml
-│   │   ├── docker-compose.yml                # arc-cerebro; :6333/:6334; named volume; arc_platform_net
+│   │   ├── docker-compose.yml                # arc-vector-db; :6333/:6334; named volume; arc_platform_net
 │   │   └── cerebro.mk
 │   ├── storage/                              ← NEW (Tardis / MinIO)
 │   │   ├── Dockerfile                        # FROM minio/minio; OCI + arc labels; uid verified
 │   │   ├── service.yaml
-│   │   ├── docker-compose.yml                # arc-tardis; :9000/:9001; MINIO_ROOT_*; named volume; arc_platform_net
+│   │   ├── docker-compose.yml                # arc-storage; :9000/:9001; MINIO_ROOT_*; named volume; arc_platform_net
 │   │   └── tardis.mk
 │   ├── profiles.yaml                         # MODIFY — think += oracle, cerebro; reason += tardis
 │   └── data.mk                               ← NEW (aggregate)
@@ -129,7 +129,7 @@ FROM postgres:17-alpine
 LABEL org.opencontainers.image.title="ARC Oracle — Persistence"
 LABEL org.opencontainers.image.description="Postgres 17 relational database for the A.R.C. Platform"
 LABEL org.opencontainers.image.source="https://github.com/arc-framework/arc-platform"
-LABEL arc.service.name="arc-oracle"
+LABEL arc.service.name="arc-sql-db"
 LABEL arc.service.codename="oracle"
 LABEL arc.service.tech="postgres"
 # postgres:17-alpine already runs as postgres user (uid 70) — no USER directive needed
@@ -177,10 +177,10 @@ If neither works with the upstream image, document the root deviation in docker-
 
 ```yaml
 services:
-  arc-oracle:
+  arc-sql-db:
     build: {context: ., dockerfile: Dockerfile}
-    image: ghcr.io/arc-framework/arc-oracle:latest
-    container_name: arc-oracle
+    image: ghcr.io/arc-framework/arc-sql-db:latest
+    container_name: arc-sql-db
     environment:
       POSTGRES_USER: arc
       POSTGRES_PASSWORD: arc
@@ -201,7 +201,7 @@ services:
 
 volumes:
   oracle-data:
-    name: arc-oracle-data
+    name: arc-sql-db-data
 
 networks:
   arc_platform_net:
@@ -213,9 +213,9 @@ networks:
 
 ```yaml
 services:
-  arc-cerebro:
-    image: ghcr.io/arc-framework/arc-cerebro:latest
-    container_name: arc-cerebro
+  arc-vector-db:
+    image: ghcr.io/arc-framework/arc-vector-db:latest
+    container_name: arc-vector-db
     ports:
       - "127.0.0.1:6333:6333"   # REST + Prometheus metrics
       - "127.0.0.1:6334:6334"   # gRPC
@@ -236,9 +236,9 @@ services:
 
 ```yaml
 services:
-  arc-tardis:
-    image: ghcr.io/arc-framework/arc-tardis:latest
-    container_name: arc-tardis
+  arc-storage:
+    image: ghcr.io/arc-framework/arc-storage:latest
+    container_name: arc-storage
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: arc
@@ -333,7 +333,7 @@ gantt
 
 | ID | Item | Rationale |
 |----|------|-----------|
-| TD-001 | Qdrant Prometheus scraping via otel collector | Qdrant exposes `/metrics` on :6333. When a concrete dashboard requirement exists, add a `prometheus` scrape job for `arc-cerebro:6333` to the collector config (see 003 pattern). |
+| TD-001 | Qdrant Prometheus scraping via otel collector | Qdrant exposes `/metrics` on :6333. When a concrete dashboard requirement exists, add a `prometheus` scrape job for `arc-vector-db:6333` to the collector config (see 003 pattern). |
 | TD-002 | MinIO Prometheus scraping | MinIO exports metrics at `:9000/minio/v2/metrics/cluster`. Same deferral as TD-001. |
 | TD-003 | Default bucket creation | MinIO starts empty. Cortex bootstrap (or a future init task) should create standard buckets (`arc-artifacts`, `arc-models`, etc.) via `mc` client. |
 
@@ -348,8 +348,8 @@ gantt
 - [ ] `curl -s http://localhost:8081/health/deep | jq .oracle.status` returns `"ok"` after cortex restart
 - [ ] `curl -s http://localhost:6333/readyz` returns HTTP 200
 - [ ] `curl -s http://localhost:9000/minio/health/live` returns HTTP 200
-- [ ] `docker inspect arc-oracle | jq '.[0].Config.User'` confirms non-root (empty = postgres default uid 70)
-- [ ] `docker inspect arc-cerebro | jq '.[0].Config.User'` confirms non-root (uid 1000)
+- [ ] `docker inspect arc-sql-db | jq '.[0].Config.User'` confirms non-root (empty = postgres default uid 70)
+- [ ] `docker inspect arc-vector-db | jq '.[0].Config.User'` confirms non-root (uid 1000)
 - [ ] MinIO uid documented (non-root or deviation noted in compose comments)
 - [ ] All ports bind `127.0.0.1` — verify with `docker compose ps`
 - [ ] All volumes are named (not bind mounts) — `docker volume ls | grep arc`
