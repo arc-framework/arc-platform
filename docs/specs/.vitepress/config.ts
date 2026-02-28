@@ -1,5 +1,8 @@
 import { defineConfig } from 'vitepress'
 import { withMermaid } from 'vitepress-plugin-mermaid'
+import { GitChangelog, GitChangelogMarkdownSection } from '@nolebase/vitepress-plugin-git-changelog/vite'
+import { groupIconMdPlugin, groupIconVitePlugin } from 'vitepress-plugin-group-icons'
+import llmstxt from 'vitepress-plugin-llms'
 
 export default withMermaid(defineConfig({
   title: 'A.R.C. Platform — Specs',
@@ -104,12 +107,34 @@ export default withMermaid(defineConfig({
   mermaid: {},
 
   vite: {
+    plugins: [
+      GitChangelog({ repoURL: () => 'https://github.com/arc-framework/arc-platform' }),
+      GitChangelogMarkdownSection(),
+      groupIconVitePlugin(),
+      llmstxt(),
+    ],
     resolve: { preserveSymlinks: true },
+    optimizeDeps: {
+      exclude: [
+        '@nolebase/vitepress-plugin-enhanced-readabilities/client',
+        'vitepress',
+        '@nolebase/ui',
+      ],
+    },
+    ssr: {
+      noExternal: [
+        '@nolebase/vitepress-plugin-git-changelog',
+        '@nolebase/vitepress-plugin-highlight-targeted-heading',
+        '@nolebase/vitepress-plugin-enhanced-readabilities',
+        '@nolebase/ui',
+      ],
+    },
   },
 
   markdown: {
     html: false,
     config(md) {
+      md.use(groupIconMdPlugin)
       // Inline code can contain {{ }} (Go templates, GitHub Actions) which Vue
       // interprets as template interpolation. Escape the opening delimiter.
       const codeInlineRule = md.renderer.rules.code_inline!
