@@ -4,5 +4,5 @@ tech: redis
 upstream: redis:alpine
 ports:
   - 6379   # Redis protocol
-health: redis-cli ping
+health: docker exec arc-sonic redis-cli ping
 depends_on: []

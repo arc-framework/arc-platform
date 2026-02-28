@@ -1,0 +1,57 @@
+# Standalone collector config — used when ClickHouse is NOT running (think profile).
+# Receives OTLP signals and Prometheus scrapes exactly like the full config, but
+# exports to the debug exporter (stdout) instead of ClickHouse. Signals are visible
+# in collector logs and do not require the observability backend.
+#
+# Used by: otel-up-telemetry (friday-collector-up in think profile)
+# Full config:  otel-collector-config.yaml  (requires arc-friday-clickhouse)
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: arc-flash
+          scrape_interval: 15s
+          static_configs:
+            - targets: ['arc-flash:8222']
+        - job_name: arc-strange
+          scrape_interval: 15s
+          static_configs:
+            - targets: ['arc-strange:8080']
+
+processors:
+  batch:
+    send_batch_size: 10000
+    send_batch_max_size: 11000
+    timeout: 10s
+
+exporters:
+  debug:
+    verbosity: basic
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]
+    metrics:
+      receivers: [otlp, prometheus]
+      processors: [batch]
+      exporters: [debug]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]

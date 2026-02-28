@@ -6,8 +6,8 @@ language: go
 port: 8081
 health: http://localhost:8081/health
 depends_on:
-  - flash    # arc-flash (NATS)
-  - strange  # arc-strange (Pulsar)
-  - oracle   # arc-oracle (Postgres)
-  - sonic    # arc-sonic (Redis)
-  - friday-collector    # arc-friday-collector (OTEL)
+  - flash            # arc-flash (NATS)
+  - strange          # arc-strange (Pulsar)
+  - sonic            # arc-sonic (Redis)
+  - friday-collector # arc-friday-collector (OTEL)
+  # TODO: re-add oracle when persistence service lands

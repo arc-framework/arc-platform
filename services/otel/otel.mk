@@ -2,7 +2,9 @@
 # Included by the root Makefile. All paths are relative to the repo root.
 # ─────────────────────────────────────────────────────────────────────────────
 
-COMPOSE_OTEL := docker compose -f services/otel/docker-compose.yml
+COMPOSE_OTEL            := docker compose -f services/otel/docker-compose.yml
+COMPOSE_OTEL_STANDALONE := docker compose -f services/otel/docker-compose.yml \
+                                           -f services/otel/docker-compose.standalone.yml
 REGISTRY     := ghcr.io
 ORG          := arc-framework
 OTEL_VERSION ?= latest
@@ -23,7 +25,8 @@ FRIDAY_EMAIL    ?= admin@arc.local
 FRIDAY_PASSWORD ?= Admin@Arc123!
 
 .PHONY: otel-help otel-up otel-up-telemetry otel-up-observability otel-down \
-        otel-health otel-logs otel-ps otel-build otel-build-fresh otel-push otel-publish otel-tag otel-user otel-clean otel-nuke
+        otel-health otel-logs otel-ps otel-build otel-build-fresh otel-push otel-publish otel-tag otel-user otel-clean otel-nuke \
+        friday-collector-up friday-collector-down friday-collector-health
 
 ## otel-help: OTEL observability stack (arc-friday + collector + ClickHouse + ZooKeeper)
 otel-help:
@@ -42,10 +45,10 @@ otel-up:
 	@printf "\n$(COLOR_OK)✓$(COLOR_OFF) arc-friday is ready\n"
 	@$(MAKE) otel-user --no-print-directory
 
-## otel-up-telemetry: Start the OTEL collector only (arc-friday-collector)
+## otel-up-telemetry: Start the OTEL collector only (arc-friday-collector, standalone mode — no ClickHouse)
 otel-up-telemetry:
-	@printf "$(COLOR_INFO)→$(COLOR_OFF) Starting arc-friday-collector...\n"
-	$(COMPOSE_OTEL) up -d arc-friday-collector
+	@printf "$(COLOR_INFO)→$(COLOR_OFF) Starting arc-friday-collector (standalone — debug exporter)...\n"
+	$(COMPOSE_OTEL_STANDALONE) up -d arc-friday-collector
 	@printf "$(COLOR_OK)✓$(COLOR_OFF) Collector started — OTLP on :4317 (gRPC) :4318 (HTTP), health on :13133\n"
 
 ## otel-up-observability: Start the observability backend only (arc-friday + ClickHouse + ZooKeeper)
@@ -189,4 +192,25 @@ otel-nuke:
 	$(COMPOSE_OTEL) down --volumes --remove-orphans
 	@for img in $(OTEL_IMAGES); do docker rmi $$img 2>/dev/null || true; done
 	@docker network rm arc_otel_net 2>/dev/null || true
-	@printf "$(COLOR_OK)✓$(COLOR_OFF) otel reset complete — rebuild: make otel-build && make otel-up\n"
+
+# ─── friday-collector aliases (collector-only subset of the OTEL stack) ──────
+# Use these when only the OTLP collector is needed (think profile).
+# friday-collector-down stops only the collector; the full SigNoz stack stays up.
+
+## friday-collector-up: Start arc-friday-collector only (OTLP on :4317/:4318, health on :13133)
+friday-collector-up: otel-up-telemetry
+
+## friday-collector-down: Stop arc-friday-collector only (leaves SigNoz stack running if active)
+friday-collector-down:
+	@printf "$(COLOR_INFO)→$(COLOR_OFF) Stopping arc-friday-collector...\n"
+	$(COMPOSE_OTEL) stop arc-friday-collector
+	@printf "$(COLOR_OK)✓$(COLOR_OFF) Stopped arc-friday-collector\n"
+
+## friday-collector-health: Probe arc-friday-collector health endpoint (:13133)
+friday-collector-health:
+	@printf "$(COLOR_INFO)→$(COLOR_OFF) friday-collector health (:13133)... " && \
+	  if curl -sf http://localhost:13133/ > /dev/null; then \
+	    printf "$(COLOR_OK)✓$(COLOR_OFF)\n"; \
+	  else \
+	    printf "$(COLOR_ERR)✗ FAILED$(COLOR_OFF)\n"; exit 1; \
+	  fi

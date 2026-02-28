@@ -22,7 +22,8 @@ CORTEX_LOCAL_ENV := \
 
 .PHONY: cortex-help cortex-build cortex-build-fresh cortex-push cortex-publish cortex-tag \
         cortex-bin cortex-run cortex-run-dev cortex-bootstrap-local cortex-test cortex-lint cortex-check \
-        cortex-docker-up cortex-docker-down cortex-docker-logs cortex-docker-ps cortex-docker-bootstrap
+        cortex-docker-up cortex-docker-down cortex-docker-logs cortex-docker-ps cortex-docker-bootstrap \
+        cortex-up cortex-down
 
 ## cortex-help: Cortex bootstrap service (arc-cortex — provisions Postgres, NATS, Pulsar, Redis)
 cortex-help:
@@ -153,3 +154,12 @@ cortex-docker-ps:
 cortex-docker-bootstrap:
 	@printf "$(COLOR_INFO)→$(COLOR_OFF) Running bootstrap inside arc-cortex container...\n"
 	@docker exec arc-cortex /usr/local/bin/cortex bootstrap
+
+# ─── Profile-friendly aliases ─────────────────────────────────────────────────
+# Used by make dev — chains to docker targets as Make prerequisites (not shell).
+
+## cortex-up: Start arc-cortex in Docker (alias for cortex-docker-up)
+cortex-up: cortex-docker-up
+
+## cortex-down: Stop arc-cortex container (alias for cortex-docker-down)
+cortex-down: cortex-docker-down

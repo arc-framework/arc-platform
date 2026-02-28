@@ -1,7 +1,7 @@
 codename: friday
 tech: arc-friday
 depends_on:
-  - telemetry
+  - friday-collector
 health: http://localhost:3301/api/v1/health
 compose_services:
   - signoz

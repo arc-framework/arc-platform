@@ -7,10 +7,11 @@
 think:
   description: 'Minimal viable platform — just enough to think'
   services:
-    - cortex
     - flash
-    - strange
     - sonic
+    - strange
+    - friday-collector
+    - cortex
 
 # ─── reason ─────────────────────────────────────────────────────
 # Full reasoning stack — observability, identity, bootstrap

@@ -1,0 +1,11 @@
+name: arc-otel
+codename: otel
+description: "Full OTEL observability stack — SigNoz + ClickHouse + ZooKeeper + collector"
+ports:
+  - 3301  # SigNoz UI + API
+  - 8080  # ClickHouse HTTP
+  - 9000  # ClickHouse native
+health: http://localhost:3301/api/v1/health
+depends_on:
+  - friday-collector
+timeout: 300

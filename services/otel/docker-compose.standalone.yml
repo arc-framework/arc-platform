@@ -1,0 +1,14 @@
+# Standalone override — mounts the standalone collector config so arc-friday-collector
+# can start without arc-friday-clickhouse (used by the think profile).
+#
+# Usage (via otel-up-telemetry / friday-collector-up):
+#   docker compose -f services/otel/docker-compose.yml \
+#                  -f services/otel/docker-compose.standalone.yml \
+#                  up -d arc-friday-collector
+
+services:
+  arc-friday-collector:
+    command:
+      - --config=/etc/otelcol/config-standalone.yaml
+    volumes:
+      - ./telemetry/config/otel-collector-config-standalone.yaml:/etc/otelcol/config-standalone.yaml:ro
