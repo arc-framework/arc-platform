@@ -1,6 +1,6 @@
-name: arc-flash
+name: arc-messaging
 codename: flash
-image: ghcr.io/arc-framework/arc-flash:latest
+image: ghcr.io/arc-framework/arc-messaging:latest
 tech: nats
 upstream: nats:alpine
 ports:

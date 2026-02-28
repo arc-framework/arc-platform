@@ -44,8 +44,8 @@ messaging-health:
 
 ## messaging-logs: Tail logs from all three messaging containers simultaneously
 messaging-logs:
-	@printf "$(COLOR_INFO)→$(COLOR_OFF) Tailing arc-flash, arc-strange, arc-sonic logs (Ctrl-C to stop)...\n"
-	@docker logs -f arc-flash  2>&1 | sed 's/^/[flash]   /' & \
-	 docker logs -f arc-strange 2>&1 | sed 's/^/[strange] /' & \
-	 docker logs -f arc-sonic  2>&1 | sed 's/^/[sonic]   /' & \
+	@printf "$(COLOR_INFO)→$(COLOR_OFF) Tailing arc-messaging, arc-streaming, arc-cache logs (Ctrl-C to stop)...\n"
+	@docker logs -f arc-messaging  2>&1 | sed 's/^/[flash]   /' & \
+	 docker logs -f arc-streaming  2>&1 | sed 's/^/[strange] /' & \
+	 docker logs -f arc-cache      2>&1 | sed 's/^/[sonic]   /' & \
 	 wait

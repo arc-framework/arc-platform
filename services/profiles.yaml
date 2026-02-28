@@ -14,6 +14,7 @@ think:
     - cortex
     - oracle
     - cerebro
+    - heimdall
 
 # ─── reason ─────────────────────────────────────────────────────
 # Full reasoning stack — observability, identity, bootstrap
@@ -26,6 +27,8 @@ reason:
     - sonic
     - otel
     - tardis
+    - nick-fury
+    - mystique
 
 # ─── ultra-instinct ─────────────────────────────────────────────
 # Everything — voice, real-time, chaos testing, the full roster

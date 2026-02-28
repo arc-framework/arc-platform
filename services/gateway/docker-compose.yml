@@ -1,0 +1,38 @@
+name: arc-platform
+
+services:
+  arc-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/arc-framework/arc-gateway:latest
+    container_name: arc-gateway
+    command:
+      - --api.insecure=true
+      - --api.dashboard=true
+      - --ping=true
+      - --providers.docker=true
+      - --providers.docker.network=arc_platform_net
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:8080
+      - --entrypoints.dashboard.address=:8090
+    ports:
+      - "127.0.0.1:80:8080"    # HTTP proxy — localhost only
+      - "127.0.0.1:8090:8090"  # Dashboard / ping — localhost only
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    user: "1000:1000"
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks:
+      - arc_platform_net
+    restart: unless-stopped
+
+networks:
+  arc_platform_net:
+    external: true
+    name: arc_platform_net

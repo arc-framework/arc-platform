@@ -1,9 +1,9 @@
-name: arc-sonic
+name: arc-cache
 codename: sonic
-image: ghcr.io/arc-framework/arc-sonic:latest
+image: ghcr.io/arc-framework/arc-cache:latest
 tech: redis
 upstream: redis:alpine
 ports:
   - 6379   # Redis protocol
-health: docker exec arc-sonic redis-cli ping
+health: docker exec arc-cache redis-cli ping
 depends_on: []

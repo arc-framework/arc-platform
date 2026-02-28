@@ -1,0 +1,10 @@
+name: arc-gateway
+codename: heimdall
+image: ghcr.io/arc-framework/arc-gateway:latest
+tech: traefik
+upstream: traefik:v3
+ports:
+  - 80     # HTTP proxy (host 80 → container 8080)
+  - 8090   # Dashboard / ping endpoint
+health: http://localhost:8090/ping
+depends_on: []

@@ -5,12 +5,12 @@ services:
   # NOTE: Pulsar requires root to initialize /pulsar on first run (upstream
   # constraint). Non-root is not supported by apachepulsar/pulsar. Documented
   # deviation from NFR-1. See: https://github.com/apache/pulsar/issues/8284
-  arc-strange:
+  arc-streaming:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ghcr.io/arc-framework/arc-strange:latest
-    container_name: arc-strange
+    image: ghcr.io/arc-framework/arc-streaming:latest
+    container_name: arc-streaming
     command:
       - bin/pulsar
       - standalone
@@ -34,7 +34,7 @@ services:
 
 volumes:
   strange-data:
-    name: arc-strange-data
+    name: arc-streaming-data
 
 networks:
   arc_platform_net:

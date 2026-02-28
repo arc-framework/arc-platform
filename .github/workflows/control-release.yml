@@ -1,15 +1,15 @@
-name: Data Release
+name: Control Plane Release
 
-# Full release pipeline for arc-sql-db, arc-vector-db, and arc-storage.
-# Triggered by pushing a version tag: git tag data/v1.2.3 && git push --tags
+# Full release pipeline for arc-gateway, arc-vault, and arc-flags.
+# Triggered by pushing a version tag: git tag control/v1.2.3 && git push --tags
 #
-# Tag format:  data/v{MAJOR}.{MINOR}.{PATCH}  (e.g. data/v0.1.0)
-# Pre-release: data/v1.0.0-rc1, data/v1.0.0-alpha, data/v1.0.0-beta
+# Tag format:  control/v{MAJOR}.{MINOR}.{PATCH}  (e.g. control/v0.1.0)
+# Pre-release: control/v1.0.0-rc1, control/v1.0.0-alpha, control/v1.0.0-beta
 #
 # Image tags published:
-#   data-v{x.y.z}  — pinned reference for service.yaml / docker-compose.yml
-#   sha-{short}    — traceability back to the exact commit
-#   latest         — convenience tag for local dev
+#   control-v{x.y.z}  — pinned reference for service.yaml / docker-compose.yml
+#   sha-{short}       — traceability back to the exact commit
+#   latest            — convenience tag for local dev
 #
 # Version bump rules:
 #   new service added or major config change → MAJOR
@@ -18,14 +18,20 @@ name: Data Release
 #
 # Parallelism:
 #   prepare runs first.
-#   build-oracle, build-cerebro, build-tardis run concurrently after prepare.
+#   build-heimdall, build-nick-fury, build-mystique run concurrently after prepare.
 #   security-* runs after their respective builds.
 #   release runs after prepare + all builds + all security gates.
 
 on:
   push:
     tags:
-      - 'data/v*'
+      - 'control/v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. control/v0.1.0)'
+        required: false
+        default: 'control/v0.0.0-test'
 
 permissions:
   contents: write
@@ -36,7 +42,7 @@ permissions:
 jobs:
 
   # ── Derive Docker-safe image tag from git tag ──────────────────────────────
-  # data/v0.1.0 → data-v0.1.0 (slashes are not valid in Docker image tags)
+  # control/v0.1.0 → control-v0.1.0 (slashes are not valid in Docker image tags)
   prepare:
     name: Prepare Release
     runs-on: ubuntu-latest
@@ -48,9 +54,9 @@ jobs:
       - name: Derive image tag and version
         id: tag
         run: |
-          GIT_TAG="${GITHUB_REF_NAME}"                # data/v0.1.0
-          IMAGE_TAG="${GIT_TAG/\//-}"                 # data-v0.1.0
-          VERSION="${GIT_TAG#data/v}"                 # 0.1.0
+          GIT_TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
+          IMAGE_TAG="${GIT_TAG/\//-}"                 # control-v0.1.0
+          VERSION="${GIT_TAG#control/v}"              # 0.1.0
 
           echo "image-tag=$IMAGE_TAG"   >> $GITHUB_OUTPUT
           echo "version=$VERSION"       >> $GITHUB_OUTPUT
@@ -61,14 +67,14 @@ jobs:
             echo "prerelease=false" >> $GITHUB_OUTPUT
           fi
 
-  # ── Build arc-sql-db (parallel after prepare) ─────────────────────────────
-  build-oracle:
-    name: Build arc-sql-db
+  # ── Build arc-gateway (parallel after prepare) ───────────────────────────
+  build-heimdall:
+    name: Build arc-gateway
     needs: [prepare]
     uses: ./.github/workflows/_reusable-build.yml
     with:
-      service-name: arc-sql-db
-      service-path: services/persistence
+      service-name: arc-gateway
+      service-path: services/gateway
       dockerfile: Dockerfile
       platforms: linux/amd64,linux/arm64
       push-image: true
@@ -78,14 +84,14 @@ jobs:
       image-prefix: ghcr.io/arc-framework
     secrets: inherit
 
-  # ── Build arc-vector-db (parallel after prepare) ────────────────────────────
-  build-cerebro:
-    name: Build arc-vector-db
+  # ── Build arc-vault (parallel after prepare) ──────────────────────────
+  build-nick-fury:
+    name: Build arc-vault
     needs: [prepare]
     uses: ./.github/workflows/_reusable-build.yml
     with:
-      service-name: arc-vector-db
-      service-path: services/vector
+      service-name: arc-vault
+      service-path: services/secrets
       dockerfile: Dockerfile
       platforms: linux/amd64,linux/arm64
       push-image: true
@@ -95,14 +101,14 @@ jobs:
       image-prefix: ghcr.io/arc-framework
     secrets: inherit
 
-  # ── Build arc-storage (parallel after prepare) ─────────────────────────────
-  build-tardis:
-    name: Build arc-storage
+  # ── Build arc-flags (parallel after prepare) ───────────────────────────
+  build-mystique:
+    name: Build arc-flags
     needs: [prepare]
     uses: ./.github/workflows/_reusable-build.yml
     with:
-      service-name: arc-storage
-      service-path: services/storage
+      service-name: arc-flags
+      service-path: services/flags
       dockerfile: Dockerfile
       platforms: linux/amd64,linux/arm64
       push-image: true
@@ -112,55 +118,55 @@ jobs:
       image-prefix: ghcr.io/arc-framework
     secrets: inherit
 
-  # ── Security: Oracle — CRITICAL CVEs block the release ────────────────────
-  security-oracle:
-    name: Security Gate — arc-sql-db
-    needs: [build-oracle]
+  # ── Security: Heimdall — CRITICAL CVEs block the release ──────────────────
+  security-heimdall:
+    name: Security Gate — arc-gateway
+    needs: [build-heimdall]
     uses: ./.github/workflows/_reusable-security.yml
     with:
       scan-type: fs
-      scan-target: services/persistence
-      severity: CRITICAL,HIGH
+      scan-target: services/gateway
+      severity: CRITICAL,HIGH,MEDIUM
       fail-on-severity: CRITICAL
       block-on-failure: true
-      service-name: arc-sql-db-release
+      service-name: arc-gateway
       create-issues: true
     secrets: inherit
 
-  # ── Security: Cerebro — CRITICAL CVEs block the release ───────────────────
-  security-cerebro:
-    name: Security Gate — arc-vector-db
-    needs: [build-cerebro]
+  # ── Security: Nick Fury — CRITICAL CVEs block the release ─────────────────
+  security-nick-fury:
+    name: Security Gate — arc-vault
+    needs: [build-nick-fury]
     uses: ./.github/workflows/_reusable-security.yml
     with:
       scan-type: fs
-      scan-target: services/vector
-      severity: CRITICAL,HIGH
+      scan-target: services/secrets
+      severity: CRITICAL,HIGH,MEDIUM
       fail-on-severity: CRITICAL
       block-on-failure: true
-      service-name: arc-vector-db-release
+      service-name: arc-vault
       create-issues: true
     secrets: inherit
 
-  # ── Security: Tardis — CRITICAL CVEs block the release ────────────────────
-  security-tardis:
-    name: Security Gate — arc-storage
-    needs: [build-tardis]
+  # ── Security: Mystique — CRITICAL CVEs block the release ──────────────────
+  security-mystique:
+    name: Security Gate — arc-flags
+    needs: [build-mystique]
     uses: ./.github/workflows/_reusable-security.yml
     with:
       scan-type: fs
-      scan-target: services/storage
-      severity: CRITICAL,HIGH
+      scan-target: services/flags
+      severity: CRITICAL,HIGH,MEDIUM
       fail-on-severity: CRITICAL
       block-on-failure: true
-      service-name: arc-storage-release
+      service-name: arc-flags
       create-issues: true
     secrets: inherit
 
   # ── GitHub release ─────────────────────────────────────────────────────────
   release:
     name: GitHub Release
-    needs: [prepare, build-oracle, build-cerebro, build-tardis, security-oracle, security-cerebro, security-tardis]
+    needs: [prepare, build-heimdall, build-nick-fury, build-mystique, security-heimdall, security-nick-fury, security-mystique]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -172,32 +178,32 @@ jobs:
           PREFIX="ghcr.io/arc-framework"
 
           cat > release-notes.md << EOF
-          ## Data Layer Services — ${VERSION}
+          ## Control Plane Services — ${VERSION}
 
-          PostgreSQL 17 (Oracle), Qdrant (Cerebro), and MinIO (Tardis) data services
+          Traefik (Heimdall), OpenBao (Nick Fury), and Unleash (Mystique) control plane services
           for the A.R.C. Platform.
 
           ### Images
 
           | Service | Image | Versioned Tag | Also Tagged |
           |---------|-------|--------------|-------------|
-          | arc-sql-db (PostgreSQL) | \`${PREFIX}/arc-sql-db\` | \`${IMAGE_TAG}\` | \`latest\`, \`sha-*\` |
-          | arc-vector-db (Qdrant) | \`${PREFIX}/arc-vector-db\` | \`${IMAGE_TAG}\` | \`latest\`, \`sha-*\` |
-          | arc-storage (MinIO) | \`${PREFIX}/arc-storage\` | \`${IMAGE_TAG}\` | \`latest\`, \`sha-*\` |
+          | arc-gateway (Traefik) | \`${PREFIX}/arc-gateway\` | \`${IMAGE_TAG}\` | \`latest\`, \`sha-*\` |
+          | arc-vault (OpenBao) | \`${PREFIX}/arc-vault\` | \`${IMAGE_TAG}\` | \`latest\`, \`sha-*\` |
+          | arc-flags (Unleash) | \`${PREFIX}/arc-flags\` | \`${IMAGE_TAG}\` | \`latest\`, \`sha-*\` |
 
           ### Pull
 
           \`\`\`bash
-          docker pull ${PREFIX}/arc-sql-db:${IMAGE_TAG}
-          docker pull ${PREFIX}/arc-vector-db:${IMAGE_TAG}
-          docker pull ${PREFIX}/arc-storage:${IMAGE_TAG}
+          docker pull ${PREFIX}/arc-gateway:${IMAGE_TAG}
+          docker pull ${PREFIX}/arc-vault:${IMAGE_TAG}
+          docker pull ${PREFIX}/arc-flags:${IMAGE_TAG}
           \`\`\`
 
           ### Start
 
           \`\`\`bash
-          make data-up
-          make data-health
+          make control-up
+          make control-health
           \`\`\`
 
           ### Local Dev
@@ -210,7 +216,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: 'Data ${{ needs.prepare.outputs.version }}'
+          name: 'Control ${{ needs.prepare.outputs.version }}'
           body_path: release-notes.md
           draft: false
           prerelease: ${{ needs.prepare.outputs.prerelease == 'true' }}

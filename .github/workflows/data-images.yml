@@ -1,6 +1,6 @@
 name: Data Image Pipeline
 
-# CI/push orchestrator for arc-oracle, arc-cerebro, and arc-tardis images.
+# CI/push orchestrator for arc-sql-db, arc-vector-db, and arc-storage images.
 # Builds on every data-layer-related push; pushes to GHCR on main branch merges.
 # For a full versioned release, push a tag: git tag data/v1.2.3 && git push --tags
 #
@@ -83,14 +83,14 @@ jobs:
             echo "push-image=false" >> $GITHUB_OUTPUT
           fi
 
-  # ── Build arc-oracle (parallel) — only when persistence/ changed ──────────
+  # ── Build arc-sql-db (parallel) — only when persistence/ changed ──────────
   build-oracle:
-    name: Build arc-oracle
+    name: Build arc-sql-db
     needs: changes
     if: needs.changes.outputs.oracle == 'true'
     uses: ./.github/workflows/_reusable-build.yml
     with:
-      service-name: arc-oracle
+      service-name: arc-sql-db
       service-path: services/persistence
       dockerfile: Dockerfile
       platforms: linux/amd64
@@ -99,14 +99,14 @@ jobs:
       image-prefix: ghcr.io/arc-framework
     secrets: inherit
 
-  # ── Build arc-cerebro (parallel) — only when vector/ changed ─────────────
+  # ── Build arc-vector-db (parallel) — only when vector/ changed ─────────────
   build-cerebro:
-    name: Build arc-cerebro
+    name: Build arc-vector-db
     needs: changes
     if: needs.changes.outputs.cerebro == 'true'
     uses: ./.github/workflows/_reusable-build.yml
     with:
-      service-name: arc-cerebro
+      service-name: arc-vector-db
       service-path: services/vector
       dockerfile: Dockerfile
       platforms: linux/amd64
@@ -115,14 +115,14 @@ jobs:
       image-prefix: ghcr.io/arc-framework
     secrets: inherit
 
-  # ── Build arc-tardis (parallel) — only when storage/ changed ─────────────
+  # ── Build arc-storage (parallel) — only when storage/ changed ─────────────
   build-tardis:
-    name: Build arc-tardis
+    name: Build arc-storage
     needs: changes
     if: needs.changes.outputs.tardis == 'true'
     uses: ./.github/workflows/_reusable-build.yml
     with:
-      service-name: arc-tardis
+      service-name: arc-storage
       service-path: services/storage
       dockerfile: Dockerfile
       platforms: linux/amd64
@@ -133,7 +133,7 @@ jobs:
 
   # ── Security: Oracle (after build-oracle, non-blocking in CI) ────────────
   security-oracle:
-    name: Security Scan — arc-oracle
+    name: Security Scan — arc-sql-db
     needs: [build-oracle]
     if: always() && !cancelled() && needs.build-oracle.result == 'success'
     uses: ./.github/workflows/_reusable-security.yml
@@ -143,13 +143,13 @@ jobs:
       severity: CRITICAL,HIGH,MEDIUM
       fail-on-severity: CRITICAL
       block-on-failure: false
-      service-name: arc-oracle
+      service-name: arc-sql-db
       create-issues: false
     secrets: inherit
 
   # ── Security: Cerebro (after build-cerebro, non-blocking in CI) ──────────
   security-cerebro:
-    name: Security Scan — arc-cerebro
+    name: Security Scan — arc-vector-db
     needs: [build-cerebro]
     if: always() && !cancelled() && needs.build-cerebro.result == 'success'
     uses: ./.github/workflows/_reusable-security.yml
@@ -159,13 +159,13 @@ jobs:
       severity: CRITICAL,HIGH,MEDIUM
       fail-on-severity: CRITICAL
       block-on-failure: false
-      service-name: arc-cerebro
+      service-name: arc-vector-db
       create-issues: false
     secrets: inherit
 
   # ── Security: Tardis (after build-tardis, non-blocking in CI) ────────────
   security-tardis:
-    name: Security Scan — arc-tardis
+    name: Security Scan — arc-storage
     needs: [build-tardis]
     if: always() && !cancelled() && needs.build-tardis.result == 'success'
     uses: ./.github/workflows/_reusable-security.yml
@@ -175,6 +175,6 @@ jobs:
       severity: CRITICAL,HIGH,MEDIUM
       fail-on-severity: CRITICAL
       block-on-failure: false
-      service-name: arc-tardis
+      service-name: arc-storage
       create-issues: false
     secrets: inherit

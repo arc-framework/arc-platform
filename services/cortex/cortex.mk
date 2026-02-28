@@ -121,7 +121,7 @@ cortex-bootstrap-local: cortex-bin
 
 # ─── Docker Compose ───────────────────────────────────────────────────────────
 # Requires: make otel-up (creates arc_otel_net) and the platform infra stack
-# (creates arc_platform_net with arc-flash, arc-sonic, arc-strange).
+# (creates arc_platform_net with arc-messaging, arc-cache, arc-streaming).
 # Service names resolve automatically inside Docker — no env var overrides needed.
 
 ## cortex-docker-up: Start arc-cortex in Docker (requires arc_otel_net + arc_platform_net)

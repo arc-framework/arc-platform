@@ -1,12 +1,12 @@
 name: arc-platform
 
 services:
-  arc-flash:
+  arc-messaging:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ghcr.io/arc-framework/arc-flash:latest
-    container_name: arc-flash
+    image: ghcr.io/arc-framework/arc-messaging:latest
+    container_name: arc-messaging
     command:
       - --js                    # enable JetStream
       - --http_port=8222        # monitoring / Prometheus endpoint
@@ -28,7 +28,7 @@ services:
 
 volumes:
   flash-jetstream:
-    name: arc-flash-jetstream
+    name: arc-messaging-jetstream
 
 networks:
   arc_platform_net:

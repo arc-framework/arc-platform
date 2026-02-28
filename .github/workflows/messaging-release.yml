@@ -1,6 +1,6 @@
 name: Messaging Release
 
-# Full release pipeline for arc-flash, arc-strange, and arc-sonic.
+# Full release pipeline for arc-messaging, arc-streaming, and arc-cache.
 # Triggered by pushing a version tag: git tag messaging/v1.2.3 && git push --tags
 #
 # Tag format:  messaging/v{MAJOR}.{MINOR}.{PATCH}  (e.g. messaging/v0.1.0)
@@ -61,13 +61,13 @@ jobs:
             echo "prerelease=false" >> $GITHUB_OUTPUT
           fi
 
-  # ── Build arc-flash (parallel after prepare) ──────────────────────────────
+  # ── Build arc-messaging (parallel after prepare) ──────────────────────────────
   build-flash:
-    name: Build arc-flash
+    name: Build arc-messaging
     needs: [prepare]
     uses: ./.github/workflows/_reusable-build.yml
     with:
-      service-name: arc-flash
+      service-name: arc-messaging
       service-path: services/messaging
       dockerfile: Dockerfile
       platforms: linux/amd64,linux/arm64
@@ -78,13 +78,13 @@ jobs:
       image-prefix: ghcr.io/arc-framework
     secrets: inherit
 
-  # ── Build arc-strange (parallel after prepare) ────────────────────────────
+  # ── Build arc-streaming (parallel after prepare) ────────────────────────────
   build-strange:
-    name: Build arc-strange
+    name: Build arc-streaming
     needs: [prepare]
     uses: ./.github/workflows/_reusable-build.yml
     with:
-      service-name: arc-strange
+      service-name: arc-streaming
       service-path: services/streaming
       dockerfile: Dockerfile
       platforms: linux/amd64,linux/arm64
@@ -95,13 +95,13 @@ jobs:
       image-prefix: ghcr.io/arc-framework
     secrets: inherit
 
-  # ── Build arc-sonic (parallel after prepare) ──────────────────────────────
+  # ── Build arc-cache (parallel after prepare) ──────────────────────────────
   build-sonic:
-    name: Build arc-sonic
+    name: Build arc-cache
     needs: [prepare]
     uses: ./.github/workflows/_reusable-build.yml
     with:
-      service-name: arc-sonic
+      service-name: arc-cache
       service-path: services/cache
       dockerfile: Dockerfile
       platforms: linux/amd64,linux/arm64
@@ -114,7 +114,7 @@ jobs:
 
   # ── Security: Flash — CRITICAL CVEs block the release ─────────────────────
   security-flash:
-    name: Security Gate — arc-flash
+    name: Security Gate — arc-messaging
     needs: [build-flash]
     uses: ./.github/workflows/_reusable-security.yml
     with:
@@ -123,13 +123,13 @@ jobs:
       severity: CRITICAL,HIGH
       fail-on-severity: CRITICAL
       block-on-failure: true
-      service-name: arc-flash-release
+      service-name: arc-messaging-release
       create-issues: true
     secrets: inherit
 
   # ── Security: Strange — CRITICAL CVEs block the release ───────────────────
   security-strange:
-    name: Security Gate — arc-strange
+    name: Security Gate — arc-streaming
     needs: [build-strange]
     uses: ./.github/workflows/_reusable-security.yml
     with:
@@ -138,13 +138,13 @@ jobs:
       severity: CRITICAL,HIGH
       fail-on-severity: CRITICAL
       block-on-failure: true
-      service-name: arc-strange-release
+      service-name: arc-streaming-release
       create-issues: true
     secrets: inherit
 
   # ── Security: Sonic — CRITICAL CVEs block the release ─────────────────────
   security-sonic:
-    name: Security Gate — arc-sonic
+    name: Security Gate — arc-cache
     needs: [build-sonic]
     uses: ./.github/workflows/_reusable-security.yml
     with:
@@ -153,7 +153,7 @@ jobs:
       severity: CRITICAL,HIGH
       fail-on-severity: CRITICAL
       block-on-failure: true
-      service-name: arc-sonic-release
+      service-name: arc-cache-release
       create-issues: true
     secrets: inherit
 
@@ -181,16 +181,16 @@ jobs:
 
           | Service | Image | Versioned Tag | Also Tagged |
           |---------|-------|--------------|-------------|
-          | arc-flash (NATS) | \`${PREFIX}/arc-flash\` | \`${IMAGE_TAG}\` | \`latest\`, \`sha-*\` |
-          | arc-strange (Pulsar) | \`${PREFIX}/arc-strange\` | \`${IMAGE_TAG}\` | \`latest\`, \`sha-*\` |
-          | arc-sonic (Redis) | \`${PREFIX}/arc-sonic\` | \`${IMAGE_TAG}\` | \`latest\`, \`sha-*\` |
+          | arc-messaging (NATS) | \`${PREFIX}/arc-messaging\` | \`${IMAGE_TAG}\` | \`latest\`, \`sha-*\` |
+          | arc-streaming (Pulsar) | \`${PREFIX}/arc-streaming\` | \`${IMAGE_TAG}\` | \`latest\`, \`sha-*\` |
+          | arc-cache (Redis) | \`${PREFIX}/arc-cache\` | \`${IMAGE_TAG}\` | \`latest\`, \`sha-*\` |
 
           ### Pull
 
           \`\`\`bash
-          docker pull ${PREFIX}/arc-flash:${IMAGE_TAG}
-          docker pull ${PREFIX}/arc-strange:${IMAGE_TAG}
-          docker pull ${PREFIX}/arc-sonic:${IMAGE_TAG}
+          docker pull ${PREFIX}/arc-messaging:${IMAGE_TAG}
+          docker pull ${PREFIX}/arc-streaming:${IMAGE_TAG}
+          docker pull ${PREFIX}/arc-cache:${IMAGE_TAG}
           \`\`\`
 
           ### Start

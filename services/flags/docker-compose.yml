@@ -1,0 +1,29 @@
+name: arc-platform
+
+services:
+  arc-flags:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/arc-framework/arc-flags:latest
+    container_name: arc-flags
+    environment:
+      DATABASE_URL: postgresql://arc:arc@arc-sql-db:5432/unleash
+      REDIS_HOST: arc-cache
+      REDIS_PORT: 6379
+    ports:
+      - "127.0.0.1:4242:4242"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4242/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - arc_platform_net
+    restart: unless-stopped
+
+networks:
+  arc_platform_net:
+    external: true
+    name: arc_platform_net

@@ -3,7 +3,7 @@ FROM minio/minio
 LABEL org.opencontainers.image.title="ARC Tardis — Object Storage"
 LABEL org.opencontainers.image.description="MinIO S3-compatible object storage for the A.R.C. Platform"
 LABEL org.opencontainers.image.source="https://github.com/arc-framework/arc-platform"
-LABEL arc.service.name="arc-tardis"
+LABEL arc.service.name="arc-storage"
 LABEL arc.service.codename="tardis"
 LABEL arc.service.tech="minio"
 
