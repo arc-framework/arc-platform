@@ -1,4 +1,4 @@
-# Telemetry — Black Widow (signoz-otel-collector)
+# Telemetry — Friday Collector (signoz-otel-collector)
 
 OTEL collector that accepts signals from any A.R.C. service and exports them to ClickHouse.
 
