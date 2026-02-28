@@ -1,6 +1,6 @@
 import { defineConfig } from 'vitepress'
 import { withMermaid } from 'vitepress-plugin-mermaid'
-import { GitChangelog, GitChangelogMarkdownSection } from '@nolebase/vitepress-plugin-git-changelog/vite'
+import { GitChangelog } from '@nolebase/vitepress-plugin-git-changelog/vite'
 import { groupIconMdPlugin, groupIconVitePlugin } from 'vitepress-plugin-group-icons'
 import llmstxt from 'vitepress-plugin-llms'
 
@@ -109,9 +109,8 @@ export default withMermaid(defineConfig({
   vite: {
     plugins: [
       GitChangelog({ repoURL: () => 'https://github.com/arc-framework/arc-platform' }),
-      GitChangelogMarkdownSection(),
       groupIconVitePlugin(),
-      llmstxt(),
+      llmstxt({ injectLLMHint: false }),
     ],
     resolve: { preserveSymlinks: true },
     optimizeDeps: {

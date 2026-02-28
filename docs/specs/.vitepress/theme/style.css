@@ -1,0 +1,12 @@
+/* Git contributors & changelog spacing at the bottom of every doc page */
+.doc-git-section {
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--vp-c-divider);
+}
+
+.doc-git-section + .doc-git-section {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--vp-c-divider);
+}
