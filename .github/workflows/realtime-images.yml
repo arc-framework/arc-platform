@@ -1,0 +1,168 @@
+name: Realtime Stack Image Pipeline
+
+# CI/push orchestrator for arc-realtime, arc-realtime-ingress, and arc-realtime-egress images.
+# Builds on every realtime-related push; pushes to GHCR on main branch merges.
+# For a full versioned release, push a tag: git tag realtime/v1.2.3 && git push --tags
+#
+# Parallelism:
+#   build-realtime, build-realtime-ingress, build-realtime-egress run concurrently.
+#   security-* each runs after its respective build.
+#
+# Change detection:
+#   All three services share services/realtime/** — any change triggers all three builds.
+#
+# Triggers:
+#   push (main, dev)   — detect changes, run jobs, push image on main
+#   pull_request       — detect changes, build only (no push)
+#   workflow_dispatch  — always runs all jobs; mode=release forces push
+
+on:
+  push:
+    branches: [main, dev]
+    paths:
+      - 'services/realtime/**'
+      - '.github/workflows/realtime-images.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'services/realtime/**'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'ci = build only, release = build + push'
+        required: false
+        type: choice
+        options: [ci, release]
+        default: ci
+
+env:
+  IMAGE_PREFIX: ghcr.io/arc-framework
+
+jobs:
+
+  # ── Detect file-level changes and resolve push mode ───────────────────────
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      realtime:   ${{ steps.filter.outputs.realtime == 'true' || github.event_name == 'workflow_dispatch' }}
+      push-image: ${{ steps.mode.outputs.push-image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect changed paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            realtime:
+              - 'services/realtime/**'
+
+      - name: Resolve push mode
+        id: mode
+        run: |
+          EVENT="${{ github.event_name }}"
+          REF="${{ github.ref }}"
+          MODE="${{ github.event.inputs.mode || 'ci' }}"
+
+          if [ "$MODE" = "release" ] || ([ "$EVENT" = "push" ] && [ "$REF" = "refs/heads/main" ]); then
+            echo "push-image=true" >> $GITHUB_OUTPUT
+          else
+            echo "push-image=false" >> $GITHUB_OUTPUT
+          fi
+
+  # ── Build arc-realtime (Daredevil / LiveKit Server) ───────────────────────
+  build-realtime:
+    name: Build arc-realtime
+    needs: changes
+    if: needs.changes.outputs.realtime == 'true'
+    uses: ./.github/workflows/_reusable-build.yml
+    with:
+      service-name: arc-realtime
+      service-path: services/realtime
+      dockerfile: Dockerfile
+      platforms: linux/amd64
+      push-image: ${{ needs.changes.outputs.push-image == 'true' }}
+      generate-sbom: ${{ needs.changes.outputs.push-image == 'true' }}
+      image-prefix: ghcr.io/arc-framework
+    secrets: inherit
+
+  # ── Build arc-realtime-ingress (Sentry / LK Ingress) ─────────────────────
+  build-realtime-ingress:
+    name: Build arc-realtime-ingress
+    needs: changes
+    if: needs.changes.outputs.realtime == 'true'
+    uses: ./.github/workflows/_reusable-build.yml
+    with:
+      service-name: arc-realtime-ingress
+      service-path: services/realtime
+      dockerfile: Dockerfile.ingress
+      platforms: linux/amd64
+      push-image: ${{ needs.changes.outputs.push-image == 'true' }}
+      generate-sbom: ${{ needs.changes.outputs.push-image == 'true' }}
+      image-prefix: ghcr.io/arc-framework
+    secrets: inherit
+
+  # ── Build arc-realtime-egress (Scribe / LK Egress) ───────────────────────
+  build-realtime-egress:
+    name: Build arc-realtime-egress
+    needs: changes
+    if: needs.changes.outputs.realtime == 'true'
+    uses: ./.github/workflows/_reusable-build.yml
+    with:
+      service-name: arc-realtime-egress
+      service-path: services/realtime
+      dockerfile: Dockerfile.egress
+      platforms: linux/amd64
+      push-image: ${{ needs.changes.outputs.push-image == 'true' }}
+      generate-sbom: ${{ needs.changes.outputs.push-image == 'true' }}
+      image-prefix: ghcr.io/arc-framework
+    secrets: inherit
+
+  # ── Security: Daredevil (after build-realtime, non-blocking in CI) ────────
+  security-realtime:
+    name: Security Scan — arc-realtime
+    needs: [build-realtime]
+    if: always() && !cancelled() && needs.build-realtime.result == 'success'
+    uses: ./.github/workflows/_reusable-security.yml
+    with:
+      scan-type: fs
+      scan-target: services/realtime
+      severity: CRITICAL,HIGH,MEDIUM
+      fail-on-severity: CRITICAL
+      block-on-failure: false
+      service-name: arc-realtime
+      create-issues: false
+    secrets: inherit
+
+  # ── Security: Sentry (after build-realtime-ingress, non-blocking in CI) ──
+  security-realtime-ingress:
+    name: Security Scan — arc-realtime-ingress
+    needs: [build-realtime-ingress]
+    if: always() && !cancelled() && needs.build-realtime-ingress.result == 'success'
+    uses: ./.github/workflows/_reusable-security.yml
+    with:
+      scan-type: fs
+      scan-target: services/realtime
+      severity: CRITICAL,HIGH,MEDIUM
+      fail-on-severity: CRITICAL
+      block-on-failure: false
+      service-name: arc-realtime-ingress
+      create-issues: false
+    secrets: inherit
+
+  # ── Security: Scribe (after build-realtime-egress, non-blocking in CI) ───
+  security-realtime-egress:
+    name: Security Scan — arc-realtime-egress
+    needs: [build-realtime-egress]
+    if: always() && !cancelled() && needs.build-realtime-egress.result == 'success'
+    uses: ./.github/workflows/_reusable-security.yml
+    with:
+      scan-type: fs
+      scan-target: services/realtime
+      severity: CRITICAL,HIGH,MEDIUM
+      fail-on-severity: CRITICAL
+      block-on-failure: false
+      service-name: arc-realtime-egress
+      create-issues: false
+    secrets: inherit

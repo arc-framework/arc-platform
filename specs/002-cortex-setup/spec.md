@@ -37,10 +37,10 @@ graph TD
     end
 
     %% Infrastructure
-    NATSClient -->|Create Streams| Flash[(arc-flash\nNATS JetStream :4222)]
-    PulsarClient -->|Create Tenant + Topics| Strange[(arc-strange\nPulsar :8080 / :6650)]
-    DBClient -->|Ping & Migrate| Oracle[(arc-oracle\nPostgres :5432)]
-    RedisClient -->|Ping & Verify| Sonic[(arc-sonic\nRedis :6379)]
+    NATSClient -->|Create Streams| Flash[(arc-messaging\nNATS JetStream :4222)]
+    PulsarClient -->|Create Tenant + Topics| Strange[(arc-streaming\nPulsar :8080 / :6650)]
+    DBClient -->|Ping & Migrate| Oracle[(arc-sql-db\nPostgres :5432)]
+    RedisClient -->|Ping & Verify| Sonic[(arc-cache\nRedis :6379)]
 
     %% Observability
     Otel -.->|OTLP gRPC :4317| Collector[arc-friday-collector]
@@ -123,10 +123,10 @@ POST /api/v1/bootstrap
 ```
 GET /health/deep
 → 200 {"status":"healthy","dependencies":{
-    "arc-oracle": {"ok":true,"latencyMs":2,"error":""},
-    "arc-flash":  {"ok":true,"latencyMs":1,"error":""},
-    "arc-strange":{"ok":true,"latencyMs":5,"error":""},
-    "arc-sonic":  {"ok":true,"latencyMs":1,"error":""}
+    "arc-sql-db": {"ok":true,"latencyMs":2,"error":""},
+    "arc-messaging":  {"ok":true,"latencyMs":1,"error":""},
+    "arc-streaming":{"ok":true,"latencyMs":5,"error":""},
+    "arc-cache":  {"ok":true,"latencyMs":1,"error":""}
   }}
 → 503  (same shape, "ok":false on failing deps)
 ```
@@ -138,10 +138,10 @@ sequenceDiagram
     participant GW as Heimdall / CLI
     participant API as Gin API (handlers.Bootstrap)
     participant Core as Orchestrator (RunBootstrap)
-    participant PG as arc-oracle
-    participant NATS as arc-flash
-    participant Pulsar as arc-strange
-    participant Redis as arc-sonic
+    participant PG as arc-sql-db
+    participant NATS as arc-messaging
+    participant Pulsar as arc-streaming
+    participant Redis as arc-cache
     participant Friday as arc-friday-collector
 
     GW->>API: POST /api/v1/bootstrap
@@ -209,10 +209,10 @@ Per the A.R.C. Go Standard (`cortex.md` §4):
 - **Test**: `curl -sf http://localhost:8081/health` immediately after `docker compose up cortex`
 
 **US-3**: As a platform operator, I want `GET /health/deep` to call `RunDeepHealth()` and return per-dependency probe results.
-- **Given**: arc-oracle is down; others healthy
+- **Given**: arc-sql-db is down; others healthy
 - **When**: `GET /health/deep`
-- **Then**: `503 {"status":"unhealthy","dependencies":{"arc-oracle":{"ok":false,"latencyMs":...,"error":"..."},...}}`
-- **Test**: Stop arc-oracle; call `/health/deep`; assert 503 with oracle unhealthy entry
+- **Then**: `503 {"status":"unhealthy","dependencies":{"arc-sql-db":{"ok":false,"latencyMs":...,"error":"..."},...}}`
+- **Test**: Stop arc-sql-db; call `/health/deep`; assert 503 with oracle unhealthy entry
 
 **US-4**: As the platform runtime, I want `GET /ready` to gate dependent services — 503 while bootstrap runs, 200 after.
 - **Given**: Bootstrap is in progress
@@ -221,7 +221,7 @@ Per the A.R.C. Go Standard (`cortex.md` §4):
 - **Test**: Poll `/ready` during startup; assert state transitions
 
 **US-5**: As a platform operator, I want NATS streams provisioned with exact config so agents have messaging infrastructure.
-- **Given**: `arc-flash` at `nats://arc-flash:4222`
+- **Given**: `arc-messaging` at `nats://arc-messaging:4222`
 - **When**: Bootstrap Phase 2 completes
 - **Then**: Three streams with exact subjects and retention (see FR-4)
 - **Test**: `nats stream info AGENT_COMMANDS` confirms subjects, retention, max-age
@@ -235,10 +235,10 @@ Per the A.R.C. Go Standard (`cortex.md` §4):
 ### P2 — Should Have
 
 **US-7**: As a platform operator, I want bootstrap phases to retry with exponential backoff so transient infra gaps don't fail permanently.
-- **Given**: arc-flash is temporarily unreachable
+- **Given**: arc-messaging is temporarily unreachable
 - **When**: Phase 2 executes
-- **Then**: Retries 2s→30s backoff, up to 5 min; succeeds once arc-flash comes online
-- **Test**: Start Cortex before arc-flash; bring arc-flash up within 2 min; verify streams created
+- **Then**: Retries 2s→30s backoff, up to 5 min; succeeds once arc-messaging comes online
+- **Test**: Start Cortex before arc-messaging; bring arc-messaging up within 2 min; verify streams created
 
 **US-8**: As a platform SRE, I want client calls protected by circuit breakers so a flapping dep doesn't stall the service.
 - **Given**: A dep fails 3 consecutive times
@@ -267,10 +267,10 @@ Per the A.R.C. Go Standard (`cortex.md` §4):
 - **Test**: Disable Pulsar flag in Unleash; call `/api/v1/bootstrap`; confirm no Pulsar provisioning and 200 response
 
 **US-12**: As a platform operator, I want dependency health monitored every 30s post-bootstrap so drift is detected automatically.
-- **Given**: Cortex is running; arc-sonic goes down after bootstrap
+- **Given**: Cortex is running; arc-cache goes down after bootstrap
 - **When**: 30s monitoring cycle runs
 - **Then**: Degraded state logged with slog; `/health/deep` reflects it
-- **Test**: Kill arc-sonic post-bootstrap; wait 30s; check logs and `/health/deep`
+- **Test**: Kill arc-cache post-bootstrap; wait 30s; check logs and `/health/deep`
 
 ## Requirements
 
@@ -279,16 +279,16 @@ Per the A.R.C. Go Standard (`cortex.md` §4):
 - [ ] FR-1: Expose two Cobra commands: `cortex server` (primary — start Gin API) and `cortex bootstrap` (secondary — one-shot CLI)
 - [ ] FR-2: Gin API routes: `POST /api/v1/bootstrap`, `GET /health`, `GET /health/deep`, `GET /ready`
 - [ ] FR-3: Middleware chain on all routes: `Recovery` → `FridayOTEL` (otelgin, service name `arc-cortex`) → `RequestLogger`
-- [ ] FR-4: Bootstrap Phase 1 — Postgres: `Ping` + `ValidateSchema("public")` via pgx pool; host `arc-oracle:5432`
-- [ ] FR-5: Bootstrap Phase 2 — NATS JetStream on `arc-flash:4222`:
+- [ ] FR-4: Bootstrap Phase 1 — Postgres: `Ping` + `ValidateSchema("public")` via pgx pool; host `arc-sql-db:5432`
+- [ ] FR-5: Bootstrap Phase 2 — NATS JetStream on `arc-messaging:4222`:
   - `AGENT_COMMANDS` — subjects `["agent.*.cmd"]`, retention `limits`, max-age `24h`
   - `AGENT_EVENTS` — subjects `["agent.*.event","agent.*.status"]`, retention `interest`, max-age `168h`
   - `SYSTEM_METRICS` — subjects `["metrics.>"]`, retention `limits`, max-age `6h`
-- [ ] FR-6: Bootstrap Phase 3 — Pulsar on `arc-strange:8080`:
+- [ ] FR-6: Bootstrap Phase 3 — Pulsar on `arc-streaming:8080`:
   - Tenant: `arc-system`
   - Namespaces: `events`, `logs`, `audit`
   - Topics: `persistent://arc-system/events/agent-lifecycle` (3 partitions), `persistent://arc-system/logs/application` (4 partitions), `persistent://arc-system/audit/command-log` (1 partition)
-- [ ] FR-7: Bootstrap Phase 4 — Redis `PING` to `arc-sonic:6379`
+- [ ] FR-7: Bootstrap Phase 4 — Redis `PING` to `arc-cache:6379`
 - [ ] FR-8: All four phases run in parallel (via goroutines); each retries independently — exponential backoff initial `2s`, max interval `30s`, max elapsed `5m`
 - [ ] FR-9: Stream and topic creation is idempotent — safe to call multiple times
 - [ ] FR-10: All infra clients wrapped with circuit breaker: open after 3 failures, reset after 30s; return `ErrCircuitOpen` when open
@@ -337,16 +337,16 @@ Per the A.R.C. Go Standard (`cortex.md` §4):
 | `TELEMETRY_LOG_LEVEL` | `info` | `debug\|info\|warn\|error` |
 | `BOOTSTRAP_TIMEOUT` | `5m` | Max elapsed time per phase |
 | `BOOTSTRAP_RETRY_BACKOFF` | `2s` | Initial backoff interval |
-| `NATS_URL` | `nats://arc-flash:4222` | NATS connection URL |
-| `PULSAR_ADMIN_URL` | `http://arc-strange:8080` | Pulsar admin REST API |
-| `PULSAR_SERVICE_URL` | `pulsar://arc-strange:6650` | Pulsar binary protocol |
+| `NATS_URL` | `nats://arc-messaging:4222` | NATS connection URL |
+| `PULSAR_ADMIN_URL` | `http://arc-streaming:8080` | Pulsar admin REST API |
+| `PULSAR_SERVICE_URL` | `pulsar://arc-streaming:6650` | Pulsar binary protocol |
 | `PULSAR_TENANT` | `arc-system` | Pulsar tenant to provision |
-| `POSTGRES_HOST` | `arc-oracle` | Postgres host |
+| `POSTGRES_HOST` | `arc-sql-db` | Postgres host |
 | `POSTGRES_PORT` | `5432` | Postgres port |
 | `POSTGRES_USER` | `arc` | Postgres user |
 | `POSTGRES_DB` | `arc_db` | Database name |
 | `POSTGRES_SSL_MODE` | `disable` | `disable\|require\|verify-full` |
-| `REDIS_HOST` | `arc-sonic` | Redis host |
+| `REDIS_HOST` | `arc-cache` | Redis host |
 | `REDIS_PORT` | `6379` | Redis port |
 | `INFISICAL_TOKEN` | — | If set, secrets fetched from Nick Fury (Infisical) |
 | `UNLEASH_URL` | — | If set, feature flags fetched from Mystique (Unleash) |

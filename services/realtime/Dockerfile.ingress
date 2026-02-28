@@ -1,0 +1,12 @@
+FROM livekit/ingress
+
+LABEL org.opencontainers.image.title="ARC Sentry — Realtime Ingress"
+LABEL org.opencontainers.image.description="LiveKit Ingress — RTMP/WHIP ingest for the A.R.C. Platform"
+LABEL org.opencontainers.image.source="https://github.com/arc-framework/arc-platform"
+LABEL arc.service.name="arc-realtime-ingress"
+LABEL arc.service.codename="sentry"
+LABEL arc.service.tech="livekit-ingress"
+LABEL arc.service.role="realtime-ingress"
+
+# livekit/ingress runs as root by default. This is a DEVELOPMENT-ONLY service.
+# For production: build with a dedicated non-root user.

@@ -89,13 +89,13 @@ graph TD
     - `services/messaging/docker-compose.yml`
   - Acceptance:
     - Dockerfile `FROM nats:alpine`
-    - `docker build -t arc-flash:test services/messaging/` exits 0
-    - `docker inspect arc-flash:test` — User field is non-root (nats user, uid 1000)
-    - `docker inspect arc-flash:test` — Labels include `arc.service.codename=flash`, `arc.service.tech=nats`
+    - `docker build -t arc-messaging:test services/messaging/` exits 0
+    - `docker inspect arc-messaging:test` — User field is non-root (nats user, uid 1000)
+    - `docker inspect arc-messaging:test` — Labels include `arc.service.codename=flash`, `arc.service.tech=nats`
     - `docker compose -f services/messaging/docker-compose.yml config` exits 0
-    - `service.yaml` contains: `name: arc-flash`, `codename: flash`, `port: 4222`, `health: http://localhost:8222/healthz`
-    - Container `arc-flash` in compose binds ports to `127.0.0.1` only
-    - Named volume `arc-flash-jetstream` declared (not bind mount)
+    - `service.yaml` contains: `name: arc-messaging`, `codename: flash`, `port: 4222`, `health: http://localhost:8222/healthz`
+    - Container `arc-messaging` in compose binds ports to `127.0.0.1` only
+    - Named volume `arc-messaging-jetstream` declared (not bind mount)
     - Network declared as `arc_platform_net` with `external: true`
   - Status: [x] done
 
@@ -110,13 +110,13 @@ graph TD
     - `services/streaming/docker-compose.yml`
   - Acceptance:
     - Dockerfile `FROM apachepulsar/pulsar:latest`
-    - `docker build -t arc-strange:test services/streaming/` exits 0
-    - `docker inspect arc-strange:test` — Labels include `arc.service.codename=strange`, `arc.service.tech=pulsar`
+    - `docker build -t arc-streaming:test services/streaming/` exits 0
+    - `docker inspect arc-streaming:test` — Labels include `arc.service.codename=strange`, `arc.service.tech=pulsar`
     - `docker compose -f services/streaming/docker-compose.yml config` exits 0
-    - `service.yaml` contains: `name: arc-strange`, `codename: strange`, `port: 6650`, health endpoint
+    - `service.yaml` contains: `name: arc-streaming`, `codename: strange`, `port: 6650`, health endpoint
     - Compose: `PULSAR_MEM: "-Xms512m -Xmx1024m -XX:MaxDirectMemorySize=512m"` and `--no-functions-worker`
     - Compose: port `6650` binds `127.0.0.1:6650`, admin `8080` maps to `127.0.0.1:8082`
-    - Named volume `arc-strange-data` declared
+    - Named volume `arc-streaming-data` declared
     - Health check uses `curl -f http://localhost:8080/admin/v2/brokers/health` with `start_period: 90s`
     - Pulsar non-root deviation documented in compose comment (upstream constraint)
     - Network `arc_platform_net` with `external: true`
@@ -133,14 +133,14 @@ graph TD
     - `services/cache/docker-compose.yml`
   - Acceptance:
     - Dockerfile `FROM redis:alpine`
-    - `docker build -t arc-sonic:test services/cache/` exits 0
-    - `docker inspect arc-sonic:test` — User field is non-root
-    - `docker inspect arc-sonic:test` — Labels include `arc.service.codename=sonic`, `arc.service.tech=redis`
+    - `docker build -t arc-cache:test services/cache/` exits 0
+    - `docker inspect arc-cache:test` — User field is non-root
+    - `docker inspect arc-cache:test` — Labels include `arc.service.codename=sonic`, `arc.service.tech=redis`
     - `docker compose -f services/cache/docker-compose.yml config` exits 0
-    - `service.yaml` contains: `name: arc-sonic`, `codename: sonic`, `port: 6379`, health endpoint
+    - `service.yaml` contains: `name: arc-cache`, `codename: sonic`, `port: 6379`, health endpoint
     - Compose command includes: `--appendonly yes`, `--appendfsync everysec`, `--maxmemory 512mb`, `--maxmemory-policy noeviction`
     - Port `6379` binds `127.0.0.1:6379`
-    - Named volume `arc-sonic-data` declared
+    - Named volume `arc-cache-data` declared
     - Health check: `redis-cli ping` with `interval: 5s`, `start_period: 5s`
     - Network `arc_platform_net` with `external: true`
   - Status: [x] done
@@ -157,11 +157,11 @@ graph TD
   - Dependencies: TASK-011
   - Module: `services/messaging/flash.mk`
   - Acceptance:
-    - `make flash-build` — builds `arc-flash:latest` image
-    - `make flash-up` — starts `arc-flash` container; exits 0
+    - `make flash-build` — builds `arc-messaging:latest` image
+    - `make flash-up` — starts `arc-messaging` container; exits 0
     - `make flash-health` — probes `http://localhost:8222/healthz`; exits 0 when healthy, non-zero when down
-    - `make flash-logs` — tails arc-flash container logs
-    - `make flash-down` — stops and removes arc-flash container
+    - `make flash-logs` — tails arc-messaging container logs
+    - `make flash-down` — stops and removes arc-messaging container
     - `make flash-clean` — stops container + removes named volume (with confirmation prompt)
     - All targets listed in `.PHONY`
     - Target comments follow `## flash-<target>: description` pattern (used by `make flash-help`)
@@ -174,10 +174,10 @@ graph TD
   - Dependencies: TASK-012
   - Module: `services/streaming/strange.mk`
   - Acceptance:
-    - `make strange-build` — builds `arc-strange:latest` image
-    - `make strange-up` — starts `arc-strange`; waits for health (Pulsar takes up to 90s on cold start); prints progress dots
+    - `make strange-build` — builds `arc-streaming:latest` image
+    - `make strange-up` — starts `arc-streaming`; waits for health (Pulsar takes up to 90s on cold start); prints progress dots
     - `make strange-health` — probes `http://localhost:8082/admin/v2/brokers/health`; exits 0 when healthy
-    - `make strange-logs` — tails arc-strange container logs
+    - `make strange-logs` — tails arc-streaming container logs
     - `make strange-down` — stops container
     - `make strange-clean` — stops container + removes named volume (with confirmation)
     - `make strange-help` prints all strange targets
@@ -190,10 +190,10 @@ graph TD
   - Dependencies: TASK-013
   - Module: `services/cache/sonic.mk`
   - Acceptance:
-    - `make sonic-build` — builds `arc-sonic:latest` image
-    - `make sonic-up` — starts `arc-sonic`; exits 0
-    - `make sonic-health` — runs `docker exec arc-sonic redis-cli ping`; exits 0 when healthy
-    - `make sonic-logs` — tails arc-sonic container logs
+    - `make sonic-build` — builds `arc-cache:latest` image
+    - `make sonic-up` — starts `arc-cache`; exits 0
+    - `make sonic-health` — runs `docker exec arc-cache redis-cli ping`; exits 0 when healthy
+    - `make sonic-logs` — tails arc-cache container logs
     - `make sonic-down` — stops container
     - `make sonic-clean` — stops + removes volume (with confirmation)
     - `make sonic-help` prints all sonic targets
@@ -235,8 +235,8 @@ graph TD
   - Module: `services/otel/telemetry/config/otel-collector-config.yaml`
   - Acceptance:
     - `receivers` section contains a `prometheus` block with two scrape jobs:
-      - `job_name: arc-flash` targeting `arc-flash:8222`
-      - `job_name: arc-strange` targeting `arc-strange:8080`
+      - `job_name: arc-messaging` targeting `arc-messaging:8222`
+      - `job_name: arc-streaming` targeting `arc-streaming:8080`
       - Both with `scrape_interval: 15s`
     - `service.pipelines.metrics.receivers` updated from `[otlp]` to `[otlp, prometheus]`
     - File is valid YAML: `python3 -c "import yaml; yaml.safe_load(open('services/otel/telemetry/config/otel-collector-config.yaml'))"` exits 0
@@ -321,7 +321,7 @@ graph TD
     - `make flash-health` exits 0 independently
     - `make strange-health` exits 0 independently (allow up to 90s on cold start)
     - `make sonic-health` exits 0 independently
-    - `make messaging-down` stops all three; no orphaned containers (`docker ps -a | grep arc-flash` etc.)
+    - `make messaging-down` stops all three; no orphaned containers (`docker ps -a | grep arc-messaging` etc.)
     - `make messaging-up` is idempotent (run twice, no error on second run)
     - If otel stack running: `curl -s http://localhost:8222/metrics` returns NATS Prometheus data; collector scrape visible in SigNoz
   - Status: [x] done

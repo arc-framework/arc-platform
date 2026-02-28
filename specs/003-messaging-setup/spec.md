@@ -26,9 +26,9 @@ Provision NATS (Flash), Apache Pulsar (Strange), and Redis (Sonic) as production
 ```mermaid
 graph TD
     subgraph arc_platform_net
-        flash["arc-flash\n(NATS)\n:4222 client\n:8222 monitor"]
-        strange["arc-strange\n(Pulsar)\n:6650 broker\n:8082 admin"]
-        sonic["arc-sonic\n(Redis)\n:6379"]
+        flash["arc-messaging\n(NATS)\n:4222 client\n:8222 monitor"]
+        strange["arc-streaming\n(Pulsar)\n:6650 broker\n:8082 admin"]
+        sonic["arc-cache\n(Redis)\n:6379"]
         collector["arc-friday-collector\n(OTEL Collector)\n:4317 gRPC"]
     end
 
@@ -93,12 +93,12 @@ services/
 - **Given**: OTEL stack and messaging services are running
 - **When**: Metrics are scraped by the updated collector
 - **Then**: NATS, Pulsar, and Redis metrics appear in SigNoz under the respective service names
-- **Test**: Navigate to arc-friday metrics explorer; filter by `service.name = arc-flash`, `arc-strange`, `arc-sonic`
+- **Test**: Navigate to arc-friday metrics explorer; filter by `service.name = arc-messaging`, `arc-streaming`, `arc-cache`
 
 **US-4**: As a CI consumer, I want Docker images for all three services built and pushed on main branch merges so that the team always has fresh images.
 - **Given**: A commit is merged to main touching `services/messaging/**`, `services/streaming/**`, or `services/cache/**`
 - **When**: `messaging-images.yml` workflow runs
-- **Then**: Images `ghcr.io/arc-framework/arc-flash`, `arc-strange`, `arc-sonic` are updated with the new `sha-*` tag
+- **Then**: Images `ghcr.io/arc-framework/arc-messaging`, `arc-streaming`, `arc-cache` are updated with the new `sha-*` tag
 - **Test**: Inspect GHCR after CI completes
 
 ### P2 — Should Have
@@ -150,9 +150,9 @@ services/
 
 | Entity | Module | Description |
 |--------|--------|-------------|
-| `arc-flash` | `services/messaging/` | NATS 2.10 + JetStream; ephemeral pub/sub broker |
-| `arc-strange` | `services/streaming/` | Pulsar 3.3 standalone; durable event store |
-| `arc-sonic` | `services/cache/` | Redis 7.4; cache + session store |
+| `arc-messaging` | `services/messaging/` | NATS 2.10 + JetStream; ephemeral pub/sub broker |
+| `arc-streaming` | `services/streaming/` | Pulsar 3.3 standalone; durable event store |
+| `arc-cache` | `services/cache/` | Redis 7.4; cache + session store |
 | `flash.mk` | `services/messaging/` | Make targets: flash-up, flash-down, flash-health, flash-logs, flash-build |
 | `strange.mk` | `services/streaming/` | Make targets: strange-up, strange-down, strange-health, strange-logs, strange-build |
 | `sonic.mk` | `services/cache/` | Make targets: sonic-up, sonic-down, sonic-health, sonic-logs, sonic-build |
@@ -179,16 +179,16 @@ receivers:
   prometheus:
     config:
       scrape_configs:
-        - job_name: arc-flash
+        - job_name: arc-messaging
           static_configs:
-            - targets: ['arc-flash:8222']
-        - job_name: arc-strange
+            - targets: ['arc-messaging:8222']
+        - job_name: arc-streaming
           static_configs:
-            - targets: ['arc-strange:8080']
-        # arc-sonic (Redis) — deferred, see Tech Debt TD-001
+            - targets: ['arc-streaming:8080']
+        # arc-cache (Redis) — deferred, see Tech Debt TD-001
 ```
 
-The collector must join `arc_platform_net` (see Network Strategy) to resolve `arc-flash` and `arc-strange` by hostname.
+The collector must join `arc_platform_net` (see Network Strategy) to resolve `arc-messaging` and `arc-streaming` by hostname.
 
 ## Network Strategy
 
@@ -197,9 +197,9 @@ Two networks, not three. One shared platform network for all externally-visible 
 ```mermaid
 graph LR
     subgraph arc_platform_net [arc_platform_net — external, shared]
-        flash[arc-flash]
-        strange[arc-strange]
-        sonic[arc-sonic]
+        flash[arc-messaging]
+        strange[arc-streaming]
+        sonic[arc-cache]
         cortex[arc-cortex]
         collector[arc-friday-collector]
     end
@@ -222,7 +222,7 @@ graph LR
 
 | ID | Item | Rationale |
 |----|------|-----------|
-| TD-001 | Redis Prometheus metrics via `redis_exporter` sidecar | `redis_exporter` adds a sidecar container per redis instance. Deferred until we have a concrete dashboard requirement. When ready: add `oliver006/redis_exporter:latest` alongside `arc-sonic` in `services/cache/docker-compose.yml`, scrape `:9121/metrics` from the collector. |
+| TD-001 | Redis Prometheus metrics via `redis_exporter` sidecar | `redis_exporter` adds a sidecar container per redis instance. Deferred until we have a concrete dashboard requirement. When ready: add `oliver006/redis_exporter:latest` alongside `arc-cache` in `services/cache/docker-compose.yml`, scrape `:9121/metrics` from the collector. |
 
 ## Edge Cases
 
@@ -245,7 +245,7 @@ graph LR
 - [ ] SC-5: `git tag messaging/v0.1.0 && git push --tags` triggers `messaging-release.yml` and publishes all three multi-platform images
 - [ ] SC-6: All Dockerfiles pass `trivy image` scan with zero CRITICAL CVEs
 - [ ] SC-7: `services/profiles.yaml` `think` profile includes flash, strange, sonic
-- [ ] SC-8: `docker inspect arc-flash` shows it runs as non-root UID
+- [ ] SC-8: `docker inspect arc-messaging` shows it runs as non-root UID
 
 ## Docs & Links Update
 

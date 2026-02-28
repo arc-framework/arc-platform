@@ -25,11 +25,11 @@ Provision Traefik v3 (Heimdall), OpenBao (Nick Fury), and Unleash (Mystique) as 
 ```mermaid
 graph TD
     subgraph arc_platform_net
-        heimdall["arc-heimdall\n(Traefik v3)\n:80 HTTP · :8090 dashboard"]
-        fury["arc-nick-fury\n(OpenBao)\n:8200 API + UI"]
-        mystique["arc-mystique\n(Unleash)\n:4242 UI + REST"]
-        oracle["arc-oracle\n(Postgres 17)\n:5432"]
-        sonic["arc-sonic\n(Redis)\n:6379"]
+        heimdall["arc-gateway\n(Traefik v3)\n:80 HTTP · :8090 dashboard"]
+        fury["arc-vault\n(OpenBao)\n:8200 API + UI"]
+        mystique["arc-flags\n(Unleash)\n:4242 UI + REST"]
+        oracle["arc-sql-db\n(Postgres 17)\n:5432"]
+        sonic["arc-cache\n(Redis)\n:6379"]
     end
 
     internet["External Traffic"] -->|HTTP :80| heimdall
@@ -93,7 +93,7 @@ services/
 - **Test**: `make nick-fury-health` exits 0
 
 **US-4**: As a platform developer, I want Mystique to start and serve the feature flag UI on `:4242` backed by Oracle and Sonic.
-- **Given**: `arc-oracle` and `arc-sonic` are healthy; `make mystique-up` called
+- **Given**: `arc-sql-db` and `arc-cache` are healthy; `make mystique-up` called
 - **When**: `curl http://localhost:4242/health`
 - **Then**: HTTP 200; Unleash UI accessible at `http://localhost:4242`
 - **Test**: `make mystique-health` exits 0
@@ -103,7 +103,7 @@ services/
 **US-5**: As a CI consumer, I want Docker images for all three control services built and pushed on main merges.
 - **Given**: A commit touches `services/gateway/**`, `services/secrets/**`, or `services/flags/**`
 - **When**: `control-images.yml` workflow runs
-- **Then**: `arc-heimdall`, `arc-nick-fury`, `arc-mystique` updated on GHCR with `sha-*` tag
+- **Then**: `arc-gateway`, `arc-vault`, `arc-flags` updated on GHCR with `sha-*` tag
 - **Test**: GHCR package shows `sha-*` tag after CI
 
 **US-6**: As a release engineer, I want versioned images via `control/vX.Y.Z` tag so control plane releases are atomic.
@@ -126,7 +126,7 @@ services/
 - [ ] FR-3: Create `services/flags/` with Unleash Dockerfile (`unleashorg/unleash-server`), `service.yaml`, `docker-compose.yml`, `mystique.mk`
 - [ ] FR-4: Heimdall must bind port 80 (HTTP) and 8090 (dashboard); configured via CLI args only (`--api.dashboard=true --providers.docker=true`); Docker socket mounted read-only; no TLS in dev
 - [ ] FR-5: Nick Fury must run in OpenBao dev mode (`-dev` flag); root token set via `VAULT_DEV_ROOT_TOKEN_ID=arc-dev-token`; no persistent volume (stateless in dev)
-- [ ] FR-6: Mystique must connect to Oracle via `DATABASE_URL=postgresql://arc:arc@arc-oracle:5432/unleash` and to Sonic via `REDIS_HOST=arc-sonic REDIS_PORT=6379`; DB migrations run automatically on startup
+- [ ] FR-6: Mystique must connect to Oracle via `DATABASE_URL=postgresql://arc:arc@arc-sql-db:5432/unleash` and to Sonic via `REDIS_HOST=arc-cache REDIS_PORT=6379`; DB migrations run automatically on startup
 - [ ] FR-7: Update `services/profiles.yaml` — add `heimdall` to `think`; add `nick-fury` + `mystique` to `reason`
 - [ ] FR-8: Create `control-images.yml` CI — path-filtered per service dir, builds all three, `linux/amd64` only in CI
 - [ ] FR-9: Create `control-release.yml` — tag format `control/vX.Y.Z`, multi-platform (`linux/amd64,linux/arm64`), creates GitHub release
@@ -147,9 +147,9 @@ services/
 
 | Entity | Module | Description |
 |--------|--------|-------------|
-| `arc-heimdall` | `services/gateway/` | Traefik v3; HTTP gateway, Docker label routing, dashboard at :8090 |
-| `arc-nick-fury` | `services/secrets/` | OpenBao; dev-mode secrets API, auto-unsealed, token `arc-dev-token` |
-| `arc-mystique` | `services/flags/` | Unleash; feature flags backed by Oracle (Postgres) + Sonic (Redis) |
+| `arc-gateway` | `services/gateway/` | Traefik v3; HTTP gateway, Docker label routing, dashboard at :8090 |
+| `arc-vault` | `services/secrets/` | OpenBao; dev-mode secrets API, auto-unsealed, token `arc-dev-token` |
+| `arc-flags` | `services/flags/` | Unleash; feature flags backed by Oracle (Postgres) + Sonic (Redis) |
 | `heimdall.mk` | `services/gateway/` | Make targets: heimdall-up/down/health/logs/build/push/publish/tag/clean/nuke |
 | `nick-fury.mk` | `services/secrets/` | Make targets: nick-fury-up/down/health/logs/build/push/publish/tag/clean/nuke |
 | `mystique.mk` | `services/flags/` | Make targets: mystique-up/down/health/logs/build/push/publish/tag/clean/nuke |
@@ -170,18 +170,18 @@ All three services join `arc_platform_net` only. Heimdall additionally mounts th
 ```mermaid
 graph LR
     subgraph arc_platform_net [arc_platform_net — external, shared]
-        heimdall[arc-heimdall]
-        fury[arc-nick-fury]
-        mystique[arc-mystique]
-        oracle[arc-oracle]
-        sonic[arc-sonic]
+        heimdall[arc-gateway]
+        fury[arc-vault]
+        mystique[arc-flags]
+        oracle[arc-sql-db]
+        sonic[arc-cache]
     end
     dockersock["/var/run/docker.sock"] -.->|read-only bind| heimdall
 ```
 
 **Rules:**
 - `arc_platform_net` declared `external: true` in all three compose files
-- Mystique must be on the same network as `arc-oracle` and `arc-sonic`
+- Mystique must be on the same network as `arc-sql-db` and `arc-cache`
 - Container hostnames are DNS-resolvable across the network (used by Mystique's `DATABASE_URL`)
 
 ## Edge Cases

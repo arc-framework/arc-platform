@@ -29,7 +29,7 @@ Add three infrastructure services — NATS (Flash), Pulsar (Strange), Redis (Son
 | Testing | `docker compose ps`, `curl`, `redis-cli ping`, `nats stream ls` |
 | OTEL Collector | `signoz/signoz-otel-collector:v0.142.0` — add `prometheus` receiver |
 | Network | `arc_platform_net` (external bridge) + `arc_otel_net` (internal) |
-| Volumes | Named Docker volumes: `arc-flash-jetstream`, `arc-strange-data`, `arc-sonic-data` |
+| Volumes | Named Docker volumes: `arc-messaging-jetstream`, `arc-streaming-data`, `arc-cache-data` |
 | CI Pattern | Mirror `cortex-images.yml` — amd64-only CI, dorny/paths-filter per service |
 
 ## Architecture
@@ -40,9 +40,9 @@ Add three infrastructure services — NATS (Flash), Pulsar (Strange), Redis (Son
 graph TB
     subgraph Host
         subgraph arc_platform_net [arc_platform_net — external bridge]
-            flash["arc-flash\nnats:2.10-alpine\n4222 • 8222"]
-            strange["arc-strange\npulsar:3.3.0\n6650 • 8082→8080"]
-            sonic["arc-sonic\nredis:7.4-alpine\n6379"]
+            flash["arc-messaging\nnats:2.10-alpine\n4222 • 8222"]
+            strange["arc-streaming\npulsar:3.3.0\n6650 • 8082→8080"]
+            sonic["arc-cache\nredis:7.4-alpine\n6379"]
             collector["arc-friday-collector\nsignoz otel v0.142\n4317 • 4318"]
             cortex["arc-cortex\n:8081"]
         end
@@ -53,8 +53,8 @@ graph TB
         end
     end
 
-    collector -- "prometheus scrape\narc-flash:8222/metrics" --> flash
-    collector -- "prometheus scrape\narc-strange:8080/metrics" --> strange
+    collector -- "prometheus scrape\narc-messaging:8222/metrics" --> flash
+    collector -- "prometheus scrape\narc-streaming:8080/metrics" --> strange
     collector -- "OTLP export\nclickhousetraces/metrics/logs" --> ch
     cortex -- "nats://4222" --> flash
     cortex -- "pulsar://6650" --> strange
@@ -70,7 +70,7 @@ flowchart LR
     end
     subgraph After
         A_otlp[otlp receiver] --> A_batch[batch] --> A_exp[clickhouse exporters]
-        A_prom[prometheus receiver\narc-flash:8222\narc-strange:8080] --> A_batch
+        A_prom[prometheus receiver\narc-messaging:8222\narc-streaming:8080] --> A_batch
     end
 ```
 
@@ -110,17 +110,17 @@ arc-platform/
 │   ├── messaging/                        ← NEW (Flash / NATS)
 │   │   ├── Dockerfile                    # FROM nats:2.10-alpine; adds labels; non-root (nats uid 1000)
 │   │   ├── service.yaml                  # name, codename, port, health
-│   │   ├── docker-compose.yml            # arc-flash container; arc_platform_net external
+│   │   ├── docker-compose.yml            # arc-messaging container; arc_platform_net external
 │   │   └── flash.mk                      # flash-up/down/health/logs/build/clean/nuke
 │   ├── streaming/                        ← NEW (Strange / Pulsar)
 │   │   ├── Dockerfile                    # FROM apachepulsar/pulsar:3.3.0; adds labels
 │   │   ├── service.yaml
-│   │   ├── docker-compose.yml            # arc-strange; PULSAR_MEM; arc_platform_net external
+│   │   ├── docker-compose.yml            # arc-streaming; PULSAR_MEM; arc_platform_net external
 │   │   └── strange.mk
 │   ├── cache/                            ← NEW (Sonic / Redis)
 │   │   ├── Dockerfile                    # FROM redis:7.4-alpine; adds labels; non-root
 │   │   ├── service.yaml
-│   │   ├── docker-compose.yml            # arc-sonic; AOF; arc_platform_net external
+│   │   ├── docker-compose.yml            # arc-cache; AOF; arc_platform_net external
 │   │   └── sonic.mk
 │   ├── otel/
 │   │   ├── docker-compose.yml            # MODIFY — collector gains arc_platform_net
@@ -176,14 +176,14 @@ receivers:
   prometheus:
     config:
       scrape_configs:
-        - job_name: arc-flash
+        - job_name: arc-messaging
           scrape_interval: 15s
           static_configs:
-            - targets: ['arc-flash:8222']
-        - job_name: arc-strange
+            - targets: ['arc-messaging:8222']
+        - job_name: arc-streaming
           scrape_interval: 30s
           static_configs:
-            - targets: ['arc-strange:8080']
+            - targets: ['arc-streaming:8080']
 
 service:
   pipelines:
@@ -267,9 +267,9 @@ gantt
 - [ ] `make flash-up && make flash-health` works independently
 - [ ] `make strange-up && make strange-health` works independently
 - [ ] `make sonic-up && make sonic-health` works independently
-- [ ] `docker network inspect arc_platform_net` shows arc-flash, arc-strange, arc-sonic, arc-friday-collector connected
-- [ ] `docker inspect arc-flash | jq '.[0].Config.User'` returns non-root
-- [ ] `docker inspect arc-sonic | jq '.[0].Config.User'` returns non-root
+- [ ] `docker network inspect arc_platform_net` shows arc-messaging, arc-streaming, arc-cache, arc-friday-collector connected
+- [ ] `docker inspect arc-messaging | jq '.[0].Config.User'` returns non-root
+- [ ] `docker inspect arc-cache | jq '.[0].Config.User'` returns non-root
 - [ ] Pulsar non-root deviation is documented in `services/streaming/docker-compose.yml`
 - [ ] All ports bind `127.0.0.1` — verify with `docker compose ps`
 - [ ] All volumes are named (not bind mounts) — verify with `docker volume ls | grep arc`

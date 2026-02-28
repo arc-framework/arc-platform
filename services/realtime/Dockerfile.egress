@@ -1,0 +1,15 @@
+FROM livekit/egress
+
+LABEL org.opencontainers.image.title="ARC Scribe — Realtime Egress"
+LABEL org.opencontainers.image.description="LiveKit Egress — room recording and export for the A.R.C. Platform"
+LABEL org.opencontainers.image.source="https://github.com/arc-framework/arc-platform"
+LABEL arc.service.name="arc-realtime-egress"
+LABEL arc.service.codename="scribe"
+LABEL arc.service.tech="livekit-egress"
+LABEL arc.service.role="realtime-egress"
+
+# livekit/egress runs as root by default. This is a DEVELOPMENT-ONLY service.
+# For production: build with a dedicated non-root user.
+#
+# NOTE: livekit/egress bundles headless Chromium for composite room recording (~1GB).
+# Track-based egress (no Chrome) is a future optimization (see plan.md TD-005).

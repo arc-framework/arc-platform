@@ -15,6 +15,7 @@ think:
     - sql-db
     - vector-db
     - gateway
+    - realtime
 
 # ─── reason ─────────────────────────────────────────────────────
 # Full reasoning stack — observability, identity, bootstrap
@@ -29,6 +30,7 @@ reason:
     - storage
     - vault
     - flags
+    - realtime
 
 # ─── ultra-instinct ─────────────────────────────────────────────
 # Everything — voice, real-time, chaos testing, the full roster

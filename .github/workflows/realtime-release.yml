@@ -1,0 +1,224 @@
+name: Realtime Stack Release
+
+# Full release pipeline for arc-realtime, arc-realtime-ingress, and arc-realtime-egress.
+# Triggered by pushing a version tag: git tag realtime/v1.2.3 && git push --tags
+#
+# Tag format:  realtime/v{MAJOR}.{MINOR}.{PATCH}  (e.g. realtime/v0.1.0)
+# Pre-release: realtime/v1.0.0-rc1, realtime/v1.0.0-alpha, realtime/v1.0.0-beta
+#
+# Image tags published:
+#   realtime-v{x.y.z}  — pinned reference for service.yaml / docker-compose.yml
+#   sha-{short}        — traceability back to the exact commit
+#   latest             — convenience tag for local dev
+#
+# Version bump rules:
+#   LiveKit major version bump or breaking config change → MAJOR
+#   new feature or sidecar added                        → MINOR
+#   bug fix, base image update, label tweak             → PATCH
+#
+# Parallelism:
+#   prepare runs first.
+#   build-realtime, build-realtime-ingress, build-realtime-egress run concurrently after prepare.
+#   security-* runs after respective builds.
+#   release runs after prepare + all builds + all security gates.
+
+on:
+  push:
+    tags:
+      - 'realtime/v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. realtime/v0.1.0)'
+        required: false
+        default: 'realtime/v0.0.0-test'
+
+permissions:
+  contents: write
+  packages: write
+  security-events: write
+  issues: write
+
+jobs:
+
+  # ── Derive Docker-safe image tag from git tag ──────────────────────────────
+  # realtime/v0.1.0 → realtime-v0.1.0 (slashes are not valid in Docker image tags)
+  prepare:
+    name: Prepare Release
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag:  ${{ steps.tag.outputs.image-tag }}
+      version:    ${{ steps.tag.outputs.version }}
+      prerelease: ${{ steps.tag.outputs.prerelease }}
+    steps:
+      - name: Derive image tag and version
+        id: tag
+        run: |
+          GIT_TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
+          IMAGE_TAG="${GIT_TAG/\//-}"                  # realtime-v0.1.0
+          VERSION="${GIT_TAG#realtime/v}"              # 0.1.0
+
+          echo "image-tag=$IMAGE_TAG"   >> $GITHUB_OUTPUT
+          echo "version=$VERSION"       >> $GITHUB_OUTPUT
+
+          if echo "$VERSION" | grep -qE '\-(rc|alpha|beta)'; then
+            echo "prerelease=true"  >> $GITHUB_OUTPUT
+          else
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+          fi
+
+  # ── Build arc-realtime (parallel after prepare) ───────────────────────────
+  build-realtime:
+    name: Build arc-realtime
+    needs: [prepare]
+    uses: ./.github/workflows/_reusable-build.yml
+    with:
+      service-name: arc-realtime
+      service-path: services/realtime
+      dockerfile: Dockerfile
+      platforms: linux/amd64,linux/arm64
+      push-image: true
+      latest-tag: true
+      image-tag: ${{ needs.prepare.outputs.image-tag }}
+      generate-sbom: true
+      image-prefix: ghcr.io/arc-framework
+    secrets: inherit
+
+  # ── Build arc-realtime-ingress (parallel after prepare) ───────────────────
+  build-realtime-ingress:
+    name: Build arc-realtime-ingress
+    needs: [prepare]
+    uses: ./.github/workflows/_reusable-build.yml
+    with:
+      service-name: arc-realtime-ingress
+      service-path: services/realtime
+      dockerfile: Dockerfile.ingress
+      platforms: linux/amd64,linux/arm64
+      push-image: true
+      latest-tag: true
+      image-tag: ${{ needs.prepare.outputs.image-tag }}
+      generate-sbom: true
+      image-prefix: ghcr.io/arc-framework
+    secrets: inherit
+
+  # ── Build arc-realtime-egress (parallel after prepare) ────────────────────
+  build-realtime-egress:
+    name: Build arc-realtime-egress
+    needs: [prepare]
+    uses: ./.github/workflows/_reusable-build.yml
+    with:
+      service-name: arc-realtime-egress
+      service-path: services/realtime
+      dockerfile: Dockerfile.egress
+      platforms: linux/amd64,linux/arm64
+      push-image: true
+      latest-tag: true
+      image-tag: ${{ needs.prepare.outputs.image-tag }}
+      generate-sbom: true
+      image-prefix: ghcr.io/arc-framework
+    secrets: inherit
+
+  # ── Security: Daredevil — CRITICAL CVEs block the release ─────────────────
+  security-realtime:
+    name: Security Gate — arc-realtime
+    needs: [build-realtime]
+    uses: ./.github/workflows/_reusable-security.yml
+    with:
+      scan-type: fs
+      scan-target: services/realtime
+      severity: CRITICAL,HIGH,MEDIUM
+      fail-on-severity: CRITICAL
+      block-on-failure: true
+      service-name: arc-realtime
+      create-issues: true
+    secrets: inherit
+
+  # ── Security: Sentry — CRITICAL CVEs block the release ────────────────────
+  security-realtime-ingress:
+    name: Security Gate — arc-realtime-ingress
+    needs: [build-realtime-ingress]
+    uses: ./.github/workflows/_reusable-security.yml
+    with:
+      scan-type: fs
+      scan-target: services/realtime
+      severity: CRITICAL,HIGH,MEDIUM
+      fail-on-severity: CRITICAL
+      block-on-failure: true
+      service-name: arc-realtime-ingress
+      create-issues: true
+    secrets: inherit
+
+  # ── Security: Scribe — CRITICAL CVEs block the release ────────────────────
+  security-realtime-egress:
+    name: Security Gate — arc-realtime-egress
+    needs: [build-realtime-egress]
+    uses: ./.github/workflows/_reusable-security.yml
+    with:
+      scan-type: fs
+      scan-target: services/realtime
+      severity: CRITICAL,HIGH,MEDIUM
+      fail-on-severity: CRITICAL
+      block-on-failure: true
+      service-name: arc-realtime-egress
+      create-issues: true
+    secrets: inherit
+
+  # ── GitHub release ─────────────────────────────────────────────────────────
+  release:
+    name: GitHub Release
+    needs: [prepare, build-realtime, build-realtime-ingress, build-realtime-egress, security-realtime, security-realtime-ingress, security-realtime-egress]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate release notes
+        run: |
+          IMAGE_TAG="${{ needs.prepare.outputs.image-tag }}"
+          VERSION="${{ needs.prepare.outputs.version }}"
+          PREFIX="ghcr.io/arc-framework"
+
+          cat > release-notes.md << EOF
+          ## Realtime Stack — ${VERSION}
+
+          LiveKit Server (Daredevil), LiveKit Ingress (Sentry), and LiveKit Egress (Scribe)
+          realtime voice/media infrastructure for the A.R.C. Platform.
+
+          ### Images
+
+          | Service | Image | Versioned Tag | Also Tagged |
+          |---------|-------|--------------|-------------|
+          | arc-realtime (LiveKit Server) | \`${PREFIX}/arc-realtime\` | \`${IMAGE_TAG}\` | \`latest\`, \`sha-*\` |
+          | arc-realtime-ingress (LK Ingress) | \`${PREFIX}/arc-realtime-ingress\` | \`${IMAGE_TAG}\` | \`latest\`, \`sha-*\` |
+          | arc-realtime-egress (LK Egress) | \`${PREFIX}/arc-realtime-egress\` | \`${IMAGE_TAG}\` | \`latest\`, \`sha-*\` |
+
+          ### Pull
+
+          \`\`\`bash
+          docker pull ${PREFIX}/arc-realtime:${IMAGE_TAG}
+          docker pull ${PREFIX}/arc-realtime-ingress:${IMAGE_TAG}
+          docker pull ${PREFIX}/arc-realtime-egress:${IMAGE_TAG}
+          \`\`\`
+
+          ### Start
+
+          \`\`\`bash
+          make realtime-up
+          make realtime-health
+          \`\`\`
+
+          ### Configuration
+
+          - **Dev API keys**: \`devkey\` / \`devsecret\` (static, development only)
+          - **Node IP**: Override for non-local WebRTC clients: \`LIVEKIT_NODE_IP=<ip> make realtime-up\`
+          - **UDP ports**: 50100-50200 must be open on host firewall for WebRTC RTP media
+          - **Recordings bucket**: Create before using egress: \`docker exec arc-storage mc mb /data/recordings\`
+          EOF
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: 'Realtime ${{ needs.prepare.outputs.version }}'
+          body_path: release-notes.md
+          draft: false
+          prerelease: ${{ needs.prepare.outputs.prerelease == 'true' }}

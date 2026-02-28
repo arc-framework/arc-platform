@@ -153,7 +153,7 @@ If neither works with the upstream image, document the root deviation in docker-
 - Option A attempted: user: "1000:1000" in docker-compose with /data permissions
 - If Option A fails, Option B attempted (Dockerfile + USER directive)
 - If both fail, uid confirmed at runtime AND deviation documented in comment with explicit rationale
-- docker inspect arc-tardis | jq '.[0].Config.User' returns non-root uid or has comment explaining deviation
+- docker inspect arc-storage | jq '.[0].Config.User' returns non-root uid or has comment explaining deviation
 ```
 
 ---

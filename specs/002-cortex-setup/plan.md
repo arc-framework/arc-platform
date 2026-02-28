@@ -30,7 +30,7 @@ Cortex is a new Go service (`services/cortex/`) that provisions all A.R.C. platf
 | CLI framework | Cobra (`github.com/spf13/cobra`) |
 | Config | Viper (`github.com/spf13/viper`) — precedence: flags → env → YAML → defaults |
 | NATS client | `github.com/nats-io/nats.go` + JetStream API |
-| Pulsar provisioning | REST admin API via `net/http` to `arc-strange:8080` (not binary protocol) |
+| Pulsar provisioning | REST admin API via `net/http` to `arc-streaming:8080` (not binary protocol) |
 | Postgres client | `github.com/jackc/pgx/v5` pool |
 | Redis client | `github.com/go-redis/redis/v9` |
 | OTEL | `go.opentelemetry.io/otel` — gRPC export to `arc-widow:4317` |
@@ -75,10 +75,10 @@ graph TD
     end
 
     subgraph Infra["Infrastructure"]
-        Flash[(arc-flash\nNATS :4222)]
-        Strange[(arc-strange\nPulsar :8080 / :6650)]
-        Oracle[(arc-oracle\nPG :5432)]
-        Sonic[(arc-sonic\nRedis :6379)]
+        Flash[(arc-messaging\nNATS :4222)]
+        Strange[(arc-streaming\nPulsar :8080 / :6650)]
+        Oracle[(arc-sql-db\nPG :5432)]
+        Sonic[(arc-cache\nRedis :6379)]
     end
 
     subgraph Observability["Observability"]
@@ -110,10 +110,10 @@ graph TD
 sequenceDiagram
     participant T as Trigger (HTTP/CLI)
     participant O as Orchestrator
-    participant PG as arc-oracle
-    participant N as arc-flash (NATS)
-    participant P as arc-strange (Pulsar)
-    participant R as arc-sonic (Redis)
+    participant PG as arc-sql-db
+    participant N as arc-messaging (NATS)
+    participant P as arc-streaming (Pulsar)
+    participant R as arc-cache (Redis)
     participant W as arc-widow (OTEL)
 
     T->>O: RunBootstrap(ctx)
