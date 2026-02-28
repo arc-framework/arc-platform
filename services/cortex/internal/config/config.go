@@ -108,7 +108,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("bootstrap.postgres.host", "arc-oracle")
 	v.SetDefault("bootstrap.postgres.port", 5432)
 	v.SetDefault("bootstrap.postgres.user", "arc")
-	v.SetDefault("bootstrap.postgres.db", "arc_db")
+	v.SetDefault("bootstrap.postgres.password", "")
+	v.SetDefault("bootstrap.postgres.db", "arc")
 	v.SetDefault("bootstrap.postgres.ssl_mode", "disable")
 	v.SetDefault("bootstrap.postgres.max_conns", 25)
 

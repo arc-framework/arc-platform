@@ -1,0 +1,10 @@
+name: arc-cerebro
+codename: cerebro
+image: ghcr.io/arc-framework/arc-cerebro:latest
+tech: qdrant
+upstream: qdrant/qdrant
+ports:
+  - 6333   # REST API
+  - 6334   # gRPC
+health: http://localhost:6333/readyz
+depends_on: []

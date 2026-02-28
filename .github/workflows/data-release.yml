@@ -1,0 +1,216 @@
+name: Data Release
+
+# Full release pipeline for arc-oracle, arc-cerebro, and arc-tardis.
+# Triggered by pushing a version tag: git tag data/v1.2.3 && git push --tags
+#
+# Tag format:  data/v{MAJOR}.{MINOR}.{PATCH}  (e.g. data/v0.1.0)
+# Pre-release: data/v1.0.0-rc1, data/v1.0.0-alpha, data/v1.0.0-beta
+#
+# Image tags published:
+#   data-v{x.y.z}  — pinned reference for service.yaml / docker-compose.yml
+#   sha-{short}    — traceability back to the exact commit
+#   latest         — convenience tag for local dev
+#
+# Version bump rules:
+#   new service added or major config change → MAJOR
+#   new feature or significant config update → MINOR
+#   bug fix, base image update, label tweak  → PATCH
+#
+# Parallelism:
+#   prepare runs first.
+#   build-oracle, build-cerebro, build-tardis run concurrently after prepare.
+#   security-* runs after their respective builds.
+#   release runs after prepare + all builds + all security gates.
+
+on:
+  push:
+    tags:
+      - 'data/v*'
+
+permissions:
+  contents: write
+  packages: write
+  security-events: write
+  issues: write
+
+jobs:
+
+  # ── Derive Docker-safe image tag from git tag ──────────────────────────────
+  # data/v0.1.0 → data-v0.1.0 (slashes are not valid in Docker image tags)
+  prepare:
+    name: Prepare Release
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag:  ${{ steps.tag.outputs.image-tag }}
+      version:    ${{ steps.tag.outputs.version }}
+      prerelease: ${{ steps.tag.outputs.prerelease }}
+    steps:
+      - name: Derive image tag and version
+        id: tag
+        run: |
+          GIT_TAG="${GITHUB_REF_NAME}"                # data/v0.1.0
+          IMAGE_TAG="${GIT_TAG/\//-}"                 # data-v0.1.0
+          VERSION="${GIT_TAG#data/v}"                 # 0.1.0
+
+          echo "image-tag=$IMAGE_TAG"   >> $GITHUB_OUTPUT
+          echo "version=$VERSION"       >> $GITHUB_OUTPUT
+
+          if echo "$VERSION" | grep -qE '\-(rc|alpha|beta)'; then
+            echo "prerelease=true"  >> $GITHUB_OUTPUT
+          else
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+          fi
+
+  # ── Build arc-oracle (parallel after prepare) ─────────────────────────────
+  build-oracle:
+    name: Build arc-oracle
+    needs: [prepare]
+    uses: ./.github/workflows/_reusable-build.yml
+    with:
+      service-name: arc-oracle
+      service-path: services/persistence
+      dockerfile: Dockerfile
+      platforms: linux/amd64,linux/arm64
+      push-image: true
+      latest-tag: true
+      image-tag: ${{ needs.prepare.outputs.image-tag }}
+      generate-sbom: true
+      image-prefix: ghcr.io/arc-framework
+    secrets: inherit
+
+  # ── Build arc-cerebro (parallel after prepare) ────────────────────────────
+  build-cerebro:
+    name: Build arc-cerebro
+    needs: [prepare]
+    uses: ./.github/workflows/_reusable-build.yml
+    with:
+      service-name: arc-cerebro
+      service-path: services/vector
+      dockerfile: Dockerfile
+      platforms: linux/amd64,linux/arm64
+      push-image: true
+      latest-tag: true
+      image-tag: ${{ needs.prepare.outputs.image-tag }}
+      generate-sbom: true
+      image-prefix: ghcr.io/arc-framework
+    secrets: inherit
+
+  # ── Build arc-tardis (parallel after prepare) ─────────────────────────────
+  build-tardis:
+    name: Build arc-tardis
+    needs: [prepare]
+    uses: ./.github/workflows/_reusable-build.yml
+    with:
+      service-name: arc-tardis
+      service-path: services/storage
+      dockerfile: Dockerfile
+      platforms: linux/amd64,linux/arm64
+      push-image: true
+      latest-tag: true
+      image-tag: ${{ needs.prepare.outputs.image-tag }}
+      generate-sbom: true
+      image-prefix: ghcr.io/arc-framework
+    secrets: inherit
+
+  # ── Security: Oracle — CRITICAL CVEs block the release ────────────────────
+  security-oracle:
+    name: Security Gate — arc-oracle
+    needs: [build-oracle]
+    uses: ./.github/workflows/_reusable-security.yml
+    with:
+      scan-type: fs
+      scan-target: services/persistence
+      severity: CRITICAL,HIGH
+      fail-on-severity: CRITICAL
+      block-on-failure: true
+      service-name: arc-oracle-release
+      create-issues: true
+    secrets: inherit
+
+  # ── Security: Cerebro — CRITICAL CVEs block the release ───────────────────
+  security-cerebro:
+    name: Security Gate — arc-cerebro
+    needs: [build-cerebro]
+    uses: ./.github/workflows/_reusable-security.yml
+    with:
+      scan-type: fs
+      scan-target: services/vector
+      severity: CRITICAL,HIGH
+      fail-on-severity: CRITICAL
+      block-on-failure: true
+      service-name: arc-cerebro-release
+      create-issues: true
+    secrets: inherit
+
+  # ── Security: Tardis — CRITICAL CVEs block the release ────────────────────
+  security-tardis:
+    name: Security Gate — arc-tardis
+    needs: [build-tardis]
+    uses: ./.github/workflows/_reusable-security.yml
+    with:
+      scan-type: fs
+      scan-target: services/storage
+      severity: CRITICAL,HIGH
+      fail-on-severity: CRITICAL
+      block-on-failure: true
+      service-name: arc-tardis-release
+      create-issues: true
+    secrets: inherit
+
+  # ── GitHub release ─────────────────────────────────────────────────────────
+  release:
+    name: GitHub Release
+    needs: [prepare, build-oracle, build-cerebro, build-tardis, security-oracle, security-cerebro, security-tardis]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate release notes
+        run: |
+          IMAGE_TAG="${{ needs.prepare.outputs.image-tag }}"
+          VERSION="${{ needs.prepare.outputs.version }}"
+          PREFIX="ghcr.io/arc-framework"
+
+          cat > release-notes.md << EOF
+          ## Data Layer Services — ${VERSION}
+
+          PostgreSQL 17 (Oracle), Qdrant (Cerebro), and MinIO (Tardis) data services
+          for the A.R.C. Platform.
+
+          ### Images
+
+          | Service | Image | Versioned Tag | Also Tagged |
+          |---------|-------|--------------|-------------|
+          | arc-oracle (PostgreSQL) | \`${PREFIX}/arc-oracle\` | \`${IMAGE_TAG}\` | \`latest\`, \`sha-*\` |
+          | arc-cerebro (Qdrant) | \`${PREFIX}/arc-cerebro\` | \`${IMAGE_TAG}\` | \`latest\`, \`sha-*\` |
+          | arc-tardis (MinIO) | \`${PREFIX}/arc-tardis\` | \`${IMAGE_TAG}\` | \`latest\`, \`sha-*\` |
+
+          ### Pull
+
+          \`\`\`bash
+          docker pull ${PREFIX}/arc-oracle:${IMAGE_TAG}
+          docker pull ${PREFIX}/arc-cerebro:${IMAGE_TAG}
+          docker pull ${PREFIX}/arc-tardis:${IMAGE_TAG}
+          \`\`\`
+
+          ### Start
+
+          \`\`\`bash
+          make data-up
+          make data-health
+          \`\`\`
+
+          ### Local Dev
+
+          Update the image tags in each service's \`docker-compose.yml\` to \`${IMAGE_TAG}\`,
+          or use \`latest\` to track the newest release.
+          EOF
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: 'Data ${{ needs.prepare.outputs.version }}'
+          body_path: release-notes.md
+          draft: false
+          prerelease: ${{ needs.prepare.outputs.prerelease == 'true' }}

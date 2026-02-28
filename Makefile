@@ -29,8 +29,11 @@ include services/messaging/flash.mk
 include services/streaming/strange.mk
 include services/cache/sonic.mk
 include services/messaging.mk
+include services/persistence/oracle.mk
+include services/vector/cerebro.mk
+include services/storage/tardis.mk
+include services/data.mk
 # future: include services/gateway/gateway.mk
-# future: include services/persistence/persistence.mk
 
 # ─── Generated orchestration metadata (.make/ — gitignored) ───────────────────
 # -include silently skips missing files on first run; generation rules create them.
@@ -60,11 +63,14 @@ dev-regen:
 publish-all:
 	@printf "$(COLOR_INFO)→$(COLOR_OFF) Building and publishing all A.R.C. platform images...\n"
 	@printf "$(COLOR_WARN)!$(COLOR_OFF) Requires: docker login ghcr.io   and   gh auth login\n"
-	$(MAKE) sonic-build  sonic-publish  --no-print-directory
-	$(MAKE) flash-build  flash-publish  --no-print-directory
+	$(MAKE) oracle-build  oracle-publish  --no-print-directory
+	$(MAKE) cerebro-build cerebro-publish --no-print-directory
+	$(MAKE) tardis-build  tardis-publish  --no-print-directory
+	$(MAKE) sonic-build   sonic-publish   --no-print-directory
+	$(MAKE) flash-build   flash-publish   --no-print-directory
 	$(MAKE) strange-build strange-publish --no-print-directory
-	$(MAKE) cortex-build cortex-publish --no-print-directory
-	$(MAKE) otel-build   otel-publish   --no-print-directory
+	$(MAKE) cortex-build  cortex-publish  --no-print-directory
+	$(MAKE) otel-build    otel-publish    --no-print-directory
 	@printf "$(COLOR_OK)✓$(COLOR_OFF) All images published to ghcr.io/arc-framework\n"
 
 # ─── Utilities ────────────────────────────────────────────────────────────────

@@ -12,6 +12,8 @@ think:
     - strange
     - friday-collector
     - cortex
+    - oracle
+    - cerebro
 
 # ─── reason ─────────────────────────────────────────────────────
 # Full reasoning stack — observability, identity, bootstrap
@@ -23,6 +25,7 @@ reason:
     - strange
     - sonic
     - otel
+    - tardis
 
 # ─── ultra-instinct ─────────────────────────────────────────────
 # Everything — voice, real-time, chaos testing, the full roster
