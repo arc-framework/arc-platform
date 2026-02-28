@@ -1,0 +1,8 @@
+name: arc-sonic
+codename: sonic
+tech: redis
+upstream: redis:alpine
+ports:
+  - 6379   # Redis protocol
+health: redis-cli ping
+depends_on: []

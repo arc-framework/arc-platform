@@ -1,0 +1,9 @@
+name: arc-flash
+codename: flash
+tech: nats
+upstream: nats:alpine
+ports:
+  - 4222   # NATS client
+  - 8222   # HTTP monitoring + Prometheus
+health: http://localhost:8222/healthz
+depends_on: []

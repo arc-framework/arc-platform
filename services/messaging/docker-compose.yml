@@ -1,0 +1,36 @@
+name: arc-platform
+
+services:
+  arc-flash:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/arc-framework/arc-flash:latest
+    container_name: arc-flash
+    command:
+      - --js                    # enable JetStream
+      - --http_port=8222        # monitoring / Prometheus endpoint
+      - --store_dir=/data       # JetStream store directory
+    ports:
+      - "127.0.0.1:4222:4222"   # NATS client — localhost only
+      - "127.0.0.1:8222:8222"   # HTTP monitoring — localhost only
+    volumes:
+      - flash-jetstream:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:8222/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - arc_platform_net
+    restart: unless-stopped
+
+volumes:
+  flash-jetstream:
+    name: arc-flash-jetstream
+
+networks:
+  arc_platform_net:
+    external: true
+    name: arc_platform_net
