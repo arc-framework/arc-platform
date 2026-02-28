@@ -1,4 +1,5 @@
 name: arc-sql-db
+role: sql-db
 codename: oracle
 image: ghcr.io/arc-framework/arc-sql-db:latest
 tech: postgres

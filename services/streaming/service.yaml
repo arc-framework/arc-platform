@@ -1,4 +1,5 @@
 name: arc-streaming
+role: streaming
 codename: strange
 image: ghcr.io/arc-framework/arc-streaming:latest
 tech: pulsar

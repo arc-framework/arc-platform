@@ -1,4 +1,5 @@
 name: arc-gateway
+role: gateway
 codename: heimdall
 image: ghcr.io/arc-framework/arc-gateway:latest
 tech: traefik

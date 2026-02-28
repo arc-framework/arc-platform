@@ -62,23 +62,6 @@ dev-regen:
 	@rm -f .make/profiles.mk .make/registry.mk
 	@$(MAKE) .make/profiles.mk .make/registry.mk --no-print-directory
 
-## publish-all: Build all platform images and push to ghcr.io (requires: docker login ghcr.io + gh auth)
-publish-all:
-	@printf "$(COLOR_INFO)→$(COLOR_OFF) Building and publishing all A.R.C. platform images...\n"
-	@printf "$(COLOR_WARN)!$(COLOR_OFF) Requires: docker login ghcr.io   and   gh auth login\n"
-	$(MAKE) sql-db-build      sql-db-publish      --no-print-directory
-	$(MAKE) vector-db-build   vector-db-publish   --no-print-directory
-	$(MAKE) storage-build     storage-publish     --no-print-directory
-	$(MAKE) gateway-build     gateway-publish     --no-print-directory
-	$(MAKE) vault-build       vault-publish       --no-print-directory
-	$(MAKE) flags-build       flags-publish       --no-print-directory
-	$(MAKE) cache-build       cache-publish       --no-print-directory
-	$(MAKE) messaging-build   messaging-publish   --no-print-directory
-	$(MAKE) streaming-build   streaming-publish   --no-print-directory
-	$(MAKE) cortex-build    cortex-publish    --no-print-directory
-	$(MAKE) otel-build      otel-publish      --no-print-directory
-	@printf "$(COLOR_OK)✓$(COLOR_OFF) All images published to ghcr.io/arc-framework\n"
-
 # ─── Utilities ────────────────────────────────────────────────────────────────
 include scripts/scripts.mk
 
@@ -92,11 +75,13 @@ help:
 	@printf "  \033[1mDev orchestration\033[0m (PROFILE=think by default):\n"
 	@grep -h "^## dev" $(MAKEFILE_LIST) \
 	  | sed 's/^## \([^:]*\): \(.*\)/    make \1    \2/'
-	@printf "\n  \033[1mPublishing\033[0m:\n"
-	@printf "    make publish-all    Build and push all platform images to ghcr.io\n"
 	@printf "\n  \033[1mServices\033[0m:\n"
 	@grep -h "^## .*-help:" $(MAKEFILE_LIST) \
 	  | sed 's/^## \(.*\)-help: \(.*\)/    make \1-help    \2/' \
+	  | sort
+	@printf "\n  \033[1mScripts & publishing\033[0m:\n"
+	@grep -h "^## scripts-\|^## publish-" $(MAKEFILE_LIST) \
+	  | sed 's/^## \([^:]*\): \(.*\)/    make \1    \2/' \
 	  | sort
 	@printf "\n  Run \033[1mmake <service>-help\033[0m for the full service target list.\n\n"
 
@@ -112,12 +97,10 @@ help:
 #   make dev-images           Check/pull required images for $(PROFILE) profile
 #   make dev-clean            [DESTRUCTIVE] Remove containers + volumes + orphans
 #   make dev-nuke             [DESTRUCTIVE] Remove containers + volumes + images + orphans
-#   make publish-all          Build and push all platform images to ghcr.io
 # ─────────────────────────────────────────────────────────────────────────────
 
 .PHONY: dev dev-up dev-down dev-wait dev-health dev-logs dev-status \
-        dev-clean dev-nuke dev-prereqs dev-networks dev-regen dev-images \
-        publish-all
+        dev-clean dev-nuke dev-prereqs dev-networks dev-regen dev-images
 
 ## dev: Start all services in $(PROFILE) profile in dependency order
 dev: dev-prereqs dev-networks .make/profiles.mk .make/registry.mk dev-images dev-up dev-wait
@@ -128,29 +111,16 @@ dev-prereqs:
 
 ## dev-images: Check/pull required images for $(PROFILE) profile (local first, then registry)
 dev-images: .make/profiles.mk .make/registry.mk
-	@profile_var="PROFILE_$$(echo $(PROFILE) | tr '[:lower:]-' '[:upper:]_')_SERVICES"; \
-	 services="$$(grep "^$$profile_var" .make/profiles.mk | sed 's/.*:=[[:space:]]*//')"; \
-	 if [ "$$services" = "*" ]; then \
-	   services="$$(grep '^ALL_SERVICES' .make/registry.mk | sed 's/.*:=[[:space:]]*//')"; \
-	 fi; \
-	 scripts/lib/check-images.sh $$services
+	@scripts/lib/check-images.sh $$(scripts/lib/profile-services.sh $(PROFILE))
 
 dev-networks:
 	@docker network create arc_platform_net 2>/dev/null || true
 	@docker network create arc_otel_net     2>/dev/null || true
 
 dev-up: .make/profiles.mk .make/registry.mk
-	@profile_var="PROFILE_$$(echo $(PROFILE) | tr '[:lower:]-' '[:upper:]_')_SERVICES"; \
-	 services="$$(grep "^$$profile_var" .make/profiles.mk | sed 's/.*:=[[:space:]]*//')"; \
-	 if [ -z "$$services" ]; then \
-	   printf "$(COLOR_ERR)✗$(COLOR_OFF) Unknown profile '$(PROFILE)'. Available: $$(grep '^ALL_PROFILES' .make/profiles.mk | sed 's/.*:=[[:space:]]*//')\n"; \
-	   exit 1; \
-	 fi; \
-	 if [ "$$services" = "*" ]; then \
-	   services="$$(grep '^ALL_SERVICES' .make/registry.mk | sed 's/.*:=[[:space:]]*//')"; \
-	 fi; \
+	@services=$$(scripts/lib/profile-services.sh $(PROFILE)) || exit 1; \
 	 printf "$(COLOR_INFO)→$(COLOR_OFF) Resolving startup order for profile '$(PROFILE)'...\n"; \
-	 layers="$$(scripts/lib/resolve-deps.sh $$services 2>/dev/null)"; \
+	 layers=$$(scripts/lib/resolve-deps.sh $$services 2>/dev/null); \
 	 layer_num=0; \
 	 echo "$$layers" | while IFS= read -r layer; do \
 	   layer_num=$$((layer_num+1)); \
@@ -161,12 +131,7 @@ dev-up: .make/profiles.mk .make/registry.mk
 	 done
 
 dev-wait: .make/profiles.mk .make/registry.mk
-	@profile_var="PROFILE_$$(echo $(PROFILE) | tr '[:lower:]-' '[:upper:]_')_SERVICES"; \
-	 services="$$(grep "^$$profile_var" .make/profiles.mk | sed 's/.*:=[[:space:]]*//')"; \
-	 if [ "$$services" = "*" ]; then \
-	   services="$$(grep '^ALL_SERVICES' .make/registry.mk | sed 's/.*:=[[:space:]]*//')"; \
-	 fi; \
-	 for svc in $$services; do \
+	@for svc in $$(scripts/lib/profile-services.sh $(PROFILE)); do \
 	   varname="$$(echo $$svc | tr '-' '_')"; \
 	   health="$$(grep "^SERVICE_$${varname}_HEALTH" .make/registry.mk | sed 's/.*:=[[:space:]]*//')"; \
 	   timeout="$$(grep "^SERVICE_$${varname}_TIMEOUT" .make/registry.mk | sed 's/.*:=[[:space:]]*//')"; \
@@ -176,25 +141,15 @@ dev-wait: .make/profiles.mk .make/registry.mk
 
 ## dev-down: Stop all services in $(PROFILE) profile
 dev-down: .make/profiles.mk .make/registry.mk
-	@profile_var="PROFILE_$$(echo $(PROFILE) | tr '[:lower:]-' '[:upper:]_')_SERVICES"; \
-	 services="$$(grep "^$$profile_var" .make/profiles.mk | sed 's/.*:=[[:space:]]*//')"; \
-	 if [ "$$services" = "*" ]; then \
-	   services="$$(grep '^ALL_SERVICES' .make/registry.mk | sed 's/.*:=[[:space:]]*//')"; \
-	 fi; \
-	 for svc in $$services; do \
+	@for svc in $$(scripts/lib/profile-services.sh $(PROFILE)); do \
 	   $(MAKE) $${svc}-down --no-print-directory 2>/dev/null || true; \
 	 done; \
 	 printf "$(COLOR_OK)✓$(COLOR_OFF) Profile '$(PROFILE)' stopped\n"
 
 ## dev-health: Check health of all services in $(PROFILE) profile
 dev-health: .make/profiles.mk .make/registry.mk
-	@profile_var="PROFILE_$$(echo $(PROFILE) | tr '[:lower:]-' '[:upper:]_')_SERVICES"; \
-	 services="$$(grep "^$$profile_var" .make/profiles.mk | sed 's/.*:=[[:space:]]*//')"; \
-	 if [ "$$services" = "*" ]; then \
-	   services="$$(grep '^ALL_SERVICES' .make/registry.mk | sed 's/.*:=[[:space:]]*//')"; \
-	 fi; \
-	 failed=0; \
-	 for svc in $$services; do \
+	@failed=0; \
+	 for svc in $$(scripts/lib/profile-services.sh $(PROFILE)); do \
 	   $(MAKE) $${svc}-health --no-print-directory 2>/dev/null || failed=$$((failed+1)); \
 	 done; \
 	 [ "$$failed" -eq 0 ] \
@@ -203,26 +158,16 @@ dev-health: .make/profiles.mk .make/registry.mk
 
 ## dev-logs: Tail logs from all services in $(PROFILE) profile
 dev-logs: .make/profiles.mk .make/registry.mk
-	@profile_var="PROFILE_$$(echo $(PROFILE) | tr '[:lower:]-' '[:upper:]_')_SERVICES"; \
-	 services="$$(grep "^$$profile_var" .make/profiles.mk | sed 's/.*:=[[:space:]]*//')"; \
-	 if [ "$$services" = "*" ]; then \
-	   services="$$(grep '^ALL_SERVICES' .make/registry.mk | sed 's/.*:=[[:space:]]*//')"; \
-	 fi; \
-	 for svc in $$services; do \
+	@for svc in $$(scripts/lib/profile-services.sh $(PROFILE)); do \
 	   $(MAKE) $${svc}-logs --no-print-directory 2>/dev/null & \
 	 done; \
 	 wait
 
 ## dev-status: Show container status for all services in $(PROFILE) profile
 dev-status: .make/profiles.mk .make/registry.mk
-	@profile_var="PROFILE_$$(echo $(PROFILE) | tr '[:lower:]-' '[:upper:]_')_SERVICES"; \
-	 services="$$(grep "^$$profile_var" .make/profiles.mk | sed 's/.*:=[[:space:]]*//')"; \
-	 if [ "$$services" = "*" ]; then \
-	   services="$$(grep '^ALL_SERVICES' .make/registry.mk | sed 's/.*:=[[:space:]]*//')"; \
-	 fi; \
-	 printf "%-20s %-10s %s\n" "SERVICE" "STATUS" "HEALTH"; \
+	@printf "%-20s %-10s %s\n" "SERVICE" "STATUS" "HEALTH"; \
 	 printf "%-20s %-10s %s\n" "-------" "------" "------"; \
-	 for svc in $$services; do \
+	 for svc in $$(scripts/lib/profile-services.sh $(PROFILE)); do \
 	   status="$$(docker ps --filter name=arc-$$svc --format '{{.Status}}' 2>/dev/null | head -1)"; \
 	   [ -z "$$status" ] && status="stopped"; \
 	   varname="$$(echo $$svc | tr '-' '_')"; \
@@ -237,45 +182,8 @@ dev-status: .make/profiles.mk .make/registry.mk
 
 ## dev-clean: [DESTRUCTIVE] Remove containers + volumes + orphans for $(PROFILE) profile
 dev-clean: .make/profiles.mk .make/registry.mk
-	@profile_var="PROFILE_$$(echo $(PROFILE) | tr '[:lower:]-' '[:upper:]_')_SERVICES"; \
-	 services="$$(grep "^$$profile_var" .make/profiles.mk | sed 's/.*:=[[:space:]]*//')"; \
-	 if [ "$$services" = "*" ]; then \
-	   services="$$(grep '^ALL_SERVICES' .make/registry.mk | sed 's/.*:=[[:space:]]*//')"; \
-	 fi; \
-	 printf "$(COLOR_WARN)!$(COLOR_OFF) Removes containers, volumes, and orphans for profile '$(PROFILE)'.\n"; \
-	 printf "  Services: $$services\n"; \
-	 printf "  Type 'yes' to continue: " && read -r ans && [ "$$ans" = "yes" ] \
-	   || { printf "  Aborted.\n"; exit 1; }; \
-	 seen_dirs=""; \
-	 for svc in $$services; do \
-	   varname="$$(echo $$svc | tr '-' '_')"; \
-	   dir="$$(grep "^SERVICE_$${varname}_DIR" .make/registry.mk | sed 's/.*:=[[:space:]]*//')"; \
-	   if [ -n "$$dir" ] && ! echo "$$seen_dirs" | grep -qw "$$dir"; then \
-	     seen_dirs="$$seen_dirs $$dir"; \
-	     docker compose -f "$$dir/docker-compose.yml" down --volumes --remove-orphans 2>/dev/null || true; \
-	   fi; \
-	 done; \
-	 printf "$(COLOR_OK)✓$(COLOR_OFF) Profile '$(PROFILE)' cleaned — data volumes removed\n"
+	@scripts/lib/dev-clean.sh $(PROFILE)
 
 ## dev-nuke: [DESTRUCTIVE] Remove containers + volumes + images + orphans for $(PROFILE) profile
 dev-nuke: .make/profiles.mk .make/registry.mk
-	@profile_var="PROFILE_$$(echo $(PROFILE) | tr '[:lower:]-' '[:upper:]_')_SERVICES"; \
-	 services="$$(grep "^$$profile_var" .make/profiles.mk | sed 's/.*:=[[:space:]]*//')"; \
-	 if [ "$$services" = "*" ]; then \
-	   services="$$(grep '^ALL_SERVICES' .make/registry.mk | sed 's/.*:=[[:space:]]*//')"; \
-	 fi; \
-	 printf "$(COLOR_ERR)!$(COLOR_OFF) Destroys ALL state for profile '$(PROFILE)': containers, volumes, images, orphans.\n"; \
-	 printf "$(COLOR_ERR)!$(COLOR_OFF) Images will need to be rebuilt or re-pulled. This is unrecoverable.\n"; \
-	 printf "  Services: $$services\n"; \
-	 printf "  Type 'nuke' to confirm: " && read -r ans && [ "$$ans" = "nuke" ] \
-	   || { printf "  Aborted.\n"; exit 1; }; \
-	 seen_dirs=""; \
-	 for svc in $$services; do \
-	   varname="$$(echo $$svc | tr '-' '_')"; \
-	   dir="$$(grep "^SERVICE_$${varname}_DIR" .make/registry.mk | sed 's/.*:=[[:space:]]*//')"; \
-	   if [ -n "$$dir" ] && ! echo "$$seen_dirs" | grep -qw "$$dir"; then \
-	     seen_dirs="$$seen_dirs $$dir"; \
-	     docker compose -f "$$dir/docker-compose.yml" down --volumes --remove-orphans --rmi local 2>/dev/null || true; \
-	   fi; \
-	 done; \
-	 printf "$(COLOR_OK)✓$(COLOR_OFF) Profile '$(PROFILE)' nuked — rebuild with: make dev\n"
+	@scripts/lib/dev-nuke.sh $(PROFILE)

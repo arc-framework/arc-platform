@@ -1,4 +1,5 @@
 name: arc-messaging
+role: messaging
 codename: flash
 image: ghcr.io/arc-framework/arc-messaging:latest
 tech: nats

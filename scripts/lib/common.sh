@@ -187,13 +187,43 @@ require_cmd() {
 }
 
 # Verify gh CLI has required token scopes.
+# Understands GitHub scope hierarchy: write:X implies read:X, admin:X implies write:X.
 # Usage: require_gh_scope "read:packages" "delete:packages"
 require_gh_scope() {
   local scopes_output
   scopes_output=$(gh auth status 2>&1 || true)
 
+  # Returns a space-separated list of scopes that imply the given scope.
+  # Bash 3.2-compatible (no associative arrays).
+  _scope_supersets() {
+    case "$1" in
+      read:packages)  echo "write:packages delete:packages admin:packages" ;;
+      read:org)       echo "write:org admin:org" ;;
+      read:repo_hook) echo "write:repo_hook admin:repo_hook" ;;
+      read:discussion) echo "write:discussion" ;;
+      read:user|user:email|user:follow) echo "user" ;;
+      *)              echo "" ;;
+    esac
+  }
+
   for scope in "$@"; do
-    if ! echo "$scopes_output" | grep -q "$scope"; then
+    if echo "$scopes_output" | grep -q "$scope"; then
+      log_debug "Scope '$scope' present (exact match)."
+      continue
+    fi
+
+    # Check if a superset scope covers the requirement
+    local satisfied=false
+    local superset
+    for superset in $(_scope_supersets "$scope"); do
+      if echo "$scopes_output" | grep -q "$superset"; then
+        log_debug "Scope '$scope' satisfied by superset '$superset'."
+        satisfied=true
+        break
+      fi
+    done
+
+    if [[ "$satisfied" != "true" ]]; then
       log_error "Missing GitHub scope: $scope"
       log_error "Run: gh auth refresh -s $(IFS=,; echo "$*")"
       exit 1

@@ -14,11 +14,10 @@ services:
       - --providers.docker=true
       - --providers.docker.network=arc_platform_net
       - --providers.docker.exposedbydefault=false
-      - --entrypoints.web.address=:8080
-      - --entrypoints.dashboard.address=:8090
+      - --entrypoints.web.address=:80
     ports:
-      - "127.0.0.1:80:8080"    # HTTP proxy — localhost only
-      - "127.0.0.1:8090:8090"  # Dashboard / ping — localhost only
+      - "127.0.0.1:80:80"      # HTTP proxy — localhost only
+      - "127.0.0.1:8090:8080"  # Dashboard / ping (traefik API entrypoint) — localhost only
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     user: "1000:1000"

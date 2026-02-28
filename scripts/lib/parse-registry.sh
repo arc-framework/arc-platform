@@ -37,7 +37,8 @@ log_info "Scanning $SERVICES_DIR for service.yaml files"
 #
 # YAML shapes we handle per file:
 #
-#   codename: <name>
+#   role: <name>              ← preferred programmatic identifier (role-based)
+#   codename: <name>          ← fallback if role: absent (character name)
 #   health: <endpoint>        ← single-line value, may contain spaces
 #   timeout: <seconds>        ← optional integer
 #   depends_on: []            ← inline empty list → no deps
@@ -46,7 +47,7 @@ log_info "Scanning $SERVICES_DIR for service.yaml files"
 #     - dep-b                 ← may have inline comments: "- dep # comment"
 #
 # Output per file (to stdout, one line per field, tab-separated):
-#   codename<TAB><codename>
+#   role<TAB><role>           ← role: value if present, else codename: value
 #   health<TAB><endpoint>
 #   timeout<TAB><value>
 #   dep<TAB><depname>         ← one line per dependency
@@ -64,6 +65,7 @@ _parse_one() {
   function trim(s)  { return rtrim(ltrim(s)) }
 
   BEGIN {
+    role     = ""
     codename = ""
     image    = ""
     health   = ""
@@ -85,7 +87,17 @@ _parse_one() {
     next
   }
 
-  # codename: <value>
+  # role: <value>  ← preferred programmatic identifier
+  /^[[:space:]]*role:[[:space:]]/ {
+    val = $0
+    sub(/^[[:space:]]*role:[[:space:]]*/, "", val)
+    sub(/#.*$/, "", val)
+    role = trim(val)
+    in_deps = 0
+    next
+  }
+
+  # codename: <value>  ← fallback when role: is absent
   /^[[:space:]]*codename:[[:space:]]/ {
     val = $0
     sub(/^[[:space:]]*codename:[[:space:]]*/, "", val)
@@ -148,12 +160,14 @@ _parse_one() {
   }
 
   END {
-    if (codename != "") {
-      print "codename\t" codename
-      print "image\t"    image
-      print "health\t"   health
-      print "timeout\t"  timeout
-      print "dir\t"      dir
+    # Use role: if present, fall back to codename:
+    key = (role != "") ? role : codename
+    if (key != "") {
+      print "role\t"    key
+      print "image\t"   image
+      print "health\t"  health
+      print "timeout\t" timeout
+      print "dir\t"     dir
     }
   }
   ' "$yaml_file"
@@ -180,27 +194,27 @@ while IFS= read -r yaml_file; do
   # Parse this file into field=value lines
   file_data="$(_parse_one "$yaml_file")"
 
-  # Extract codename from the parsed data (it's the last line printed by awk END)
-  codename=""
+  # Extract role from the parsed data (it's the first line printed by awk END)
+  svc_role=""
   while IFS=$'\t' read -r field value; do
-    if [[ "$field" == "codename" ]]; then
-      codename="$value"
+    if [[ "$field" == "role" ]]; then
+      svc_role="$value"
     fi
   done <<EOF
 $file_data
 EOF
 
-  if [[ -z "$codename" ]]; then
-    log_warn "No codename found in $yaml_file — skipping"
+  if [[ -z "$svc_role" ]]; then
+    log_warn "No role/codename found in $yaml_file — skipping"
     continue
   fi
 
-  # Append codename to ordered list
-  all_codenames="${all_codenames:+$all_codenames }$codename"
+  # Append role to ordered list
+  all_codenames="${all_codenames:+$all_codenames }$svc_role"
 
-  # Append tagged records: CODENAME<TAB>FIELD<TAB>VALUE
+  # Append tagged records: ROLE<TAB>FIELD<TAB>VALUE
   while IFS=$'\t' read -r field value; do
-    tmpdata="${tmpdata}${codename}	${field}	${value}
+    tmpdata="${tmpdata}${svc_role}	${field}	${value}
 "
   done <<EOF
 $file_data
@@ -241,7 +255,7 @@ function make_varname(s,    v) {
     value = (i == 3) ? parts[i] : value "\t" parts[i]
   }
 
-  if (field == "codename") {
+  if (field == "role") {
     svc_image[codename]    = (codename in svc_image)    ? svc_image[codename]    : ""
     svc_health[codename]   = (codename in svc_health)   ? svc_health[codename]   : ""
     svc_timeout[codename]  = (codename in svc_timeout)  ? svc_timeout[codename]  : ""

@@ -14,10 +14,10 @@
 #   1  One or more checks failed
 #
 # Port → service mapping:
-#   4222   flash          (NATS client)
-#   6379   sonic          (Redis)
-#   6650   strange        (Pulsar broker)
-#   8082   strange        (Pulsar admin)
+#   4222   messaging      (NATS client)
+#   6379   cache          (Redis)
+#   6650   streaming      (Pulsar broker)
+#   8082   streaming      (Pulsar admin)
 #   13133  friday-collector  (OTEL health)
 #   8081   cortex         (API)
 
@@ -39,10 +39,10 @@ _fail() { printf '  \033[0;31m\xe2\x9c\x97\033[0m %s\n' "$*"; }
 
 port_to_service() {
   case "$1" in
-    4222)  printf 'flash' ;;
-    6379)  printf 'sonic' ;;
-    6650)  printf 'strange' ;;
-    8082)  printf 'strange' ;;
+    4222)  printf 'messaging' ;;
+    6379)  printf 'cache' ;;
+    6650)  printf 'streaming' ;;
+    8082)  printf 'streaming' ;;
     13133) printf 'friday-collector' ;;
     8081)  printf 'cortex' ;;
     *)     printf 'unknown' ;;

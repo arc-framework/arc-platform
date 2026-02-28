@@ -1,4 +1,5 @@
 name: arc-flags
+role: flags
 codename: mystique
 image: ghcr.io/arc-framework/arc-flags:latest
 tech: unleash

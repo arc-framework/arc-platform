@@ -1,4 +1,5 @@
 name: arc-storage
+role: storage
 codename: tardis
 image: ghcr.io/arc-framework/arc-storage:latest
 tech: minio

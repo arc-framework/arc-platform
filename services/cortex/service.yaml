@@ -7,8 +7,8 @@ language: go
 port: 8081
 health: http://localhost:8081/health
 depends_on:
-  - flash            # arc-messaging (NATS)
-  - strange          # arc-streaming (Pulsar)
-  - sonic            # arc-cache (Redis)
+  - messaging        # arc-messaging (NATS)
+  - streaming        # arc-streaming (Pulsar)
+  - cache            # arc-cache (Redis)
   - friday-collector # arc-friday-collector (OTEL)
-  - oracle           # arc-sql-db (PostgreSQL)
+  - sql-db           # arc-sql-db (PostgreSQL)

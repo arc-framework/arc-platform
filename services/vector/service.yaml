@@ -1,4 +1,5 @@
 name: arc-vector-db
+role: vector-db
 codename: cerebro
 image: ghcr.io/arc-framework/arc-vector-db:latest
 tech: qdrant

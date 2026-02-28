@@ -1,4 +1,5 @@
 name: arc-cache
+role: cache
 codename: sonic
 image: ghcr.io/arc-framework/arc-cache:latest
 tech: redis
