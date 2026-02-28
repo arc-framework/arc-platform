@@ -20,8 +20,12 @@
 | **Redis**      | `arc-db-cache`     | INFRA   | `redis:alpine`                 | **Sonic**         | **Working Memory.** "Gotta go fast." Holds context; if he stops, he dies.                     |
 | **Qdrant**     | `arc-db-vector`    | INFRA   | `qdrant/qdrant`                | **Cerebro**       | **The Finder.** Connects to every thought to find semantic matches.                           |
 | **MinIO**      | `arc-storage`      | INFRA   | `minio/minio`                  | **Tardis**        | **Infinite Storage.** It's bigger on the inside (S3 compatible).                              |
-| **SigNoz OTEL Collector** | `arc-friday-collector` | INFRA | `signoz/signoz-otel-collector` | **Friday Collector** | **The Spy.** Intercepts all signals and traces without being seen. Routes to Friday.     |
-| **SigNoz**     | `arc-friday`       | INFRA   | `signoz/signoz`                | **Friday**        | **The Eyes.** Unified observability UI — traces, metrics, and logs in one place (:3301).      |
+| **OTEL**       | `arc-otel`         | INFRA   | `otel/opentelemetry-collector` | **Black Widow**   | **The Spy.** Intercepts all signals and traces without being seen.                            |
+| **Prometheus** | `arc-metrics`      | INFRA   | `prom/prometheus`              | **Dr. House**     | **Diagnostics.** Doesn't trust you; trusts the vitals. "It's never DNS."                      |
+| **Loki**       | `arc-logs`         | INFRA   | `grafana/loki`                 | **Watson**        | **The Chronicler.** Writes down every messy detail for later deduction.                       |
+| **Jaeger**     | `arc-traces`       | INFRA   | `grafana/tempo`                | **Columbo**       | **The Detective.** "Just one more thing." Follows the request path.                           |
+| **Grafana**    | `arc-viz`          | INFRA   | `grafana/grafana`              | **Friday**        | **The UI.** The visual interface overlay for the metrics.                                     |
+| **Promtail**   | `arc-log-shipper`  | INFRA   | `grafana/promtail`             | **Hermes**        | **The Messenger.** Delivers the logs to Watson.                                               |
 | **Chaos**      | `arc-chaos`        | INFRA   | `chaos-mesh/chaos-mesh`        | **T-800**         | **The Terminator.** "It absolutely will not stop until you are dead." Tests infra resilience. |
 | **Brain**      | `arc-brain`        | SERVICE | `./services/reasoner`          | **Sherlock**      | **The Reasoner.** "Data! I cannot make bricks without clay." (LangGraph).                     |
 | **Voice Agt**  | `arc-voice-agent`  | SERVICE | `./services/voice`             | **Scarlett**      | **The Voice.** Turns raw data into human connection (Her).                                    |

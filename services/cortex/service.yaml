@@ -10,4 +10,4 @@ depends_on:
   - strange  # arc-strange (Pulsar)
   - oracle   # arc-oracle (Postgres)
   - sonic    # arc-sonic (Redis)
-  - friday-collector    # arc-friday-collector (OTEL)
+  - widow    # arc-friday-collector (OTEL)
