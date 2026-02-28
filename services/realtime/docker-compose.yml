@@ -1,0 +1,91 @@
+name: arc-platform
+
+services:
+
+  # ── Daredevil: LiveKit Server — WebRTC media rooms ──────────────────────────
+  arc-realtime:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/arc-framework/arc-realtime:latest
+    container_name: arc-realtime
+    command: --config /etc/livekit.yaml
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro
+    environment:
+      # Override node_ip for non-local clients: LIVEKIT_NODE_IP=<machine-ip> make realtime-up
+      NODE_IP: ${LIVEKIT_NODE_IP:-127.0.0.1}
+    ports:
+      - "127.0.0.1:7880:7880"             # LiveKit API + WebRTC signalling — localhost only
+      - "127.0.0.1:7881:7881"             # gRPC API — localhost only
+      - "127.0.0.1:7882:7882"             # TURN/TCP — localhost only
+      - "0.0.0.0:50100-50200:50100-50200/udp"  # WebRTC RTP media — 0.0.0.0 required for NAT traversal
+    # arc-cache (Redis) must be running for multi-node pub/sub.
+    # Cross-compose ordering is handled by make realtime-up or make dev dependency resolution.
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 7880 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 15s
+    networks:
+      - arc_platform_net
+    restart: unless-stopped
+
+  # ── Sentry: LiveKit Ingress — RTMP/WHIP ingest ──────────────────────────────
+  arc-realtime-ingress:
+    build:
+      context: .
+      dockerfile: Dockerfile.ingress
+    image: ghcr.io/arc-framework/arc-realtime-ingress:latest
+    container_name: arc-realtime-ingress
+    volumes:
+      - ./ingress.yaml:/etc/ingress.yaml:ro
+    environment:
+      INGRESS_CONFIG: /etc/ingress.yaml
+    ports:
+      - "127.0.0.1:7888:7888"   # Ingress controller API — localhost only
+      - "127.0.0.1:1935:1935"   # RTMP ingest — localhost only
+    depends_on:
+      arc-realtime:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 7888 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 15s
+    networks:
+      - arc_platform_net
+    restart: unless-stopped
+
+  # ── Scribe: LiveKit Egress — recording + export ──────────────────────────────
+  arc-realtime-egress:
+    build:
+      context: .
+      dockerfile: Dockerfile.egress
+    image: ghcr.io/arc-framework/arc-realtime-egress:latest
+    container_name: arc-realtime-egress
+    volumes:
+      - ./egress.yaml:/etc/egress.yaml:ro
+    environment:
+      EGRESS_CONFIG: /etc/egress.yaml
+    ports:
+      - "127.0.0.1:7889:7889"   # Egress controller API — localhost only
+    depends_on:
+      arc-realtime:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 7889 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+    networks:
+      - arc_platform_net
+    restart: unless-stopped
+
+networks:
+  arc_platform_net:
+    external: true
+    name: arc_platform_net

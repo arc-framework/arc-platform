@@ -1,0 +1,28 @@
+# LiveKit Server configuration — development defaults
+# API keys are static dev values. Production: replace with dynamic secrets from OpenBao.
+#
+# To override node_ip for remote clients (set to your machine's LAN/public IP):
+#   LIVEKIT_NODE_IP=192.168.1.100 make realtime-up
+#
+# LiveKit reads NODE_IP env var for the node IP when starting.
+# The value below (127.0.0.1) is the dev default for local-only clients.
+
+port: 7880
+grpc_port: 7881
+
+rtc:
+  tcp_port: 7882
+  udp_port_range_start: 50100
+  udp_port_range_end: 50200
+  use_external_ip: false
+  node_ip: 127.0.0.1
+
+redis:
+  address: arc-cache:6379
+
+keys:
+  devkey: devsecret
+
+logging:
+  level: info
+  pion_level: error

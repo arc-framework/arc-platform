@@ -85,4 +85,7 @@ publish-all:
 	$(MAKE) streaming-build   streaming-publish   --no-print-directory
 	$(MAKE) cortex-build      cortex-publish      --no-print-directory
 	$(MAKE) otel-build        otel-publish        --no-print-directory
+	$(MAKE) realtime-build         realtime-publish         --no-print-directory
+	$(MAKE) realtime-ingress-build realtime-ingress-publish --no-print-directory
+	$(MAKE) realtime-egress-build  realtime-egress-publish  --no-print-directory
 	@printf "$(COLOR_OK)✓$(COLOR_OFF) All images published to ghcr.io/arc-framework\n"

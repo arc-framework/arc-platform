@@ -1,0 +1,21 @@
+name: arc-realtime
+codename: daredevil
+role: realtime
+image: ghcr.io/arc-framework/arc-realtime:latest
+tech: livekit
+upstream: livekit/livekit-server
+
+ports:
+  - { port: 7880, protocol: http, description: "LiveKit API + WebRTC signalling" }
+  - { port: 7881, protocol: grpc, description: "gRPC API" }
+  - { port: 7882, protocol: tcp, description: "TURN/TCP" }
+  - { port: "50100-50200", protocol: udp, description: "WebRTC RTP media (0.0.0.0 — NAT traversal)" }
+
+health: http://localhost:7880
+
+depends_on:
+  - cache  # Redis — multi-node pub/sub state
+
+sidecars:
+  - { name: arc-realtime-ingress, codename: sentry, port: 7888, description: "RTMP ingest (livekit/ingress)" }
+  - { name: arc-realtime-egress, codename: scribe, port: 7889, description: "Recording + export (livekit/egress)" }

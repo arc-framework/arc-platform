@@ -1,0 +1,22 @@
+# LiveKit Egress configuration — development defaults
+# API key and secret must match livekit.yaml keys.devkey / devsecret
+
+api_key: devkey
+api_secret: devsecret
+ws_url: ws://arc-realtime:7880
+
+health_port: 7889
+prometheus_port: 7889
+
+# Default S3 output — arc-storage (MinIO) for recordings.
+# The 'recordings' bucket must exist before egress will write to it.
+# Create it with: docker exec arc-storage mc mb /data/recordings
+s3:
+  bucket: recordings
+  endpoint: http://arc-storage:9000
+  access_key: arc
+  secret: arc-minio-dev
+  force_path_style: true
+
+logging:
+  level: info

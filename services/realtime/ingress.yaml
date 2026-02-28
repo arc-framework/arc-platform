@@ -1,0 +1,12 @@
+# LiveKit Ingress configuration — development defaults
+# API key and secret must match livekit.yaml keys.devkey / devsecret
+
+api_key: devkey
+api_secret: devsecret
+ws_url: ws://arc-realtime:7880
+
+health_port: 7888
+prometheus_port: 7888
+
+logging:
+  level: info

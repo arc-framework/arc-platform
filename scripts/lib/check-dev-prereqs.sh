@@ -45,11 +45,14 @@ port_to_service() {
     8082)  printf 'streaming' ;;
     13133) printf 'friday-collector' ;;
     8081)  printf 'cortex' ;;
+    7880)  printf 'realtime (daredevil)' ;;
+    7881)  printf 'realtime (daredevil-grpc)' ;;
+    1935)  printf 'realtime-ingress (sentry-rtmp)' ;;
     *)     printf 'unknown' ;;
   esac
 }
 
-REQUIRED_PORTS=(4222 6379 6650 8082 13133 8081)
+REQUIRED_PORTS=(4222 6379 6650 8082 13133 8081 7880 7881 1935)
 
 # ---------------------------------------------------------------------------
 # Port check — POSIX-compatible via /dev/tcp; falls back to nc

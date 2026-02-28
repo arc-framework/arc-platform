@@ -37,6 +37,7 @@ include services/gateway/gateway.mk
 include services/secrets/vault.mk
 include services/flags/flags.mk
 include services/control.mk
+include services/realtime/realtime.mk
 
 # ─── Generated orchestration metadata (.make/ — gitignored) ───────────────────
 # -include silently skips missing files on first run; generation rules create them.
