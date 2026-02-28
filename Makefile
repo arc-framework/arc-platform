@@ -21,6 +21,10 @@ COLOR_OFF  := \033[0m
 # Add one include per service as the platform grows.
 include services/otel/otel.mk
 include services/cortex/cortex.mk
+include services/messaging/flash.mk
+include services/streaming/strange.mk
+include services/cache/sonic.mk
+include services/messaging.mk
 # future: include services/gateway/gateway.mk
 # future: include services/persistence/persistence.mk
 

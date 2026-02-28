@@ -1,0 +1,216 @@
+name: Messaging Release
+
+# Full release pipeline for arc-flash, arc-strange, and arc-sonic.
+# Triggered by pushing a version tag: git tag messaging/v1.2.3 && git push --tags
+#
+# Tag format:  messaging/v{MAJOR}.{MINOR}.{PATCH}  (e.g. messaging/v0.1.0)
+# Pre-release: messaging/v1.0.0-rc1, messaging/v1.0.0-alpha, messaging/v1.0.0-beta
+#
+# Image tags published:
+#   messaging-v{x.y.z}  — pinned reference for service.yaml / docker-compose.yml
+#   sha-{short}         — traceability back to the exact commit
+#   latest              — convenience tag for local dev
+#
+# Version bump rules:
+#   new service added or major config change → MAJOR
+#   new feature or significant config update → MINOR
+#   bug fix, base image update, label tweak  → PATCH
+#
+# Parallelism:
+#   prepare runs first.
+#   build-flash, build-strange, build-sonic run concurrently after prepare.
+#   security-* runs after their respective builds.
+#   release runs after prepare + all builds + all security gates.
+
+on:
+  push:
+    tags:
+      - 'messaging/v*'
+
+permissions:
+  contents: write
+  packages: write
+  security-events: write
+  issues: write
+
+jobs:
+
+  # ── Derive Docker-safe image tag from git tag ──────────────────────────────
+  # messaging/v0.1.0 → messaging-v0.1.0 (slashes are not valid in Docker image tags)
+  prepare:
+    name: Prepare Release
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag:  ${{ steps.tag.outputs.image-tag }}
+      version:    ${{ steps.tag.outputs.version }}
+      prerelease: ${{ steps.tag.outputs.prerelease }}
+    steps:
+      - name: Derive image tag and version
+        id: tag
+        run: |
+          GIT_TAG="${GITHUB_REF_NAME}"                # messaging/v0.1.0
+          IMAGE_TAG="${GIT_TAG/\//-}"                 # messaging-v0.1.0
+          VERSION="${GIT_TAG#messaging/v}"            # 0.1.0
+
+          echo "image-tag=$IMAGE_TAG"   >> $GITHUB_OUTPUT
+          echo "version=$VERSION"       >> $GITHUB_OUTPUT
+
+          if echo "$VERSION" | grep -qE '\-(rc|alpha|beta)'; then
+            echo "prerelease=true"  >> $GITHUB_OUTPUT
+          else
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+          fi
+
+  # ── Build arc-flash (parallel after prepare) ──────────────────────────────
+  build-flash:
+    name: Build arc-flash
+    needs: [prepare]
+    uses: ./.github/workflows/_reusable-build.yml
+    with:
+      service-name: arc-flash
+      service-path: services/messaging
+      dockerfile: Dockerfile
+      platforms: linux/amd64,linux/arm64
+      push-image: true
+      latest-tag: true
+      image-tag: ${{ needs.prepare.outputs.image-tag }}
+      generate-sbom: true
+      image-prefix: ghcr.io/arc-framework
+    secrets: inherit
+
+  # ── Build arc-strange (parallel after prepare) ────────────────────────────
+  build-strange:
+    name: Build arc-strange
+    needs: [prepare]
+    uses: ./.github/workflows/_reusable-build.yml
+    with:
+      service-name: arc-strange
+      service-path: services/streaming
+      dockerfile: Dockerfile
+      platforms: linux/amd64,linux/arm64
+      push-image: true
+      latest-tag: true
+      image-tag: ${{ needs.prepare.outputs.image-tag }}
+      generate-sbom: true
+      image-prefix: ghcr.io/arc-framework
+    secrets: inherit
+
+  # ── Build arc-sonic (parallel after prepare) ──────────────────────────────
+  build-sonic:
+    name: Build arc-sonic
+    needs: [prepare]
+    uses: ./.github/workflows/_reusable-build.yml
+    with:
+      service-name: arc-sonic
+      service-path: services/cache
+      dockerfile: Dockerfile
+      platforms: linux/amd64,linux/arm64
+      push-image: true
+      latest-tag: true
+      image-tag: ${{ needs.prepare.outputs.image-tag }}
+      generate-sbom: true
+      image-prefix: ghcr.io/arc-framework
+    secrets: inherit
+
+  # ── Security: Flash — CRITICAL CVEs block the release ─────────────────────
+  security-flash:
+    name: Security Gate — arc-flash
+    needs: [build-flash]
+    uses: ./.github/workflows/_reusable-security.yml
+    with:
+      scan-type: fs
+      scan-target: services/messaging
+      severity: CRITICAL,HIGH
+      fail-on-severity: CRITICAL
+      block-on-failure: true
+      service-name: arc-flash-release
+      create-issues: true
+    secrets: inherit
+
+  # ── Security: Strange — CRITICAL CVEs block the release ───────────────────
+  security-strange:
+    name: Security Gate — arc-strange
+    needs: [build-strange]
+    uses: ./.github/workflows/_reusable-security.yml
+    with:
+      scan-type: fs
+      scan-target: services/streaming
+      severity: CRITICAL,HIGH
+      fail-on-severity: CRITICAL
+      block-on-failure: true
+      service-name: arc-strange-release
+      create-issues: true
+    secrets: inherit
+
+  # ── Security: Sonic — CRITICAL CVEs block the release ─────────────────────
+  security-sonic:
+    name: Security Gate — arc-sonic
+    needs: [build-sonic]
+    uses: ./.github/workflows/_reusable-security.yml
+    with:
+      scan-type: fs
+      scan-target: services/cache
+      severity: CRITICAL,HIGH
+      fail-on-severity: CRITICAL
+      block-on-failure: true
+      service-name: arc-sonic-release
+      create-issues: true
+    secrets: inherit
+
+  # ── GitHub release ─────────────────────────────────────────────────────────
+  release:
+    name: GitHub Release
+    needs: [prepare, build-flash, build-strange, build-sonic, security-flash, security-strange, security-sonic]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate release notes
+        run: |
+          IMAGE_TAG="${{ needs.prepare.outputs.image-tag }}"
+          VERSION="${{ needs.prepare.outputs.version }}"
+          PREFIX="ghcr.io/arc-framework"
+
+          cat > release-notes.md << EOF
+          ## Messaging Services — ${VERSION}
+
+          NATS (Flash), Apache Pulsar (Strange), and Redis (Sonic) messaging and cache services
+          for the A.R.C. Platform.
+
+          ### Images
+
+          | Service | Image | Versioned Tag | Also Tagged |
+          |---------|-------|--------------|-------------|
+          | arc-flash (NATS) | \`${PREFIX}/arc-flash\` | \`${IMAGE_TAG}\` | \`latest\`, \`sha-*\` |
+          | arc-strange (Pulsar) | \`${PREFIX}/arc-strange\` | \`${IMAGE_TAG}\` | \`latest\`, \`sha-*\` |
+          | arc-sonic (Redis) | \`${PREFIX}/arc-sonic\` | \`${IMAGE_TAG}\` | \`latest\`, \`sha-*\` |
+
+          ### Pull
+
+          \`\`\`bash
+          docker pull ${PREFIX}/arc-flash:${IMAGE_TAG}
+          docker pull ${PREFIX}/arc-strange:${IMAGE_TAG}
+          docker pull ${PREFIX}/arc-sonic:${IMAGE_TAG}
+          \`\`\`
+
+          ### Start
+
+          \`\`\`bash
+          make messaging-up
+          make messaging-health
+          \`\`\`
+
+          ### Local Dev
+
+          Update the image tags in each service's \`docker-compose.yml\` to \`${IMAGE_TAG}\`,
+          or use \`latest\` to track the newest release.
+          EOF
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: 'Messaging ${{ needs.prepare.outputs.version }}'
+          body_path: release-notes.md
+          draft: false
+          prerelease: ${{ needs.prepare.outputs.prerelease == 'true' }}

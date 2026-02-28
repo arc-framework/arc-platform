@@ -156,6 +156,7 @@ services:
       start_period: 30s
     networks:
       - arc_otel_net
+      - arc_platform_net
     restart: unless-stopped
 
 volumes:
@@ -169,3 +170,6 @@ volumes:
 networks:
   arc_otel_net:
     name: arc_otel_net
+  arc_platform_net:
+    external: true
+    name: arc_platform_net

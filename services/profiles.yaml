@@ -8,13 +8,19 @@ think:
   description: 'Minimal viable platform — just enough to think'
   services:
     - cortex
+    - flash
+    - strange
+    - sonic
 
 # ─── reason ─────────────────────────────────────────────────────
 # Full reasoning stack — observability, identity, bootstrap
 reason:
-  description: 'Development stack — observability and identity included'
+  description: 'Development stack — think profile + observability'
   services:
     - cortex
+    - flash
+    - strange
+    - sonic
     - otel
 
 # ─── ultra-instinct ─────────────────────────────────────────────

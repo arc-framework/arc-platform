@@ -6,6 +6,22 @@ receivers:
       http:
         endpoint: 0.0.0.0:4318
 
+  prometheus:
+    config:
+      scrape_configs:
+        # arc-flash: NATS monitoring endpoint (Prometheus format)
+        - job_name: arc-flash
+          scrape_interval: 15s
+          static_configs:
+            - targets: ['arc-flash:8222']
+        # arc-strange: Pulsar metrics endpoint
+        - job_name: arc-strange
+          scrape_interval: 15s
+          static_configs:
+            - targets: ['arc-strange:8080']
+        # arc-sonic (Redis) metrics deferred — see tech debt TD-001
+        # TD-001: add oliver006/redis_exporter sidecar when dashboard is needed
+
 processors:
   batch:
     send_batch_size: 10000
@@ -35,7 +51,7 @@ service:
       processors: [batch]
       exporters: [clickhousetraces]
     metrics:
-      receivers: [otlp]
+      receivers: [otlp, prometheus]
       processors: [batch]
       exporters: [signozclickhousemetrics]
     logs:
