@@ -58,7 +58,7 @@ graph TD
 
 ## Phase 1: Setup
 
-- [ ] [TASK-001] [SERVICES] [P1] Update profiles.yaml — oracle + cerebro → `think`; tardis → `reason`
+- [x] [TASK-001] [SERVICES] [P1] Update profiles.yaml — oracle + cerebro → `think`; tardis → `reason`
   - Dependencies: none
   - Module: `services/profiles.yaml`
   - Acceptance:
@@ -74,7 +74,7 @@ graph TD
 
 All three tasks are fully independent. Each creates 4 files: `Dockerfile`, `service.yaml`, `docker-compose.yml`, and the `.mk` file is handled in Phase 3.
 
-- [ ] [TASK-011] [P] [SERVICES] [P1] Create `services/persistence/` — Oracle (Postgres 17)
+- [x] [TASK-011] [P] [SERVICES] [P1] Create `services/persistence/` — Oracle (Postgres 17)
   - Dependencies: TASK-001
   - Module: `services/persistence/`
   - Acceptance:
@@ -83,6 +83,7 @@ All three tasks are fully independent. Each creates 4 files: `Dockerfile`, `serv
     - `docker-compose.yml`: service `arc-oracle`; env `POSTGRES_USER=arc POSTGRES_PASSWORD=arc POSTGRES_DB=arc`; port `127.0.0.1:5432:5432`; volume `arc-oracle-data:/var/lib/postgresql/data`; healthcheck `pg_isready -U arc || exit 1` interval 5s, timeout 3s, retries 10, start_period 10s; network `arc_platform_net` (external); `restart: unless-stopped`
     - `docker compose config` passes without errors
     - `docker build -f services/persistence/Dockerfile services/persistence/` succeeds
+  - Reviewer notes (2026-02-28): All acceptance criteria verified. `docker exec arc-oracle ps aux` confirms `postgres` user (uid 70) runs the postgres process. PASS.
 
 - [ ] [TASK-012] [P] [SERVICES] [P1] Create `services/vector/` — Cerebro (Qdrant)
   - Dependencies: TASK-001
@@ -93,8 +94,13 @@ All three tasks are fully independent. Each creates 4 files: `Dockerfile`, `serv
     - `docker-compose.yml`: service `arc-cerebro`; ports `127.0.0.1:6333:6333` and `127.0.0.1:6334:6334`; volume `arc-cerebro-data:/qdrant/storage`; healthcheck `wget -qO- http://localhost:6333/readyz || exit 1` interval 5s, timeout 3s, retries 5, start_period 5s; network `arc_platform_net` (external); `restart: unless-stopped`
     - `docker compose config` passes without errors
     - `docker build -f services/vector/Dockerfile services/vector/` succeeds
+  - Reviewer notes (2026-02-28): BLOCKED — Constitution Principle VIII violation.
+    - The `qdrant/qdrant` upstream image declares `USER 0:0` (root) by default. The `USER_ID` build arg defaults to 0. `docker inspect arc-cerebro --format '{{.Config.User}}'` returns `0:0` and `docker exec arc-cerebro whoami` returns `root`.
+    - The Dockerfile comment "qdrant image runs as uid 1000 by default" is factually incorrect — the upstream image runs as root unless the image is rebuilt with `--build-arg USER_ID=1000`.
+    - Acceptance criterion says "no USER directive (qdrant image runs as uid 1000)" — this is wrong. A `user: "1000:1000"` entry must be added to `services/vector/docker-compose.yml` (same approach as Tardis), or the Dockerfile must rebuild with `--build-arg USER_ID=1000` and add `USER 1000`.
+    - Acceptable healthcheck deviation (pre-approved): compose healthcheck uses `bash -c 'exec 3<>/dev/tcp/...'` instead of `wget` because `wget` is not present in the qdrant image. Functional result is identical (HTTP 200 check on /readyz).
 
-- [ ] [TASK-013] [P] [SERVICES] [P1] Create `services/storage/` — Tardis (MinIO)
+- [x] [TASK-013] [P] [SERVICES] [P1] Create `services/storage/` — Tardis (MinIO)
   - Dependencies: TASK-001
   - Module: `services/storage/`
   - Acceptance:
@@ -104,6 +110,7 @@ All three tasks are fully independent. Each creates 4 files: `Dockerfile`, `serv
     - `docker compose config` passes without errors
     - `docker build -f services/storage/Dockerfile services/storage/` succeeds
     - Non-root uid: attempt `user: "1000:1000"` in docker-compose first; if MinIO fails to start, try `USER 1000` in Dockerfile; if both fail, add inline comment `# NOTE: minio/minio requires root — upstream constraint` (same as Pulsar in 003)
+  - Reviewer notes (2026-02-28): `user: "1000:1000"` confirmed in compose; `docker inspect arc-tardis --format '{{.Config.User}}'` returns `1000:1000`; `docker exec arc-tardis id` returns `uid=1000 gid=1000`. Dockerfile pre-creates `/data` owned by uid 1000 and drops to `USER 1000`. PASS.
 
 ---
 
@@ -111,7 +118,7 @@ All three tasks are fully independent. Each creates 4 files: `Dockerfile`, `serv
 
 Batch A (parallel — each .mk is independent):
 
-- [ ] [TASK-021] [P] [SERVICES] [P1] Create `services/persistence/oracle.mk`
+- [x] [TASK-021] [P] [SERVICES] [P1] Create `services/persistence/oracle.mk`
   - Dependencies: TASK-011
   - Module: `services/persistence/oracle.mk`
   - Acceptance:
@@ -123,7 +130,7 @@ Batch A (parallel — each .mk is independent):
     - All targets use `COLOR_INFO`, `COLOR_OK`, `COLOR_ERR` inherited from root Makefile
     - All paths relative to repo root
 
-- [ ] [TASK-022] [P] [SERVICES] [P1] Create `services/vector/cerebro.mk`
+- [x] [TASK-022] [P] [SERVICES] [P1] Create `services/vector/cerebro.mk`
   - Dependencies: TASK-012
   - Module: `services/vector/cerebro.mk`
   - Acceptance:
@@ -132,8 +139,9 @@ Batch A (parallel — each .mk is independent):
     - `cerebro-clean` / `cerebro-nuke`: require typed confirmation before destructive action
     - `cerebro-publish`: pushes then prints settings URL
     - `make cerebro-help` lists all targets
+  - Reviewer notes (2026-02-28): All targets present and function correctly. Minor acceptable deviation: `cerebro-health` in the .mk uses `curl -sf` (not `wget`) to probe from the host — functionally identical. PASS.
 
-- [ ] [TASK-023] [P] [SERVICES] [P1] Create `services/storage/tardis.mk`
+- [x] [TASK-023] [P] [SERVICES] [P1] Create `services/storage/tardis.mk`
   - Dependencies: TASK-013
   - Module: `services/storage/tardis.mk`
   - Acceptance:
@@ -145,7 +153,7 @@ Batch A (parallel — each .mk is independent):
 
 Batch B (sequential — depends on all Batch A):
 
-- [ ] [TASK-024] [SERVICES] [P1] Create `services/data.mk` + update root `Makefile` includes
+- [x] [TASK-024] [SERVICES] [P1] Create `services/data.mk` + update root `Makefile` includes
   - Dependencies: TASK-021, TASK-022, TASK-023
   - Module: `services/data.mk`, `Makefile`
   - Acceptance:
@@ -164,7 +172,7 @@ Batch B (sequential — depends on all Batch A):
 
 Both workflows are independent and can be implemented concurrently.
 
-- [ ] [TASK-031] [P] [CI] [P1] Create `.github/workflows/data-images.yml`
+- [x] [TASK-031] [P] [CI] [P1] Create `.github/workflows/data-images.yml`
   - Dependencies: TASK-024
   - Module: `.github/workflows/data-images.yml`
   - Acceptance:
@@ -179,7 +187,7 @@ Both workflows are independent and can be implemented concurrently.
     - `security-oracle`, `security-cerebro`, `security-tardis` jobs: run after respective builds; `block-on-failure: false` in CI; `_reusable-security.yml`
     - YAML is valid; `act` dry-run passes if available
 
-- [ ] [TASK-032] [P] [CI] [P1] Create `.github/workflows/data-release.yml`
+- [x] [TASK-032] [P] [CI] [P1] Create `.github/workflows/data-release.yml`
   - Dependencies: TASK-024
   - Module: `.github/workflows/data-release.yml`
   - Acceptance:
@@ -211,12 +219,15 @@ Both workflows are independent and can be implemented concurrently.
     - All ports bound to `127.0.0.1`: `docker compose ps` confirms
     - All volumes are named: `docker volume ls | grep arc` shows `arc-oracle-data`, `arc-cerebro-data`, `arc-tardis-data`
     - After `make data-up` + `make cortex-docker-up`: `curl -s http://localhost:8081/health/deep | jq .oracle.status` returns `"ok"`
+  - Reviewer notes (2026-02-28): 10 of 11 criteria PASS. BLOCKED on TASK-012 (Cerebro runs as root).
+    - Criteria 1-10 all verified and passing in live test.
+    - Criterion 11 (Cortex oracle health): `"ok": false` — FAIL. Root cause is a pre-existing mismatch in Cortex config (commit 1d15b07): Cortex defaults `bootstrap.postgres.db=arc_db` and has no password configured, while Oracle compose sets `POSTGRES_DB=arc` and `POSTGRES_PASSWORD=arc`. This is not introduced by 005-data-layer. The implementer must align either Cortex's config or Oracle's env (or both) and document in Cortex's compose. This criterion blocks TASK-041 until resolved.
 
 ---
 
 ## Phase 6: Polish
 
-- [ ] [TASK-900] [P] [DOCS] [P1] Docs & links update
+- [x] [TASK-900] [P] [DOCS] [P1] Docs & links update
   - Dependencies: TASK-041
   - Module: `services/profiles.yaml`, `CLAUDE.md`, `services/cortex/service.yaml`
   - Acceptance:
@@ -225,6 +236,7 @@ Both workflows are independent and can be implemented concurrently.
     - `services/cortex/service.yaml` `depends_on` field references `oracle` codename (add if missing)
     - `CLAUDE.md` monorepo layout section references `persistence/`, `vector/`, `storage/` directories (add if missing)
     - No broken internal references in modified files
+  - Reviewer notes (2026-02-28): All docs criteria pass. CLAUDE.md monorepo layout lists all three directories; service codenames table updated. cortex/service.yaml depends_on includes `oracle`. PASS.
 
 - [ ] [TASK-999] [REVIEW] [P1] Reviewer agent verification
   - Dependencies: ALL
@@ -246,16 +258,21 @@ Both workflows are independent and can be implemented concurrently.
     - `docker inspect arc-cerebro` confirms uid 1000 (non-root)
     - MinIO uid documented (non-root or deviation noted in compose comments)
     - Constitution compliance: II, III, IV, V, VII, VIII, XI all PASS
+  - Reviewer notes (2026-02-28): BLOCKED — two issues must be resolved before this can be marked done.
+    - ISSUE-1 (CRITICAL): `docker inspect arc-cerebro` shows `Config.User=0:0`; runtime `id` returns `uid=0(root)`. The upstream `qdrant/qdrant` image defaults to `USER 0:0`. Principle VIII (non-root containers) is violated. Fix: add `user: "1000:1000"` to `services/vector/docker-compose.yml` and rebuild (same pattern as Tardis), or rebuild Dockerfile with `--build-arg USER_ID=1000` and add `USER 1000`. Correct the Dockerfile comment from "qdrant image runs as uid 1000 by default" to reflect the actual fix.
+    - ISSUE-2 (BLOCKER): `curl .../health/deep | jq '.dependencies.postgres.ok'` returns `false`. Root cause: pre-existing mismatch between Cortex defaults (`arc_db`, no password) and Oracle compose (`POSTGRES_DB=arc`, `POSTGRES_PASSWORD=arc`). Fix: align Oracle `POSTGRES_DB` to `arc_db`, or configure `POSTGRES_DB=arc_db` and add `BOOTSTRAP_POSTGRES_PASSWORD=arc` env in `services/cortex/docker-compose.yml`. Needs coordination with Cortex maintainer.
 
 ---
 
 ## Progress Summary
 
-| Phase | Total | Done | Parallel |
-|-------|-------|------|----------|
-| Setup | 1 | 0 | 0 |
-| Foundational | 3 | 0 | 3 |
-| Implementation (Make + CI) | 6 | 0 | 5 |
-| Integration | 1 | 0 | 0 |
-| Polish | 2 | 0 | 1 |
-| **Total** | **13** | **0** | **9** |
+| Phase | Total | Done | Blocked |
+|-------|-------|------|---------|
+| Setup | 1 | 1 | 0 |
+| Foundational | 3 | 2 | 1 |
+| Implementation (Make + CI) | 6 | 6 | 0 |
+| Integration | 1 | 0 | 1 |
+| Polish | 2 | 1 | 1 |
+| **Total** | **13** | **10** | **3** |
+
+Blocked tasks: TASK-012 (Cerebro root user), TASK-041 (depends on TASK-012 + Cortex config mismatch), TASK-999 (reviewer).
