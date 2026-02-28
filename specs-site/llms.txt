@@ -1,0 +1,59 @@
+# A.R.C. Platform — Specs
+
+> Feature specifications for the A.R.C. Platform
+
+## Table of Contents
+
+### 001 — OTEL Setup
+
+- [Feature: 001-otel-setup — Stand Up SigNoz as the Observability Backend](/arc-platform/specs-site/001-otel-setup/spec.md)
+- [Implementation Plan: 001-otel-setup — Stand Up SigNoz as the Observability Backend](/arc-platform/specs-site/001-otel-setup/plan.md)
+- [Tasks: 001-otel-setup — Stand Up SigNoz as the Observability Backend](/arc-platform/specs-site/001-otel-setup/tasks.md)
+
+### 002 — Cortex Setup
+
+- [Feature: Cortex Bootstrap Service](/arc-platform/specs-site/002-cortex-setup/spec.md)
+- [Implementation Plan: Cortex Bootstrap Service](/arc-platform/specs-site/002-cortex-setup/plan.md)
+- [Tasks: Cortex Bootstrap Service](/arc-platform/specs-site/002-cortex-setup/tasks.md)
+
+### 003 — Messaging Setup
+
+- [Feature: Messaging & Cache Services Setup](/arc-platform/specs-site/003-messaging-setup/spec.md)
+- [Implementation Plan: Messaging & Cache Services Setup](/arc-platform/specs-site/003-messaging-setup/plan.md)
+- [Tasks: Messaging & Cache Services Setup](/arc-platform/specs-site/003-messaging-setup/tasks.md)
+
+### 004 — Dev Setup
+
+- [Feature: Dev Setup Orchestration](/arc-platform/specs-site/004-dev-setup/spec.md)
+- [Implementation Plan: Dev Setup Orchestration](/arc-platform/specs-site/004-dev-setup/plan.md)
+- [Tasks: Dev Setup Orchestration](/arc-platform/specs-site/004-dev-setup/tasks.md)
+- [Analysis Report: 004-dev-setup](/arc-platform/specs-site/004-dev-setup/analysis-report.md)
+
+### 005 — Data Layer
+
+- [Feature: Data Layer Services Setup](/arc-platform/specs-site/005-data-layer/spec.md)
+- [Implementation Plan: Data Layer Services Setup](/arc-platform/specs-site/005-data-layer/plan.md)
+- [Tasks: Data Layer Services Setup](/arc-platform/specs-site/005-data-layer/tasks.md)
+- [Analysis Report: 005-data-layer](/arc-platform/specs-site/005-data-layer/analysis-report.md)
+
+### 006 — Platform Control
+
+- [Feature: Platform Control Plane Services Setup](/arc-platform/specs-site/006-platform-control/spec.md)
+- [Implementation Plan: Platform Control Plane Services Setup](/arc-platform/specs-site/006-platform-control/plan.md)
+- [Tasks: Platform Control Plane Services Setup](/arc-platform/specs-site/006-platform-control/tasks.md)
+- [Analysis Report: 006-platform-control](/arc-platform/specs-site/006-platform-control/analysis-report.md)
+
+### 007 — Voice Stack
+
+- [Feature: Realtime Voice Infrastructure Setup](/arc-platform/specs-site/007-voice-stack/spec.md)
+- [Implementation Plan: Realtime Voice Infrastructure Setup](/arc-platform/specs-site/007-voice-stack/plan.md)
+- [Tasks: Realtime Voice Infrastructure Setup](/arc-platform/specs-site/007-voice-stack/tasks.md)
+- [Analysis Report: 007-voice-stack](/arc-platform/specs-site/007-voice-stack/analysis-report.md)
+
+### 008 — Specs Site
+
+- [Feature: Specs Documentation Site](/arc-platform/specs-site/008-specs-site/spec.md)
+- [Implementation Plan: Specs Documentation Site](/arc-platform/specs-site/008-specs-site/plan.md)
+- [Tasks: Specs Documentation Site](/arc-platform/specs-site/008-specs-site/tasks.md)
+- [Analysis Report: 008-Specs-Site](/arc-platform/specs-site/008-specs-site/analysis-report.md)
+
