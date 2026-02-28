@@ -1,0 +1,35 @@
+name: arc-platform
+
+services:
+  arc-oracle:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/arc-framework/arc-oracle:latest
+    container_name: arc-oracle
+    environment:
+      POSTGRES_USER: arc
+      POSTGRES_PASSWORD: arc
+      POSTGRES_DB: arc
+    ports:
+      - "127.0.0.1:5432:5432"   # PostgreSQL client — localhost only
+    volumes:
+      - oracle-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U arc || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks:
+      - arc_platform_net
+    restart: unless-stopped
+
+volumes:
+  oracle-data:
+    name: arc-oracle-data
+
+networks:
+  arc_platform_net:
+    external: true
+    name: arc_platform_net

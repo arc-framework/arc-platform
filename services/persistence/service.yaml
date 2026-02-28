@@ -1,0 +1,9 @@
+name: arc-oracle
+codename: oracle
+image: ghcr.io/arc-framework/arc-oracle:latest
+tech: postgres
+upstream: postgres:17-alpine
+ports:
+  - 5432   # PostgreSQL client
+health: pg_isready -U arc
+depends_on: []

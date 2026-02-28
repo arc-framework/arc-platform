@@ -29,8 +29,11 @@ include services/messaging/flash.mk
 include services/streaming/strange.mk
 include services/cache/sonic.mk
 include services/messaging.mk
+include services/persistence/oracle.mk
+include services/vector/cerebro.mk
+include services/storage/tardis.mk
+include services/data.mk
 # future: include services/gateway/gateway.mk
-# future: include services/persistence/persistence.mk
 
 # ─── Generated orchestration metadata (.make/ — gitignored) ───────────────────
 # -include silently skips missing files on first run; generation rules create them.

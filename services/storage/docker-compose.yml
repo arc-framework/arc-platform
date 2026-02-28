@@ -1,0 +1,40 @@
+name: arc-platform
+
+services:
+  # ── Tardis: MinIO S3-compatible object storage ──────────────────────────────
+  # uid: running as 1000:1000 (non-root). Dockerfile pre-creates /data owned by
+  # uid 1000 so the named volume initialises with correct write permissions.
+  arc-tardis:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/arc-framework/arc-tardis:latest
+    container_name: arc-tardis
+    command: server /data --console-address ":9001"
+    user: "1000:1000"
+    environment:
+      MINIO_ROOT_USER: arc
+      MINIO_ROOT_PASSWORD: arc-minio-dev
+    ports:
+      - "127.0.0.1:9000:9000"   # S3 API — localhost only
+      - "127.0.0.1:9001:9001"   # Console UI — localhost only
+    volumes:
+      - tardis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - arc_platform_net
+    restart: unless-stopped
+
+volumes:
+  tardis-data:
+    name: arc-tardis-data
+
+networks:
+  arc_platform_net:
+    external: true
+    name: arc_platform_net

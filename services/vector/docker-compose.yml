@@ -1,0 +1,32 @@
+name: arc-platform
+
+services:
+  arc-cerebro:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/arc-framework/arc-cerebro:latest
+    container_name: arc-cerebro
+    ports:
+      - "127.0.0.1:6333:6333"   # REST API — localhost only
+      - "127.0.0.1:6334:6334"   # gRPC — localhost only
+    volumes:
+      - cerebro-data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/6333; printf \"GET /readyz HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3; head -1 <&3 | grep -q 200' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks:
+      - arc_platform_net
+    restart: unless-stopped
+
+volumes:
+  cerebro-data:
+    name: arc-cerebro-data
+
+networks:
+  arc_platform_net:
+    external: true
+    name: arc_platform_net

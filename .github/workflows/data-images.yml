@@ -1,0 +1,180 @@
+name: Data Image Pipeline
+
+# CI/push orchestrator for arc-oracle, arc-cerebro, and arc-tardis images.
+# Builds on every data-layer-related push; pushes to GHCR on main branch merges.
+# For a full versioned release, push a tag: git tag data/v1.2.3 && git push --tags
+#
+# Parallelism:
+#   build-oracle, build-cerebro, build-tardis run concurrently.
+#   security-oracle, security-cerebro, security-tardis each run after their respective build.
+#
+# Change detection (per-job skipping):
+#   oracle  (services/persistence/**)  → build-oracle
+#   cerebro (services/vector/**)       → build-cerebro
+#   tardis  (services/storage/**)      → build-tardis
+#
+# Triggers:
+#   push (main, dev)   — detect changes, run relevant jobs, push image on main
+#   pull_request       — detect changes, run relevant jobs, build only (no push)
+#   workflow_dispatch  — always runs all jobs; mode=release forces push
+
+on:
+  push:
+    branches: [main, dev]
+    paths:
+      - 'services/persistence/**'
+      - 'services/vector/**'
+      - 'services/storage/**'
+      - '.github/workflows/data-images.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'services/persistence/**'
+      - 'services/vector/**'
+      - 'services/storage/**'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'ci = build only, release = build + push'
+        required: false
+        type: choice
+        options: [ci, release]
+        default: ci
+
+env:
+  IMAGE_PREFIX: ghcr.io/arc-framework
+
+jobs:
+
+  # ── Detect file-level changes and resolve push mode ───────────────────────
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      oracle:     ${{ steps.filter.outputs.oracle == 'true'   || github.event_name == 'workflow_dispatch' }}
+      cerebro:    ${{ steps.filter.outputs.cerebro == 'true'  || github.event_name == 'workflow_dispatch' }}
+      tardis:     ${{ steps.filter.outputs.tardis == 'true'   || github.event_name == 'workflow_dispatch' }}
+      push-image: ${{ steps.mode.outputs.push-image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect changed paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            oracle:
+              - 'services/persistence/**'
+            cerebro:
+              - 'services/vector/**'
+            tardis:
+              - 'services/storage/**'
+
+      - name: Resolve push mode
+        id: mode
+        run: |
+          EVENT="${{ github.event_name }}"
+          REF="${{ github.ref }}"
+          MODE="${{ github.event.inputs.mode || 'ci' }}"
+
+          if [ "$MODE" = "release" ] || ([ "$EVENT" = "push" ] && [ "$REF" = "refs/heads/main" ]); then
+            echo "push-image=true" >> $GITHUB_OUTPUT
+          else
+            echo "push-image=false" >> $GITHUB_OUTPUT
+          fi
+
+  # ── Build arc-oracle (parallel) — only when persistence/ changed ──────────
+  build-oracle:
+    name: Build arc-oracle
+    needs: changes
+    if: needs.changes.outputs.oracle == 'true'
+    uses: ./.github/workflows/_reusable-build.yml
+    with:
+      service-name: arc-oracle
+      service-path: services/persistence
+      dockerfile: Dockerfile
+      platforms: linux/amd64
+      push-image: ${{ needs.changes.outputs.push-image == 'true' }}
+      generate-sbom: ${{ needs.changes.outputs.push-image == 'true' }}
+      image-prefix: ghcr.io/arc-framework
+    secrets: inherit
+
+  # ── Build arc-cerebro (parallel) — only when vector/ changed ─────────────
+  build-cerebro:
+    name: Build arc-cerebro
+    needs: changes
+    if: needs.changes.outputs.cerebro == 'true'
+    uses: ./.github/workflows/_reusable-build.yml
+    with:
+      service-name: arc-cerebro
+      service-path: services/vector
+      dockerfile: Dockerfile
+      platforms: linux/amd64
+      push-image: ${{ needs.changes.outputs.push-image == 'true' }}
+      generate-sbom: ${{ needs.changes.outputs.push-image == 'true' }}
+      image-prefix: ghcr.io/arc-framework
+    secrets: inherit
+
+  # ── Build arc-tardis (parallel) — only when storage/ changed ─────────────
+  build-tardis:
+    name: Build arc-tardis
+    needs: changes
+    if: needs.changes.outputs.tardis == 'true'
+    uses: ./.github/workflows/_reusable-build.yml
+    with:
+      service-name: arc-tardis
+      service-path: services/storage
+      dockerfile: Dockerfile
+      platforms: linux/amd64
+      push-image: ${{ needs.changes.outputs.push-image == 'true' }}
+      generate-sbom: ${{ needs.changes.outputs.push-image == 'true' }}
+      image-prefix: ghcr.io/arc-framework
+    secrets: inherit
+
+  # ── Security: Oracle (after build-oracle, non-blocking in CI) ────────────
+  security-oracle:
+    name: Security Scan — arc-oracle
+    needs: [build-oracle]
+    if: always() && !cancelled() && needs.build-oracle.result == 'success'
+    uses: ./.github/workflows/_reusable-security.yml
+    with:
+      scan-type: fs
+      scan-target: services/persistence
+      severity: CRITICAL,HIGH,MEDIUM
+      fail-on-severity: CRITICAL
+      block-on-failure: false
+      service-name: arc-oracle
+      create-issues: false
+    secrets: inherit
+
+  # ── Security: Cerebro (after build-cerebro, non-blocking in CI) ──────────
+  security-cerebro:
+    name: Security Scan — arc-cerebro
+    needs: [build-cerebro]
+    if: always() && !cancelled() && needs.build-cerebro.result == 'success'
+    uses: ./.github/workflows/_reusable-security.yml
+    with:
+      scan-type: fs
+      scan-target: services/vector
+      severity: CRITICAL,HIGH,MEDIUM
+      fail-on-severity: CRITICAL
+      block-on-failure: false
+      service-name: arc-cerebro
+      create-issues: false
+    secrets: inherit
+
+  # ── Security: Tardis (after build-tardis, non-blocking in CI) ────────────
+  security-tardis:
+    name: Security Scan — arc-tardis
+    needs: [build-tardis]
+    if: always() && !cancelled() && needs.build-tardis.result == 'success'
+    uses: ./.github/workflows/_reusable-security.yml
+    with:
+      scan-type: fs
+      scan-target: services/storage
+      severity: CRITICAL,HIGH,MEDIUM
+      fail-on-severity: CRITICAL
+      block-on-failure: false
+      service-name: arc-tardis
+      create-issues: false
+    secrets: inherit

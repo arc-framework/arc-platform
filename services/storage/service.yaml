@@ -1,0 +1,10 @@
+name: arc-tardis
+codename: tardis
+image: ghcr.io/arc-framework/arc-tardis:latest
+tech: minio
+upstream: minio/minio
+ports:
+  - 9000   # S3 API
+  - 9001   # Console UI
+health: http://localhost:9000/minio/health/live
+depends_on: []
