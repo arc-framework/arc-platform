@@ -6,6 +6,8 @@ on:
     paths:
       - "specs/**"
       - "docs/specs/**"
+      - ".github/workflows/deploy-specs-site.yml"
+  workflow_dispatch:
 
 jobs:
   deploy:
