@@ -63,14 +63,14 @@ graph TD
 
 ### TASK-001 — Update profiles.yaml
 
-- [ ] [TASK-001] [SERVICES] [P1] Add flash, strange, sonic to `think` profile in profiles.yaml
+- [x] [TASK-001] [SERVICES] [P1] Add flash, strange, sonic to `think` profile in profiles.yaml
   - Dependencies: none
   - Module: `services/profiles.yaml`
   - Acceptance:
     - `think` profile lists `flash`, `strange`, `sonic` alongside `cortex`
     - `reason` profile unchanged (it extends think implicitly via the CLI)
     - `cat services/profiles.yaml` shows all three codenames under think
-  - Status: [ ] pending
+  - Status: [x] done
 
 ---
 
@@ -80,7 +80,7 @@ graph TD
 
 ### TASK-011 [P] — Flash (NATS) service files
 
-- [ ] [TASK-011] [P] [SERVICES] [P1] Create `services/messaging/` — NATS Dockerfile, service.yaml, docker-compose.yml
+- [x] [TASK-011] [P] [SERVICES] [P1] Create `services/messaging/` — NATS Dockerfile, service.yaml, docker-compose.yml
   - Dependencies: TASK-001
   - Module: `services/messaging/`
   - Files to create:
@@ -97,11 +97,11 @@ graph TD
     - Container `arc-flash` in compose binds ports to `127.0.0.1` only
     - Named volume `arc-flash-jetstream` declared (not bind mount)
     - Network declared as `arc_platform_net` with `external: true`
-  - Status: [ ] pending
+  - Status: [x] done
 
 ### TASK-012 [P] — Strange (Pulsar) service files
 
-- [ ] [TASK-012] [P] [SERVICES] [P1] Create `services/streaming/` — Pulsar Dockerfile, service.yaml, docker-compose.yml
+- [x] [TASK-012] [P] [SERVICES] [P1] Create `services/streaming/` — Pulsar Dockerfile, service.yaml, docker-compose.yml
   - Dependencies: TASK-001
   - Module: `services/streaming/`
   - Files to create:
@@ -120,11 +120,11 @@ graph TD
     - Health check uses `curl -f http://localhost:8080/admin/v2/brokers/health` with `start_period: 90s`
     - Pulsar non-root deviation documented in compose comment (upstream constraint)
     - Network `arc_platform_net` with `external: true`
-  - Status: [ ] pending
+  - Status: [x] done
 
 ### TASK-013 [P] — Sonic (Redis) service files
 
-- [ ] [TASK-013] [P] [SERVICES] [P1] Create `services/cache/` — Redis Dockerfile, service.yaml, docker-compose.yml
+- [x] [TASK-013] [P] [SERVICES] [P1] Create `services/cache/` — Redis Dockerfile, service.yaml, docker-compose.yml
   - Dependencies: TASK-001
   - Module: `services/cache/`
   - Files to create:
@@ -143,7 +143,7 @@ graph TD
     - Named volume `arc-sonic-data` declared
     - Health check: `redis-cli ping` with `interval: 5s`, `start_period: 5s`
     - Network `arc_platform_net` with `external: true`
-  - Status: [ ] pending
+  - Status: [x] done
 
 ---
 
@@ -153,7 +153,7 @@ graph TD
 
 ### TASK-021 [P] — flash.mk
 
-- [ ] [TASK-021] [P] [SERVICES] [P1] Create `services/messaging/flash.mk` with all make targets
+- [x] [TASK-021] [P] [SERVICES] [P1] Create `services/messaging/flash.mk` with all make targets
   - Dependencies: TASK-011
   - Module: `services/messaging/flash.mk`
   - Acceptance:
@@ -166,11 +166,11 @@ graph TD
     - All targets listed in `.PHONY`
     - Target comments follow `## flash-<target>: description` pattern (used by `make flash-help`)
     - `make flash-help` prints all flash targets
-  - Status: [ ] pending
+  - Status: [x] done
 
 ### TASK-022 [P] — strange.mk
 
-- [ ] [TASK-022] [P] [SERVICES] [P1] Create `services/streaming/strange.mk` with all make targets
+- [x] [TASK-022] [P] [SERVICES] [P1] Create `services/streaming/strange.mk` with all make targets
   - Dependencies: TASK-012
   - Module: `services/streaming/strange.mk`
   - Acceptance:
@@ -182,11 +182,11 @@ graph TD
     - `make strange-clean` — stops container + removes named volume (with confirmation)
     - `make strange-help` prints all strange targets
     - All targets in `.PHONY`
-  - Status: [ ] pending
+  - Status: [x] done
 
 ### TASK-023 [P] — sonic.mk
 
-- [ ] [TASK-023] [P] [SERVICES] [P1] Create `services/cache/sonic.mk` with all make targets
+- [x] [TASK-023] [P] [SERVICES] [P1] Create `services/cache/sonic.mk` with all make targets
   - Dependencies: TASK-013
   - Module: `services/cache/sonic.mk`
   - Acceptance:
@@ -198,11 +198,11 @@ graph TD
     - `make sonic-clean` — stops + removes volume (with confirmation)
     - `make sonic-help` prints all sonic targets
     - All targets in `.PHONY`
-  - Status: [ ] pending
+  - Status: [x] done
 
 ### TASK-024 — messaging.mk aggregates + Makefile wiring
 
-- [ ] [TASK-024] [SERVICES] [P1] Create `services/messaging.mk` aggregates and wire all .mk files into root Makefile
+- [x] [TASK-024] [SERVICES] [P1] Create `services/messaging.mk` aggregates and wire all .mk files into root Makefile
   - Dependencies: TASK-021, TASK-022, TASK-023
   - Module: `services/messaging.mk`, `Makefile`
   - Files to create/modify:
@@ -222,7 +222,7 @@ graph TD
       - `include services/messaging.mk`
     - `make help` shows `messaging-help` entry
     - `make messaging-help` works from repo root
-  - Status: [ ] pending
+  - Status: [x] done
 
 ---
 
@@ -230,7 +230,7 @@ graph TD
 
 ### TASK-031 — Update otel-collector-config.yaml
 
-- [ ] [TASK-031] [SERVICES] [P1] Add prometheus receiver to `services/otel/telemetry/config/otel-collector-config.yaml`
+- [x] [TASK-031] [SERVICES] [P1] Add prometheus receiver to `services/otel/telemetry/config/otel-collector-config.yaml`
   - Dependencies: TASK-011, TASK-012
   - Module: `services/otel/telemetry/config/otel-collector-config.yaml`
   - Acceptance:
@@ -241,11 +241,11 @@ graph TD
     - `service.pipelines.metrics.receivers` updated from `[otlp]` to `[otlp, prometheus]`
     - File is valid YAML: `python3 -c "import yaml; yaml.safe_load(open('services/otel/telemetry/config/otel-collector-config.yaml'))"` exits 0
     - No other pipelines changed (traces and logs pipelines untouched)
-  - Status: [ ] pending
+  - Status: [x] done
 
 ### TASK-032 — Add arc_platform_net to otel collector compose
 
-- [ ] [TASK-032] [SERVICES] [P1] Add `arc_platform_net` to `arc-friday-collector` in `services/otel/docker-compose.yml`
+- [x] [TASK-032] [SERVICES] [P1] Add `arc_platform_net` to `arc-friday-collector` in `services/otel/docker-compose.yml`
   - Dependencies: TASK-031
   - Module: `services/otel/docker-compose.yml`
   - Acceptance:
@@ -254,11 +254,11 @@ graph TD
     - `arc_otel_net` definition unchanged (still internal, not external)
     - `docker compose -f services/otel/docker-compose.yml config` exits 0
     - No other services in the otel compose gain `arc_platform_net` (only the collector bridges both)
-  - Status: [ ] pending
+  - Status: [x] done
 
 ### TASK-033 — Rebuild and verify otel collector image
 
-- [ ] [TASK-033] [SERVICES] [P1] Rebuild `arc-friday-collector` image to bake in updated config; verify it starts
+- [x] [TASK-033] [SERVICES] [P1] Rebuild `arc-friday-collector` image to bake in updated config; verify it starts
   - Dependencies: TASK-032
   - Module: `services/otel/`
   - Acceptance:
@@ -266,7 +266,7 @@ graph TD
     - `docker run --rm ghcr.io/arc-framework/arc-friday-collector:latest --config=/etc/otelcol/config.yaml validate` exits 0 (or equivalent config validation)
     - If otel stack is running locally: `make otel-down && make otel-up` brings collector back healthy with new config
     - `docker inspect ghcr.io/arc-framework/arc-friday-collector:latest` shows updated image (new layer for config)
-  - Status: [ ] pending
+  - Status: [x] done
 
 ---
 
@@ -274,7 +274,7 @@ graph TD
 
 ### TASK-041 [P] — messaging-images.yml
 
-- [ ] [TASK-041] [P] [CI] [P1] Create `.github/workflows/messaging-images.yml` — CI pipeline for all three services
+- [x] [TASK-041] [P] [CI] [P1] Create `.github/workflows/messaging-images.yml` — CI pipeline for all three services
   - Dependencies: TASK-024
   - Module: `.github/workflows/messaging-images.yml`
   - Acceptance:
@@ -287,11 +287,11 @@ graph TD
     - `push-image: true` only on `main` push or `mode=release`
     - `security` job runs after all three builds; `block-on-failure: false` in CI
     - File is valid YAML; mirrors `cortex-images.yml` structure
-  - Status: [ ] pending
+  - Status: [x] done
 
 ### TASK-042 [P] — messaging-release.yml
 
-- [ ] [TASK-042] [P] [CI] [P1] Create `.github/workflows/messaging-release.yml` — release pipeline on `messaging/v*` tags
+- [x] [TASK-042] [P] [CI] [P1] Create `.github/workflows/messaging-release.yml` — release pipeline on `messaging/v*` tags
   - Dependencies: TASK-024
   - Module: `.github/workflows/messaging-release.yml`
   - Acceptance:
@@ -303,7 +303,7 @@ graph TD
     - `release` job creates GitHub release with image reference table (mirrors `cortex-release.yml` release notes format)
     - `permissions: contents: write, packages: write, security-events: write, issues: write`
     - File is valid YAML
-  - Status: [ ] pending
+  - Status: [x] done
 
 ---
 
@@ -311,7 +311,7 @@ graph TD
 
 ### TASK-051 — End-to-end health verification
 
-- [ ] [TASK-051] [SERVICES] [P1] Verify full stack: messaging-up, health checks, otel metrics flow
+- [x] [TASK-051] [SERVICES] [P1] Verify full stack: messaging-up, health checks, otel metrics flow
   - Dependencies: TASK-033, TASK-041, TASK-042
   - Module: `services/` (runtime verification, no file changes)
   - Acceptance:
@@ -324,7 +324,7 @@ graph TD
     - `make messaging-down` stops all three; no orphaned containers (`docker ps -a | grep arc-flash` etc.)
     - `make messaging-up` is idempotent (run twice, no error on second run)
     - If otel stack running: `curl -s http://localhost:8222/metrics` returns NATS Prometheus data; collector scrape visible in SigNoz
-  - Status: [ ] pending
+  - Status: [x] done
 
 ---
 
@@ -332,18 +332,18 @@ graph TD
 
 ### TASK-900 — Docs & links update
 
-- [ ] [TASK-900] [P] [DOCS] [P1] Docs & links update
+- [x] [TASK-900] [P] [DOCS] [P1] Docs & links update
   - Dependencies: TASK-051
   - Module: `services/profiles.yaml`, `services/cortex/service.yaml`, `CLAUDE.md`
   - Acceptance:
     - `services/cortex/service.yaml` `depends_on` codenames (`flash`, `strange`, `sonic`) match the `name` fields in each new `service.yaml`
     - `CLAUDE.md` service codename table reflects: messaging=flash/nats, streaming=strange/pulsar, cache=sonic/redis
     - No broken cross-references introduced
-  - Status: [ ] pending
+  - Status: [x] done
 
 ### TASK-999 — Reviewer agent verification
 
-- [ ] [TASK-999] [REVIEW] [P1] Reviewer agent verifies all tasks complete, quality gates met
+- [x] [TASK-999] [REVIEW] [P1] Reviewer agent verifies all tasks complete, quality gates met
   - Dependencies: ALL
   - Module: all affected modules
   - Acceptance:
@@ -355,7 +355,7 @@ graph TD
     - No secrets or credentials in any committed file
     - Pulsar non-root deviation is documented inline (not a silent violation)
     - Constitution compliance: II, III, VII, VIII, XI all passing per plan.md checklist
-  - Status: [ ] pending
+  - Status: [x] done
 
 ---
 
@@ -363,11 +363,11 @@ graph TD
 
 | Phase | Total | Done | Parallel |
 |-------|-------|------|----------|
-| Setup | 1 | 0 | 0 |
-| Service Directories | 3 | 0 | 3 |
-| Make Targets | 4 | 0 | 3 |
-| OTEL Integration | 3 | 0 | 0 |
-| CI/CD Workflows | 2 | 0 | 2 |
-| Integration | 1 | 0 | 0 |
-| Polish | 2 | 0 | 1 |
-| **Total** | **16** | **0** | **9** |
+| Setup | 1 | 1 | 0 |
+| Service Directories | 3 | 3 | 3 |
+| Make Targets | 4 | 4 | 3 |
+| OTEL Integration | 3 | 3 | 0 |
+| CI/CD Workflows | 2 | 2 | 2 |
+| Integration | 1 | 1 | 0 |
+| Polish | 2 | 2 | 1 |
+| **Total** | **16** | **16** | **9** |

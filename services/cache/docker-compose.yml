@@ -1,0 +1,41 @@
+name: arc-platform
+
+services:
+  arc-sonic:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/arc-framework/arc-sonic:latest
+    container_name: arc-sonic
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+      - --maxmemory
+      - 512mb
+      - --maxmemory-policy
+      - noeviction
+    ports:
+      - "127.0.0.1:6379:6379"   # Redis — localhost only
+    volumes:
+      - sonic-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks:
+      - arc_platform_net
+    restart: unless-stopped
+
+volumes:
+  sonic-data:
+    name: arc-sonic-data
+
+networks:
+  arc_platform_net:
+    external: true
+    name: arc_platform_net

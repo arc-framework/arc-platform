@@ -1,0 +1,42 @@
+name: arc-platform
+
+services:
+  # ── Strange: Apache Pulsar standalone broker ──────────────────────────────
+  # NOTE: Pulsar requires root to initialize /pulsar on first run (upstream
+  # constraint). Non-root is not supported by apachepulsar/pulsar. Documented
+  # deviation from NFR-1. See: https://github.com/apache/pulsar/issues/8284
+  arc-strange:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/arc-framework/arc-strange:latest
+    container_name: arc-strange
+    command:
+      - bin/pulsar
+      - standalone
+      - --no-functions-worker
+    environment:
+      PULSAR_MEM: "-Xms512m -Xmx1024m -XX:MaxDirectMemorySize=512m"
+    ports:
+      - "127.0.0.1:6650:6650"   # Pulsar broker — localhost only
+      - "127.0.0.1:8082:8080"   # HTTP admin API — localhost only (host:8082 → container:8080)
+    volumes:
+      - strange-data:/pulsar/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/admin/v2/brokers/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 15
+      start_period: 90s
+    networks:
+      - arc_platform_net
+    restart: unless-stopped
+
+volumes:
+  strange-data:
+    name: arc-strange-data
+
+networks:
+  arc_platform_net:
+    external: true
+    name: arc_platform_net

@@ -1,0 +1,11 @@
+name: arc-strange
+codename: strange
+tech: pulsar
+upstream: apachepulsar/pulsar:latest
+ports:
+  - 6650   # Pulsar broker (binary protocol)
+  - 8082   # HTTP admin API (host-mapped from internal 8080)
+health: http://localhost:8082/admin/v2/brokers/health
+depends_on: []
+notes:
+  - "Pulsar runs as root — upstream constraint (non-root unsupported by apachepulsar/pulsar image)"
