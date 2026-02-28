@@ -1,5 +1,6 @@
 name: arc-otel
 codename: otel
+image: ghcr.io/arc-framework/arc-friday:latest
 description: "Full OTEL observability stack — SigNoz + ClickHouse + ZooKeeper + collector"
 ports:
   - 3301  # SigNoz UI + API

@@ -56,6 +56,17 @@ dev-regen:
 	@rm -f .make/profiles.mk .make/registry.mk
 	@$(MAKE) .make/profiles.mk .make/registry.mk --no-print-directory
 
+## publish-all: Build all platform images and push to ghcr.io (requires: docker login ghcr.io + gh auth)
+publish-all:
+	@printf "$(COLOR_INFO)→$(COLOR_OFF) Building and publishing all A.R.C. platform images...\n"
+	@printf "$(COLOR_WARN)!$(COLOR_OFF) Requires: docker login ghcr.io   and   gh auth login\n"
+	$(MAKE) sonic-build  sonic-publish  --no-print-directory
+	$(MAKE) flash-build  flash-publish  --no-print-directory
+	$(MAKE) strange-build strange-publish --no-print-directory
+	$(MAKE) cortex-build cortex-publish --no-print-directory
+	$(MAKE) otel-build   otel-publish   --no-print-directory
+	@printf "$(COLOR_OK)✓$(COLOR_OFF) All images published to ghcr.io/arc-framework\n"
+
 # ─── Utilities ────────────────────────────────────────────────────────────────
 include scripts/scripts.mk
 
@@ -69,6 +80,8 @@ help:
 	@printf "  \033[1mDev orchestration\033[0m (PROFILE=think by default):\n"
 	@grep -h "^## dev" $(MAKEFILE_LIST) \
 	  | sed 's/^## \([^:]*\): \(.*\)/    make \1    \2/'
+	@printf "\n  \033[1mPublishing\033[0m:\n"
+	@printf "    make publish-all    Build and push all platform images to ghcr.io\n"
 	@printf "\n  \033[1mServices\033[0m:\n"
 	@grep -h "^## .*-help:" $(MAKEFILE_LIST) \
 	  | sed 's/^## \(.*\)-help: \(.*\)/    make \1-help    \2/' \
@@ -84,19 +97,31 @@ help:
 #   make dev-logs             Tail logs from all profile services
 #   make dev-status           Show container status table
 #   make dev-prereqs          Check developer environment only
+#   make dev-images           Check/pull required images for $(PROFILE) profile
 #   make dev-clean            [DESTRUCTIVE] Remove containers + volumes + orphans
 #   make dev-nuke             [DESTRUCTIVE] Remove containers + volumes + images + orphans
+#   make publish-all          Build and push all platform images to ghcr.io
 # ─────────────────────────────────────────────────────────────────────────────
 
 .PHONY: dev dev-up dev-down dev-wait dev-health dev-logs dev-status \
-        dev-clean dev-nuke dev-prereqs dev-networks dev-regen
+        dev-clean dev-nuke dev-prereqs dev-networks dev-regen dev-images \
+        publish-all
 
 ## dev: Start all services in $(PROFILE) profile in dependency order
-dev: dev-prereqs dev-networks .make/profiles.mk .make/registry.mk dev-up dev-wait
+dev: dev-prereqs dev-networks .make/profiles.mk .make/registry.mk dev-images dev-up dev-wait
 	@printf "$(COLOR_OK)✓$(COLOR_OFF) Profile '$(PROFILE)' is ready\n"
 
 dev-prereqs:
 	@scripts/lib/check-dev-prereqs.sh
+
+## dev-images: Check/pull required images for $(PROFILE) profile (local first, then registry)
+dev-images: .make/profiles.mk .make/registry.mk
+	@profile_var="PROFILE_$$(echo $(PROFILE) | tr '[:lower:]-' '[:upper:]_')_SERVICES"; \
+	 services="$$(grep "^$$profile_var" .make/profiles.mk | sed 's/.*:=[[:space:]]*//')"; \
+	 if [ "$$services" = "*" ]; then \
+	   services="$$(grep '^ALL_SERVICES' .make/registry.mk | sed 's/.*:=[[:space:]]*//')"; \
+	 fi; \
+	 scripts/lib/check-images.sh $$services
 
 dev-networks:
 	@docker network create arc_platform_net 2>/dev/null || true

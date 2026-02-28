@@ -1,5 +1,6 @@
 name: arc-cortex
 codename: cortex
+image: ghcr.io/arc-framework/arc-cortex:latest
 version: "0.1.0"
 description: "Bootstrap orchestrator — provisions all A.R.C. platform infrastructure at startup"
 language: go

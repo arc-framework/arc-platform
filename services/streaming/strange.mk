@@ -9,7 +9,7 @@ ORG      ?= arc-framework
 COMPOSE_STRANGE := docker compose -f services/streaming/docker-compose.yml
 STRANGE_IMAGE   := $(REGISTRY)/$(ORG)/arc-strange
 
-.PHONY: strange-help strange-build strange-build-fresh strange-up strange-down \
+.PHONY: strange-help strange-build strange-build-fresh strange-push strange-publish strange-tag \
         strange-health strange-logs strange-clean strange-nuke
 
 ## strange-help: Apache Pulsar streaming broker (arc-strange)
@@ -81,3 +81,22 @@ strange-nuke:
 	$(COMPOSE_STRANGE) down --volumes --remove-orphans
 	@docker rmi $(STRANGE_IMAGE):latest 2>/dev/null || true
 	@printf "$(COLOR_OK)✓$(COLOR_OFF) arc-strange reset complete — rebuild: make strange-build && make strange-up\n"
+## strange-push: Push arc-strange:latest to ghcr.io (requires: docker login ghcr.io)
+strange-push:
+	@printf "$(COLOR_INFO)→$(COLOR_OFF) Pushing $(STRANGE_IMAGE):latest...\n"
+	@docker push $(STRANGE_IMAGE):latest \
+	  && printf "$(COLOR_OK)✓$(COLOR_OFF) Pushed → $(STRANGE_IMAGE):latest\n" \
+	  || { printf "$(COLOR_ERR)✗ Push failed — run: docker login ghcr.io$(COLOR_OFF)\n"; exit 1; }
+
+## strange-publish: Push arc-strange:latest to ghcr.io (visibility must be set via GitHub UI)
+strange-publish: strange-push
+	@printf "$(COLOR_OK)✓$(COLOR_OFF) arc-strange pushed — set visibility at:\n"
+	@printf "  https://github.com/orgs/$(ORG)/packages/container/arc-strange/settings\n"
+
+## strange-tag: Tag arc-strange:latest with a version (usage: make strange-tag STRANGE_VERSION=strange-v0.1.0)
+strange-tag:
+	@[ -n "$(STRANGE_VERSION)" ] && [ "$(STRANGE_VERSION)" != "latest" ] \
+	  || { printf "$(COLOR_ERR)✗ Set STRANGE_VERSION, e.g. make strange-tag STRANGE_VERSION=strange-v0.1.0$(COLOR_OFF)\n"; exit 1; }
+	@docker tag $(STRANGE_IMAGE):latest $(STRANGE_IMAGE):$(STRANGE_VERSION) \
+	  && printf "$(COLOR_OK)✓$(COLOR_OFF) $(STRANGE_IMAGE):latest → $(STRANGE_IMAGE):$(STRANGE_VERSION)\n" \
+	  || { printf "$(COLOR_ERR)✗ Tag failed$(COLOR_OFF)\n"; exit 1; }

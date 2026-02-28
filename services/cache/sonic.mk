@@ -9,7 +9,7 @@ ORG      ?= arc-framework
 COMPOSE_SONIC := docker compose -f services/cache/docker-compose.yml
 SONIC_IMAGE   := $(REGISTRY)/$(ORG)/arc-sonic
 
-.PHONY: sonic-help sonic-build sonic-build-fresh sonic-up sonic-down \
+.PHONY: sonic-help sonic-build sonic-build-fresh sonic-push sonic-publish sonic-tag \
         sonic-health sonic-logs sonic-clean sonic-nuke
 
 ## sonic-help: Redis cache and session store (arc-sonic)
@@ -72,3 +72,22 @@ sonic-nuke:
 	$(COMPOSE_SONIC) down --volumes --remove-orphans
 	@docker rmi $(SONIC_IMAGE):latest 2>/dev/null || true
 	@printf "$(COLOR_OK)✓$(COLOR_OFF) arc-sonic reset complete — rebuild: make sonic-build && make sonic-up\n"
+## sonic-push: Push arc-sonic:latest to ghcr.io (requires: docker login ghcr.io)
+sonic-push:
+	@printf "$(COLOR_INFO)→$(COLOR_OFF) Pushing $(SONIC_IMAGE):latest...\n"
+	@docker push $(SONIC_IMAGE):latest \
+	  && printf "$(COLOR_OK)✓$(COLOR_OFF) Pushed → $(SONIC_IMAGE):latest\n" \
+	  || { printf "$(COLOR_ERR)✗ Push failed — run: docker login ghcr.io$(COLOR_OFF)\n"; exit 1; }
+
+## sonic-publish: Push arc-sonic:latest to ghcr.io (visibility must be set via GitHub UI)
+sonic-publish: sonic-push
+	@printf "$(COLOR_OK)✓$(COLOR_OFF) arc-sonic pushed — set visibility at:\n"
+	@printf "  https://github.com/orgs/$(ORG)/packages/container/arc-sonic/settings\n"
+
+## sonic-tag: Tag arc-sonic:latest with a version (usage: make sonic-tag SONIC_VERSION=sonic-v0.1.0)
+sonic-tag:
+	@[ -n "$(SONIC_VERSION)" ] && [ "$(SONIC_VERSION)" != "latest" ] \
+	  || { printf "$(COLOR_ERR)✗ Set SONIC_VERSION, e.g. make sonic-tag SONIC_VERSION=sonic-v0.1.0$(COLOR_OFF)\n"; exit 1; }
+	@docker tag $(SONIC_IMAGE):latest $(SONIC_IMAGE):$(SONIC_VERSION) \
+	  && printf "$(COLOR_OK)✓$(COLOR_OFF) $(SONIC_IMAGE):latest → $(SONIC_IMAGE):$(SONIC_VERSION)\n" \
+	  || { printf "$(COLOR_ERR)✗ Tag failed$(COLOR_OFF)\n"; exit 1; }

@@ -136,20 +136,13 @@ otel-push:
 	done
 	@printf "$(COLOR_OK)✓$(COLOR_OFF) All otel images pushed\n"
 
-## otel-publish: Push images and set all GHCR packages to public (requires: gh auth with write:packages scope)
+## otel-publish: Push otel images to ghcr.io (visibility must be set via GitHub UI)
 otel-publish: otel-push
-	@printf "$(COLOR_INFO)→$(COLOR_OFF) Setting GHCR packages to public...\n"
+	@printf "$(COLOR_OK)✓$(COLOR_OFF) otel images pushed — set visibility for each package at:\n"
 	@for img in $(OTEL_IMAGES); do \
-	  PKG=$$(basename $${img%%:*}); \
-	  gh api \
-	    --method PATCH \
-	    -H "Accept: application/vnd.github+json" \
-	    "/orgs/$(ORG)/packages/container/$$PKG" \
-	    -f visibility=public \
-	    && printf "$(COLOR_OK)✓$(COLOR_OFF) $$PKG → public\n" \
-	    || printf "$(COLOR_ERR)✗$(COLOR_OFF) $$PKG failed — run: gh auth status\n"; \
-	done
-	@printf "$(COLOR_OK)✓$(COLOR_OFF) All otel packages are public at ghcr.io/$(ORG)/\n"
+	   PKG=$$(basename $${img%%:*}); \
+	   printf "  https://github.com/orgs/$(ORG)/packages/container/$$PKG/settings\n"; \
+	 done
 
 ## otel-tag: Tag locally built :latest images with a version (usage: make otel-tag OTEL_VERSION=otel-v0.1.0)
 otel-tag:

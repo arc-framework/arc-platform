@@ -1,5 +1,6 @@
 name: arc-flash
 codename: flash
+image: ghcr.io/arc-framework/arc-flash:latest
 tech: nats
 upstream: nats:alpine
 ports:

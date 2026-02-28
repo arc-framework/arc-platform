@@ -65,6 +65,7 @@ _parse_one() {
 
   BEGIN {
     codename = ""
+    image    = ""
     health   = ""
     timeout  = ""
     in_deps  = 0
@@ -73,6 +74,16 @@ _parse_one() {
   # Skip blank lines and comment-only lines
   /^[[:space:]]*#/  { next }
   /^[[:space:]]*$/  { next }
+
+  # image: <value>
+  /^[[:space:]]*image:[[:space:]]/ {
+    val = $0
+    sub(/^[[:space:]]*image:[[:space:]]*/, "", val)
+    sub(/[[:space:]]+#.*$/, "", val)
+    image = trim(val)
+    in_deps = 0
+    next
+  }
 
   # codename: <value>
   /^[[:space:]]*codename:[[:space:]]/ {
@@ -139,6 +150,7 @@ _parse_one() {
   END {
     if (codename != "") {
       print "codename\t" codename
+      print "image\t"    image
       print "health\t"   health
       print "timeout\t"  timeout
       print "dir\t"      dir
@@ -230,10 +242,13 @@ function make_varname(s,    v) {
   }
 
   if (field == "codename") {
+    svc_image[codename]    = (codename in svc_image)    ? svc_image[codename]    : ""
     svc_health[codename]   = (codename in svc_health)   ? svc_health[codename]   : ""
     svc_timeout[codename]  = (codename in svc_timeout)  ? svc_timeout[codename]  : ""
-    svc_dir[codename]      = (codename in svc_dir)       ? svc_dir[codename]      : ""
-    svc_deps[codename]     = (codename in svc_deps)      ? svc_deps[codename]     : ""
+    svc_dir[codename]      = (codename in svc_dir)      ? svc_dir[codename]      : ""
+    svc_deps[codename]     = (codename in svc_deps)     ? svc_deps[codename]     : ""
+  } else if (field == "image") {
+    svc_image[codename] = value
   } else if (field == "health") {
     svc_health[codename] = value
   } else if (field == "timeout") {
@@ -262,6 +277,7 @@ END {
     if (to == "") to = default_timeout
 
     print ""
+    print "SERVICE_" vn "_IMAGE := "   svc_image[cn]
     print "SERVICE_" vn "_HEALTH := "  svc_health[cn]
     print "SERVICE_" vn "_DEPENDS := " svc_deps[cn]
     print "SERVICE_" vn "_TIMEOUT := " to

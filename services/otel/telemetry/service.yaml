@@ -1,4 +1,5 @@
 codename: friday-collector
+image: ghcr.io/arc-framework/arc-friday-collector:latest
 tech: arc-friday-collector
 upstream: signoz/signoz-otel-collector
 ports:

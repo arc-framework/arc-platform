@@ -1,5 +1,6 @@
 name: arc-strange
 codename: strange
+image: ghcr.io/arc-framework/arc-strange:latest
 tech: pulsar
 upstream: apachepulsar/pulsar:latest
 ports:

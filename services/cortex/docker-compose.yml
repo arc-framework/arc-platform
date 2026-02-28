@@ -7,8 +7,8 @@ services:
   # a health / status HTTP API on port 8081.
   #
   # Networks:
-  #   arc_net      — reaches infra services (arc-oracle, arc-flash, arc-strange, arc-sonic)
-  #   arc_otel_net — reaches arc-friday-collector for OTLP telemetry
+  #   arc_platform_net — reaches infra services (arc-oracle, arc-flash, arc-strange, arc-sonic)
+  #   arc_otel_net     — reaches arc-friday-collector for OTLP telemetry
   #
   # Infra services (arc-oracle, arc-flash, arc-sonic, arc-strange) are defined
   # in their own service stacks. Start the relevant profile first, then:
@@ -28,12 +28,12 @@ services:
       retries: 5
       start_period: 10s
     networks:
-      - arc_net
+      - arc_platform_net
       - arc_otel_net
     restart: unless-stopped
 
 networks:
-  arc_net:
-    external: true   # created by the platform infra stack
+  arc_platform_net:
+    external: true   # created by the platform infra stack (make dev or make flash-up)
   arc_otel_net:
     external: true   # created by: make otel-up

@@ -51,16 +51,10 @@ cortex-push:
 	  && printf "$(COLOR_OK)✓$(COLOR_OFF) Pushed → $(CORTEX_IMAGE):latest\n" \
 	  || { printf "$(COLOR_ERR)✗ Push failed — run: docker login ghcr.io$(COLOR_OFF)\n"; exit 1; }
 
-## cortex-publish: Push image and set GHCR package to public (requires: gh auth with write:packages)
+## cortex-publish: Push arc-cortex:latest to ghcr.io (visibility must be set via GitHub UI)
 cortex-publish: cortex-push
-	@printf "$(COLOR_INFO)→$(COLOR_OFF) Setting arc-cortex package to public...\n"
-	@gh api \
-	  --method PATCH \
-	  -H "Accept: application/vnd.github+json" \
-	  "/orgs/$(ORG)/packages/container/arc-cortex" \
-	  -f visibility=public \
-	  && printf "$(COLOR_OK)✓$(COLOR_OFF) arc-cortex → public at ghcr.io/$(ORG)/arc-cortex\n" \
-	  || printf "$(COLOR_ERR)✗$(COLOR_OFF) Failed — run: gh auth status\n"
+	@printf "$(COLOR_OK)✓$(COLOR_OFF) arc-cortex pushed — set visibility at:\n"
+	@printf "  https://github.com/orgs/$(ORG)/packages/container/arc-cortex/settings\n"
 
 ## cortex-tag: Tag arc-cortex:latest with a version (usage: make cortex-tag CORTEX_VERSION=cortex-v0.1.0)
 cortex-tag:
@@ -127,10 +121,10 @@ cortex-bootstrap-local: cortex-bin
 
 # ─── Docker Compose ───────────────────────────────────────────────────────────
 # Requires: make otel-up (creates arc_otel_net) and the platform infra stack
-# (creates arc_net with arc-oracle, arc-flash, arc-sonic, arc-strange).
+# (creates arc_platform_net with arc-flash, arc-sonic, arc-strange).
 # Service names resolve automatically inside Docker — no env var overrides needed.
 
-## cortex-docker-up: Start arc-cortex in Docker (requires arc_otel_net + arc_net)
+## cortex-docker-up: Start arc-cortex in Docker (requires arc_otel_net + arc_platform_net)
 cortex-docker-up: cortex-build
 	@printf "$(COLOR_INFO)→$(COLOR_OFF) Starting arc-cortex in Docker...\n"
 	$(COMPOSE_CORTEX) up -d

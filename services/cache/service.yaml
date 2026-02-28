@@ -1,5 +1,6 @@
 name: arc-sonic
 codename: sonic
+image: ghcr.io/arc-framework/arc-sonic:latest
 tech: redis
 upstream: redis:alpine
 ports:

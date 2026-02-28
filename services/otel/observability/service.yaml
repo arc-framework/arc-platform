@@ -1,4 +1,5 @@
 codename: friday
+image: ghcr.io/arc-framework/arc-friday:latest
 tech: arc-friday
 depends_on:
   - friday-collector

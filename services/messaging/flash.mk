@@ -9,7 +9,7 @@ ORG      ?= arc-framework
 COMPOSE_FLASH := docker compose -f services/messaging/docker-compose.yml
 FLASH_IMAGE   := $(REGISTRY)/$(ORG)/arc-flash
 
-.PHONY: flash-help flash-build flash-build-fresh flash-up flash-down \
+.PHONY: flash-help flash-build flash-build-fresh flash-push flash-publish flash-tag \
         flash-health flash-logs flash-clean flash-nuke
 
 ## flash-help: NATS + JetStream messaging broker (arc-flash)
@@ -72,3 +72,22 @@ flash-nuke:
 	$(COMPOSE_FLASH) down --volumes --remove-orphans
 	@docker rmi $(FLASH_IMAGE):latest 2>/dev/null || true
 	@printf "$(COLOR_OK)✓$(COLOR_OFF) arc-flash reset complete — rebuild: make flash-build && make flash-up\n"
+## flash-push: Push arc-flash:latest to ghcr.io (requires: docker login ghcr.io)
+flash-push:
+	@printf "$(COLOR_INFO)→$(COLOR_OFF) Pushing $(FLASH_IMAGE):latest...\n"
+	@docker push $(FLASH_IMAGE):latest \
+	  && printf "$(COLOR_OK)✓$(COLOR_OFF) Pushed → $(FLASH_IMAGE):latest\n" \
+	  || { printf "$(COLOR_ERR)✗ Push failed — run: docker login ghcr.io$(COLOR_OFF)\n"; exit 1; }
+
+## flash-publish: Push arc-flash:latest to ghcr.io (visibility must be set via GitHub UI)
+flash-publish: flash-push
+	@printf "$(COLOR_OK)✓$(COLOR_OFF) arc-flash pushed — set visibility at:\n"
+	@printf "  https://github.com/orgs/$(ORG)/packages/container/arc-flash/settings\n"
+
+## flash-tag: Tag arc-flash:latest with a version (usage: make flash-tag FLASH_VERSION=flash-v0.1.0)
+flash-tag:
+	@[ -n "$(FLASH_VERSION)" ] && [ "$(FLASH_VERSION)" != "latest" ] \
+	  || { printf "$(COLOR_ERR)✗ Set FLASH_VERSION, e.g. make flash-tag FLASH_VERSION=flash-v0.1.0$(COLOR_OFF)\n"; exit 1; }
+	@docker tag $(FLASH_IMAGE):latest $(FLASH_IMAGE):$(FLASH_VERSION) \
+	  && printf "$(COLOR_OK)✓$(COLOR_OFF) $(FLASH_IMAGE):latest → $(FLASH_IMAGE):$(FLASH_VERSION)\n" \
+	  || { printf "$(COLOR_ERR)✗ Tag failed$(COLOR_OFF)\n"; exit 1; }
