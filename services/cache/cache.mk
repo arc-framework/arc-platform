@@ -66,7 +66,7 @@ cache-clean:
 
 ## cache-nuke: [DESTRUCTIVE] Full reset — container, volume, and local image
 cache-nuke:
-	@printf "$(COLOR_ERR)!$(COLOR_OFF) Destroys ALL sonic state: container, volume, and local image.\n"
+	@printf "$(COLOR_ERR)!$(COLOR_OFF) Destroys ALL cache state: container, volume, and local image.\n"
 	@printf "  Type 'nuke' to confirm: " && read -r ans && [ "$$ans" = "nuke" ] \
 	  || { printf "  Aborted.\n"; exit 1; }
 	$(COMPOSE_CACHE) down --volumes --remove-orphans

@@ -67,7 +67,7 @@ gateway-clean:
 
 ## gateway-nuke: [DESTRUCTIVE] Full reset — container and local image
 gateway-nuke:
-	@printf "$(COLOR_ERR)!$(COLOR_OFF) Destroys ALL heimdall state: container and local image.\n"
+	@printf "$(COLOR_ERR)!$(COLOR_OFF) Destroys ALL gateway state: container and local image.\n"
 	@printf "  Type 'nuke' to confirm: " && read -r ans && [ "$$ans" = "nuke" ] \
 	  || { printf "  Aborted.\n"; exit 1; }
 	$(COMPOSE_GATEWAY) down --remove-orphans

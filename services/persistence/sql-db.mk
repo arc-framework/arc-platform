@@ -67,7 +67,7 @@ sql-db-clean:
 
 ## sql-db-nuke: [DESTRUCTIVE] Full reset — container, volume, and local image
 sql-db-nuke:
-	@printf "$(COLOR_ERR)!$(COLOR_OFF) Destroys ALL oracle state: container, volume, and local image.\n"
+	@printf "$(COLOR_ERR)!$(COLOR_OFF) Destroys ALL sql-db state: container, volume, and local image.\n"
 	@printf "  Type 'nuke' to confirm: " && read -r ans && [ "$$ans" = "nuke" ] \
 	  || { printf "  Aborted.\n"; exit 1; }
 	$(COMPOSE_SQL_DB) down --volumes --remove-orphans

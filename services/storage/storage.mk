@@ -66,7 +66,7 @@ storage-clean:
 
 ## storage-nuke: [DESTRUCTIVE] Full reset — container, volume, and local image
 storage-nuke:
-	@printf "$(COLOR_ERR)!$(COLOR_OFF) Destroys ALL tardis state: container, volume, and local image.\n"
+	@printf "$(COLOR_ERR)!$(COLOR_OFF) Destroys ALL storage state: container, volume, and local image.\n"
 	@printf "  Type 'nuke' to confirm: " && read -r ans && [ "$$ans" = "nuke" ] \
 	  || { printf "  Aborted.\n"; exit 1; }
 	$(COMPOSE_STORAGE) down --volumes --remove-orphans

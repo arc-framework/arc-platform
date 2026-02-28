@@ -45,7 +45,7 @@ control-health:
 ## control-logs: Tail logs from all three control plane containers simultaneously
 control-logs:
 	@printf "$(COLOR_INFO)→$(COLOR_OFF) Tailing arc-gateway, arc-vault, arc-flags logs (Ctrl-C to stop)...\n"
-	@docker logs -f arc-gateway 2>&1 | sed 's/^/[heimdall]  /' & \
-	 docker logs -f arc-vault   2>&1 | sed 's/^/[nick-fury] /' & \
-	 docker logs -f arc-flags   2>&1 | sed 's/^/[mystique]  /' & \
+	@docker logs -f arc-gateway 2>&1 | sed 's/^/[gateway] /' & \
+	 docker logs -f arc-vault   2>&1 | sed 's/^/[vault]   /' & \
+	 docker logs -f arc-flags   2>&1 | sed 's/^/[flags]   /' & \
 	 wait

@@ -45,7 +45,7 @@ transport-health:
 ## transport-logs: Tail logs from all three transport containers simultaneously
 transport-logs:
 	@printf "$(COLOR_INFO)→$(COLOR_OFF) Tailing arc-messaging, arc-streaming, arc-cache logs (Ctrl-C to stop)...\n"
-	@docker logs -f arc-messaging  2>&1 | sed 's/^/[flash]   /' & \
-	 docker logs -f arc-streaming  2>&1 | sed 's/^/[strange] /' & \
-	 docker logs -f arc-cache      2>&1 | sed 's/^/[sonic]   /' & \
+	@docker logs -f arc-messaging  2>&1 | sed 's/^/[messaging]  /' & \
+	 docker logs -f arc-streaming  2>&1 | sed 's/^/[streaming]  /' & \
+	 docker logs -f arc-cache      2>&1 | sed 's/^/[cache]      /' & \
 	 wait

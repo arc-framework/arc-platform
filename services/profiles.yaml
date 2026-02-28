@@ -7,14 +7,14 @@
 think:
   description: 'Minimal viable platform — just enough to think'
   services:
-    - flash
-    - sonic
-    - strange
+    - messaging
+    - cache
+    - streaming
     - friday-collector
     - cortex
-    - oracle
-    - cerebro
-    - heimdall
+    - sql-db
+    - vector-db
+    - gateway
 
 # ─── reason ─────────────────────────────────────────────────────
 # Full reasoning stack — observability, identity, bootstrap
@@ -22,13 +22,13 @@ reason:
   description: 'Development stack — think profile + observability'
   services:
     - cortex
-    - flash
-    - strange
-    - sonic
+    - messaging
+    - streaming
+    - cache
     - otel
-    - tardis
-    - nick-fury
-    - mystique
+    - storage
+    - vault
+    - flags
 
 # ─── ultra-instinct ─────────────────────────────────────────────
 # Everything — voice, real-time, chaos testing, the full roster

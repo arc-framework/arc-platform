@@ -66,7 +66,7 @@ vector-db-clean:
 
 ## vector-db-nuke: [DESTRUCTIVE] Full reset — container, volume, and local image
 vector-db-nuke:
-	@printf "$(COLOR_ERR)!$(COLOR_OFF) Destroys ALL cerebro state: container, volume, and local image.\n"
+	@printf "$(COLOR_ERR)!$(COLOR_OFF) Destroys ALL vector-db state: container, volume, and local image.\n"
 	@printf "  Type 'nuke' to confirm: " && read -r ans && [ "$$ans" = "nuke" ] \
 	  || { printf "  Aborted.\n"; exit 1; }
 	$(COMPOSE_VECTOR_DB) down --volumes --remove-orphans

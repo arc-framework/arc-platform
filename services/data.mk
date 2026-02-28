@@ -45,7 +45,7 @@ data-health:
 ## data-logs: Tail logs from all three data containers simultaneously
 data-logs:
 	@printf "$(COLOR_INFO)→$(COLOR_OFF) Tailing arc-sql-db, arc-vector-db, arc-storage logs (Ctrl-C to stop)...\n"
-	@docker logs -f arc-sql-db    2>&1 | sed 's/^/[oracle]  /' & \
-	 docker logs -f arc-vector-db 2>&1 | sed 's/^/[cerebro] /' & \
-	 docker logs -f arc-storage   2>&1 | sed 's/^/[tardis]  /' & \
+	@docker logs -f arc-sql-db    2>&1 | sed 's/^/[sql-db]    /' & \
+	 docker logs -f arc-vector-db 2>&1 | sed 's/^/[vector-db] /' & \
+	 docker logs -f arc-storage   2>&1 | sed 's/^/[storage]   /' & \
 	 wait

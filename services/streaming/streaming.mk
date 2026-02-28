@@ -75,7 +75,7 @@ streaming-clean:
 
 ## streaming-nuke: [DESTRUCTIVE] Full reset — container, volume, and local image
 streaming-nuke:
-	@printf "$(COLOR_ERR)!$(COLOR_OFF) Destroys ALL strange state: container, volume, and local image.\n"
+	@printf "$(COLOR_ERR)!$(COLOR_OFF) Destroys ALL streaming state: container, volume, and local image.\n"
 	@printf "  Type 'nuke' to confirm: " && read -r ans && [ "$$ans" = "nuke" ] \
 	  || { printf "  Aborted.\n"; exit 1; }
 	$(COMPOSE_STREAMING) down --volumes --remove-orphans
