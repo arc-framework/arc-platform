@@ -1,0 +1,35 @@
+name: Deploy Specs Site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "specs/**"
+      - "docs/specs/**"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: docs/specs/package-lock.json
+
+      - run: npm ci
+        working-directory: docs/specs
+
+      - run: npm run build
+        working-directory: docs/specs
+
+      - uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: docs/specs/.vitepress/dist
