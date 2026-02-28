@@ -25,17 +25,17 @@ PROFILE ?= think
 # Add one include per service as the platform grows.
 include services/otel/otel.mk
 include services/cortex/cortex.mk
-include services/messaging/flash.mk
-include services/streaming/strange.mk
-include services/cache/sonic.mk
+include services/messaging/messaging.mk
+include services/streaming/streaming.mk
+include services/cache/cache.mk
 include services/messaging.mk
-include services/persistence/oracle.mk
-include services/vector/cerebro.mk
-include services/storage/tardis.mk
+include services/persistence/sql-db.mk
+include services/vector/vector-db.mk
+include services/storage/storage.mk
 include services/data.mk
-include services/gateway/heimdall.mk
-include services/secrets/nick-fury.mk
-include services/flags/mystique.mk
+include services/gateway/gateway.mk
+include services/secrets/vault.mk
+include services/flags/flags.mk
 include services/control.mk
 
 # ─── Generated orchestration metadata (.make/ — gitignored) ───────────────────
@@ -66,15 +66,15 @@ dev-regen:
 publish-all:
 	@printf "$(COLOR_INFO)→$(COLOR_OFF) Building and publishing all A.R.C. platform images...\n"
 	@printf "$(COLOR_WARN)!$(COLOR_OFF) Requires: docker login ghcr.io   and   gh auth login\n"
-	$(MAKE) oracle-build    oracle-publish    --no-print-directory
-	$(MAKE) cerebro-build   cerebro-publish   --no-print-directory
-	$(MAKE) tardis-build    tardis-publish    --no-print-directory
-	$(MAKE) heimdall-build  heimdall-publish  --no-print-directory
-	$(MAKE) nick-fury-build nick-fury-publish --no-print-directory
-	$(MAKE) mystique-build  mystique-publish  --no-print-directory
-	$(MAKE) sonic-build     sonic-publish     --no-print-directory
-	$(MAKE) flash-build     flash-publish     --no-print-directory
-	$(MAKE) strange-build   strange-publish   --no-print-directory
+	$(MAKE) sql-db-build      sql-db-publish      --no-print-directory
+	$(MAKE) vector-db-build   vector-db-publish   --no-print-directory
+	$(MAKE) storage-build     storage-publish     --no-print-directory
+	$(MAKE) gateway-build     gateway-publish     --no-print-directory
+	$(MAKE) vault-build       vault-publish       --no-print-directory
+	$(MAKE) flags-build       flags-publish       --no-print-directory
+	$(MAKE) cache-build       cache-publish       --no-print-directory
+	$(MAKE) messaging-build   messaging-publish   --no-print-directory
+	$(MAKE) streaming-build   streaming-publish   --no-print-directory
 	$(MAKE) cortex-build    cortex-publish    --no-print-directory
 	$(MAKE) otel-build      otel-publish      --no-print-directory
 	@printf "$(COLOR_OK)✓$(COLOR_OFF) All images published to ghcr.io/arc-framework\n"
