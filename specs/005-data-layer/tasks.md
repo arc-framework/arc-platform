@@ -85,7 +85,7 @@ All three tasks are fully independent. Each creates 4 files: `Dockerfile`, `serv
     - `docker build -f services/persistence/Dockerfile services/persistence/` succeeds
   - Reviewer notes (2026-02-28): All acceptance criteria verified. `docker exec arc-oracle ps aux` confirms `postgres` user (uid 70) runs the postgres process. PASS.
 
-- [ ] [TASK-012] [P] [SERVICES] [P1] Create `services/vector/` — Cerebro (Qdrant)
+- [x] [TASK-012] [P] [SERVICES] [P1] Create `services/vector/` — Cerebro (Qdrant)
   - Dependencies: TASK-001
   - Module: `services/vector/`
   - Acceptance:
@@ -99,6 +99,7 @@ All three tasks are fully independent. Each creates 4 files: `Dockerfile`, `serv
     - The Dockerfile comment "qdrant image runs as uid 1000 by default" is factually incorrect — the upstream image runs as root unless the image is rebuilt with `--build-arg USER_ID=1000`.
     - Acceptance criterion says "no USER directive (qdrant image runs as uid 1000)" — this is wrong. A `user: "1000:1000"` entry must be added to `services/vector/docker-compose.yml` (same approach as Tardis), or the Dockerfile must rebuild with `--build-arg USER_ID=1000` and add `USER 1000`.
     - Acceptable healthcheck deviation (pre-approved): compose healthcheck uses `bash -c 'exec 3<>/dev/tcp/...'` instead of `wget` because `wget` is not present in the qdrant image. Functional result is identical (HTTP 200 check on /readyz).
+  - Re-verification (2026-02-28): PASS. Dockerfile now adds USER root, pre-creates /qdrant/storage + /qdrant/snapshots with chown 1000:1000, then drops to USER 1000. docker-compose.yml adds `user: "1000:1000"`. Verified: `docker inspect arc-cerebro --format '{{.Config.User}}'` = `1000:1000`; `docker exec arc-cerebro id` = `uid=1000 gid=1000 groups=1000`. Principle VIII satisfied. PASS.
 
 - [x] [TASK-013] [P] [SERVICES] [P1] Create `services/storage/` — Tardis (MinIO)
   - Dependencies: TASK-001
@@ -204,7 +205,7 @@ Both workflows are independent and can be implemented concurrently.
 
 ## Phase 5: Integration
 
-- [ ] [TASK-041] [SERVICES] [P1] End-to-end verification — data layer up + health
+- [x] [TASK-041] [SERVICES] [P1] End-to-end verification — data layer up + health
   - Dependencies: TASK-031, TASK-032
   - Module: `services/persistence/`, `services/vector/`, `services/storage/`
   - Acceptance:
@@ -222,6 +223,8 @@ Both workflows are independent and can be implemented concurrently.
   - Reviewer notes (2026-02-28): 10 of 11 criteria PASS. BLOCKED on TASK-012 (Cerebro runs as root).
     - Criteria 1-10 all verified and passing in live test.
     - Criterion 11 (Cortex oracle health): `"ok": false` — FAIL. Root cause is a pre-existing mismatch in Cortex config (commit 1d15b07): Cortex defaults `bootstrap.postgres.db=arc_db` and has no password configured, while Oracle compose sets `POSTGRES_DB=arc` and `POSTGRES_PASSWORD=arc`. This is not introduced by 005-data-layer. The implementer must align either Cortex's config or Oracle's env (or both) and document in Cortex's compose. This criterion blocks TASK-041 until resolved.
+  - Re-verification (2026-02-28): ALL 11 criteria PASS.
+    - Criterion 11 fix: `services/cortex/internal/config/config.go` now sets default `bootstrap.postgres.password=""` and `bootstrap.postgres.db="arc"` (was `arc_db`). `services/cortex/docker-compose.yml` injects `CORTEX_BOOTSTRAP_POSTGRES_PASSWORD: arc`. `curl -s http://localhost:8081/health/deep | jq .dependencies.postgres` = `{"name":"arc-oracle","ok":true,"latencyMs":17}`. PASS.
 
 ---
 
@@ -238,7 +241,7 @@ Both workflows are independent and can be implemented concurrently.
     - No broken internal references in modified files
   - Reviewer notes (2026-02-28): All docs criteria pass. CLAUDE.md monorepo layout lists all three directories; service codenames table updated. cortex/service.yaml depends_on includes `oracle`. PASS.
 
-- [ ] [TASK-999] [REVIEW] [P1] Reviewer agent verification
+- [x] [TASK-999] [REVIEW] [P1] Reviewer agent verification
   - Dependencies: ALL
   - Module: all affected modules
   - Acceptance (reviewer runs all items from plan.md Reviewer Checklist):
@@ -261,6 +264,7 @@ Both workflows are independent and can be implemented concurrently.
   - Reviewer notes (2026-02-28): BLOCKED — two issues must be resolved before this can be marked done.
     - ISSUE-1 (CRITICAL): `docker inspect arc-cerebro` shows `Config.User=0:0`; runtime `id` returns `uid=0(root)`. The upstream `qdrant/qdrant` image defaults to `USER 0:0`. Principle VIII (non-root containers) is violated. Fix: add `user: "1000:1000"` to `services/vector/docker-compose.yml` and rebuild (same pattern as Tardis), or rebuild Dockerfile with `--build-arg USER_ID=1000` and add `USER 1000`. Correct the Dockerfile comment from "qdrant image runs as uid 1000 by default" to reflect the actual fix.
     - ISSUE-2 (BLOCKER): `curl .../health/deep | jq '.dependencies.postgres.ok'` returns `false`. Root cause: pre-existing mismatch between Cortex defaults (`arc_db`, no password) and Oracle compose (`POSTGRES_DB=arc`, `POSTGRES_PASSWORD=arc`). Fix: align Oracle `POSTGRES_DB` to `arc_db`, or configure `POSTGRES_DB=arc_db` and add `BOOTSTRAP_POSTGRES_PASSWORD=arc` env in `services/cortex/docker-compose.yml`. Needs coordination with Cortex maintainer.
+  - Re-verification (2026-02-28): ALL checklist items PASS. Both issues resolved. See TASK-012 and TASK-041 re-verification notes. APPROVED.
 
 ---
 
@@ -269,10 +273,10 @@ Both workflows are independent and can be implemented concurrently.
 | Phase | Total | Done | Blocked |
 |-------|-------|------|---------|
 | Setup | 1 | 1 | 0 |
-| Foundational | 3 | 2 | 1 |
+| Foundational | 3 | 3 | 0 |
 | Implementation (Make + CI) | 6 | 6 | 0 |
-| Integration | 1 | 0 | 1 |
-| Polish | 2 | 1 | 1 |
-| **Total** | **13** | **10** | **3** |
+| Integration | 1 | 1 | 0 |
+| Polish | 2 | 2 | 0 |
+| **Total** | **13** | **13** | **0** |
 
-Blocked tasks: TASK-012 (Cerebro root user), TASK-041 (depends on TASK-012 + Cortex config mismatch), TASK-999 (reviewer).
+All tasks complete. Re-verified 2026-02-28.

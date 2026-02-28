@@ -22,8 +22,7 @@ services:
     ports:
       - "127.0.0.1:8081:8081"   # HTTP API — localhost only
     environment:
-      BOOTSTRAP_POSTGRES_DB: arc
-      BOOTSTRAP_POSTGRES_PASSWORD: arc
+      CORTEX_BOOTSTRAP_POSTGRES_PASSWORD: arc
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8081/health || exit 1"]
       interval: 15s
