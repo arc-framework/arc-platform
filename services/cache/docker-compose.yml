@@ -1,12 +1,12 @@
 name: arc-platform
 
 services:
-  arc-sonic:
+  arc-cache:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ghcr.io/arc-framework/arc-sonic:latest
-    container_name: arc-sonic
+    image: ghcr.io/arc-framework/arc-cache:latest
+    container_name: arc-cache
     command:
       - redis-server
       - --appendonly
@@ -33,7 +33,7 @@ services:
 
 volumes:
   sonic-data:
-    name: arc-sonic-data
+    name: arc-cache-data
 
 networks:
   arc_platform_net:

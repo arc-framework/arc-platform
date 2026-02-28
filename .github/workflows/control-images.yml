@@ -1,0 +1,180 @@
+name: Control Plane Image Pipeline
+
+# CI/push orchestrator for arc-gateway, arc-vault, and arc-flags images.
+# Builds on every control-plane-related push; pushes to GHCR on main branch merges.
+# For a full versioned release, push a tag: git tag control/v1.2.3 && git push --tags
+#
+# Parallelism:
+#   build-heimdall, build-nick-fury, build-mystique run concurrently.
+#   security-heimdall, security-nick-fury, security-mystique each run after their respective build.
+#
+# Change detection (per-job skipping):
+#   heimdall  (services/gateway/**)  → build-heimdall
+#   nick-fury (services/secrets/**)  → build-nick-fury
+#   mystique  (services/flags/**)    → build-mystique
+#
+# Triggers:
+#   push (main, dev)   — detect changes, run relevant jobs, push image on main
+#   pull_request       — detect changes, run relevant jobs, build only (no push)
+#   workflow_dispatch  — always runs all jobs; mode=release forces push
+
+on:
+  push:
+    branches: [main, dev]
+    paths:
+      - 'services/gateway/**'
+      - 'services/secrets/**'
+      - 'services/flags/**'
+      - '.github/workflows/control-images.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'services/gateway/**'
+      - 'services/secrets/**'
+      - 'services/flags/**'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'ci = build only, release = build + push'
+        required: false
+        type: choice
+        options: [ci, release]
+        default: ci
+
+env:
+  IMAGE_PREFIX: ghcr.io/arc-framework
+
+jobs:
+
+  # ── Detect file-level changes and resolve push mode ───────────────────────
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      heimdall:  ${{ steps.filter.outputs.heimdall == 'true'   || github.event_name == 'workflow_dispatch' }}
+      nick-fury: ${{ steps.filter.outputs.nick_fury == 'true'  || github.event_name == 'workflow_dispatch' }}
+      mystique:  ${{ steps.filter.outputs.mystique == 'true'   || github.event_name == 'workflow_dispatch' }}
+      push-image: ${{ steps.mode.outputs.push-image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect changed paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            heimdall:
+              - 'services/gateway/**'
+            nick_fury:
+              - 'services/secrets/**'
+            mystique:
+              - 'services/flags/**'
+
+      - name: Resolve push mode
+        id: mode
+        run: |
+          EVENT="${{ github.event_name }}"
+          REF="${{ github.ref }}"
+          MODE="${{ github.event.inputs.mode || 'ci' }}"
+
+          if [ "$MODE" = "release" ] || ([ "$EVENT" = "push" ] && [ "$REF" = "refs/heads/main" ]); then
+            echo "push-image=true" >> $GITHUB_OUTPUT
+          else
+            echo "push-image=false" >> $GITHUB_OUTPUT
+          fi
+
+  # ── Build arc-gateway (parallel) — only when gateway/ changed ────────────
+  build-heimdall:
+    name: Build arc-gateway
+    needs: changes
+    if: needs.changes.outputs.heimdall == 'true'
+    uses: ./.github/workflows/_reusable-build.yml
+    with:
+      service-name: arc-gateway
+      service-path: services/gateway
+      dockerfile: Dockerfile
+      platforms: linux/amd64
+      push-image: ${{ needs.changes.outputs.push-image == 'true' }}
+      generate-sbom: ${{ needs.changes.outputs.push-image == 'true' }}
+      image-prefix: ghcr.io/arc-framework
+    secrets: inherit
+
+  # ── Build arc-vault (parallel) — only when secrets/ changed ───────────
+  build-nick-fury:
+    name: Build arc-vault
+    needs: changes
+    if: needs.changes.outputs.nick-fury == 'true'
+    uses: ./.github/workflows/_reusable-build.yml
+    with:
+      service-name: arc-vault
+      service-path: services/secrets
+      dockerfile: Dockerfile
+      platforms: linux/amd64
+      push-image: ${{ needs.changes.outputs.push-image == 'true' }}
+      generate-sbom: ${{ needs.changes.outputs.push-image == 'true' }}
+      image-prefix: ghcr.io/arc-framework
+    secrets: inherit
+
+  # ── Build arc-flags (parallel) — only when flags/ changed ─────────────
+  build-mystique:
+    name: Build arc-flags
+    needs: changes
+    if: needs.changes.outputs.mystique == 'true'
+    uses: ./.github/workflows/_reusable-build.yml
+    with:
+      service-name: arc-flags
+      service-path: services/flags
+      dockerfile: Dockerfile
+      platforms: linux/amd64
+      push-image: ${{ needs.changes.outputs.push-image == 'true' }}
+      generate-sbom: ${{ needs.changes.outputs.push-image == 'true' }}
+      image-prefix: ghcr.io/arc-framework
+    secrets: inherit
+
+  # ── Security: Heimdall (after build-heimdall, non-blocking in CI) ─────────
+  security-heimdall:
+    name: Security Scan — arc-gateway
+    needs: [build-heimdall]
+    if: always() && !cancelled() && needs.build-heimdall.result == 'success'
+    uses: ./.github/workflows/_reusable-security.yml
+    with:
+      scan-type: fs
+      scan-target: services/gateway
+      severity: CRITICAL,HIGH,MEDIUM
+      fail-on-severity: CRITICAL
+      block-on-failure: false
+      service-name: arc-gateway
+      create-issues: false
+    secrets: inherit
+
+  # ── Security: Nick Fury (after build-nick-fury, non-blocking in CI) ───────
+  security-nick-fury:
+    name: Security Scan — arc-vault
+    needs: [build-nick-fury]
+    if: always() && !cancelled() && needs.build-nick-fury.result == 'success'
+    uses: ./.github/workflows/_reusable-security.yml
+    with:
+      scan-type: fs
+      scan-target: services/secrets
+      severity: CRITICAL,HIGH,MEDIUM
+      fail-on-severity: CRITICAL
+      block-on-failure: false
+      service-name: arc-vault
+      create-issues: false
+    secrets: inherit
+
+  # ── Security: Mystique (after build-mystique, non-blocking in CI) ─────────
+  security-mystique:
+    name: Security Scan — arc-flags
+    needs: [build-mystique]
+    if: always() && !cancelled() && needs.build-mystique.result == 'success'
+    uses: ./.github/workflows/_reusable-security.yml
+    with:
+      scan-type: fs
+      scan-target: services/flags
+      severity: CRITICAL,HIGH,MEDIUM
+      fail-on-severity: CRITICAL
+      block-on-failure: false
+      service-name: arc-flags
+      create-issues: false
+    secrets: inherit

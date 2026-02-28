@@ -7,10 +7,10 @@ services:
   # a health / status HTTP API on port 8081.
   #
   # Networks:
-  #   arc_platform_net — reaches infra services (arc-oracle, arc-flash, arc-strange, arc-sonic)
+  #   arc_platform_net — reaches infra services (arc-sql-db, arc-messaging, arc-streaming, arc-cache)
   #   arc_otel_net     — reaches arc-friday-collector for OTLP telemetry
   #
-  # Infra services (arc-oracle, arc-flash, arc-sonic, arc-strange) are defined
+  # Infra services (arc-sql-db, arc-messaging, arc-cache, arc-streaming) are defined
   # in their own service stacks. Start the relevant profile first, then:
   #   make cortex-docker-up
   arc-cortex:

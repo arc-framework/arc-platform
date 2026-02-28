@@ -4,12 +4,12 @@ services:
   # ── Cerebro: Qdrant vector database ──────────────────────────────────────────
   # uid: qdrant/qdrant runs as root by default. Dockerfile pre-creates /qdrant/storage
   # owned by uid 1000; compose sets user: "1000:1000" at runtime (non-root).
-  arc-cerebro:
+  arc-vector-db:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ghcr.io/arc-framework/arc-cerebro:latest
-    container_name: arc-cerebro
+    image: ghcr.io/arc-framework/arc-vector-db:latest
+    container_name: arc-vector-db
     user: "1000:1000"
     ports:
       - "127.0.0.1:6333:6333"   # REST API — localhost only
@@ -28,7 +28,7 @@ services:
 
 volumes:
   cerebro-data:
-    name: arc-cerebro-data
+    name: arc-vector-db-data
 
 networks:
   arc_platform_net:

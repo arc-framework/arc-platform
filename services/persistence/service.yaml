@@ -1,6 +1,7 @@
-name: arc-oracle
+name: arc-sql-db
+role: sql-db
 codename: oracle
-image: ghcr.io/arc-framework/arc-oracle:latest
+image: ghcr.io/arc-framework/arc-sql-db:latest
 tech: postgres
 upstream: postgres:17-alpine
 ports:

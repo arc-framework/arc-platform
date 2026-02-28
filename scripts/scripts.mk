@@ -11,7 +11,7 @@ BASE ?= main
 .PHONY: scripts-help scripts-pr scripts-pr-json \
         scripts-check scripts-check-syntax scripts-check-lint \
         scripts-packages-list scripts-packages-list-json scripts-packages-delete \
-        scripts-permissions
+        scripts-permissions publish-all
 
 ## scripts-help: Utility scripts (PR description, package management, validation)
 scripts-help:
@@ -69,3 +69,20 @@ scripts-packages-delete:
 scripts-permissions:
 	@chmod +x $(SCRIPTS_DIR_PATH)/*.sh $(SCRIPTS_DIR_PATH)/lib/*.sh
 	@printf "$(COLOR_OK)✓$(COLOR_OFF) All scripts are executable\n"
+
+## publish-all: Build and push all platform images to ghcr.io (requires: docker login ghcr.io + gh auth)
+publish-all:
+	@printf "$(COLOR_INFO)→$(COLOR_OFF) Building and publishing all A.R.C. platform images...\n"
+	@printf "$(COLOR_WARN)!$(COLOR_OFF) Requires: docker login ghcr.io   and   gh auth login\n"
+	$(MAKE) sql-db-build      sql-db-publish      --no-print-directory
+	$(MAKE) vector-db-build   vector-db-publish   --no-print-directory
+	$(MAKE) storage-build     storage-publish     --no-print-directory
+	$(MAKE) gateway-build     gateway-publish     --no-print-directory
+	$(MAKE) vault-build       vault-publish       --no-print-directory
+	$(MAKE) flags-build       flags-publish       --no-print-directory
+	$(MAKE) cache-build       cache-publish       --no-print-directory
+	$(MAKE) messaging-build   messaging-publish   --no-print-directory
+	$(MAKE) streaming-build   streaming-publish   --no-print-directory
+	$(MAKE) cortex-build      cortex-publish      --no-print-directory
+	$(MAKE) otel-build        otel-publish        --no-print-directory
+	@printf "$(COLOR_OK)✓$(COLOR_OFF) All images published to ghcr.io/arc-framework\n"

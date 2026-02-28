@@ -9,17 +9,17 @@ receivers:
   prometheus:
     config:
       scrape_configs:
-        # arc-flash: NATS monitoring endpoint (Prometheus format)
-        - job_name: arc-flash
+        # arc-messaging: NATS monitoring endpoint (Prometheus format)
+        - job_name: arc-messaging
           scrape_interval: 15s
           static_configs:
-            - targets: ['arc-flash:8222']
-        # arc-strange: Pulsar metrics endpoint
-        - job_name: arc-strange
+            - targets: ['arc-messaging:8222']
+        # arc-streaming: Pulsar metrics endpoint
+        - job_name: arc-streaming
           scrape_interval: 15s
           static_configs:
-            - targets: ['arc-strange:8080']
-        # arc-sonic (Redis) metrics deferred — see tech debt TD-001
+            - targets: ['arc-streaming:8080']
+        # arc-cache (Redis) metrics deferred — see tech debt TD-001
         # TD-001: add oliver006/redis_exporter sidecar when dashboard is needed
 
 processors:

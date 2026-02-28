@@ -4,12 +4,12 @@ services:
   # ── Tardis: MinIO S3-compatible object storage ──────────────────────────────
   # uid: running as 1000:1000 (non-root). Dockerfile pre-creates /data owned by
   # uid 1000 so the named volume initialises with correct write permissions.
-  arc-tardis:
+  arc-storage:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ghcr.io/arc-framework/arc-tardis:latest
-    container_name: arc-tardis
+    image: ghcr.io/arc-framework/arc-storage:latest
+    container_name: arc-storage
     command: server /data --console-address ":9001"
     user: "1000:1000"
     environment:
@@ -32,7 +32,7 @@ services:
 
 volumes:
   tardis-data:
-    name: arc-tardis-data
+    name: arc-storage-data
 
 networks:
   arc_platform_net:

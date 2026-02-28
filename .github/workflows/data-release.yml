@@ -1,6 +1,6 @@
 name: Data Release
 
-# Full release pipeline for arc-oracle, arc-cerebro, and arc-tardis.
+# Full release pipeline for arc-sql-db, arc-vector-db, and arc-storage.
 # Triggered by pushing a version tag: git tag data/v1.2.3 && git push --tags
 #
 # Tag format:  data/v{MAJOR}.{MINOR}.{PATCH}  (e.g. data/v0.1.0)
@@ -61,13 +61,13 @@ jobs:
             echo "prerelease=false" >> $GITHUB_OUTPUT
           fi
 
-  # ── Build arc-oracle (parallel after prepare) ─────────────────────────────
+  # ── Build arc-sql-db (parallel after prepare) ─────────────────────────────
   build-oracle:
-    name: Build arc-oracle
+    name: Build arc-sql-db
     needs: [prepare]
     uses: ./.github/workflows/_reusable-build.yml
     with:
-      service-name: arc-oracle
+      service-name: arc-sql-db
       service-path: services/persistence
       dockerfile: Dockerfile
       platforms: linux/amd64,linux/arm64
@@ -78,13 +78,13 @@ jobs:
       image-prefix: ghcr.io/arc-framework
     secrets: inherit
 
-  # ── Build arc-cerebro (parallel after prepare) ────────────────────────────
+  # ── Build arc-vector-db (parallel after prepare) ────────────────────────────
   build-cerebro:
-    name: Build arc-cerebro
+    name: Build arc-vector-db
     needs: [prepare]
     uses: ./.github/workflows/_reusable-build.yml
     with:
-      service-name: arc-cerebro
+      service-name: arc-vector-db
       service-path: services/vector
       dockerfile: Dockerfile
       platforms: linux/amd64,linux/arm64
@@ -95,13 +95,13 @@ jobs:
       image-prefix: ghcr.io/arc-framework
     secrets: inherit
 
-  # ── Build arc-tardis (parallel after prepare) ─────────────────────────────
+  # ── Build arc-storage (parallel after prepare) ─────────────────────────────
   build-tardis:
-    name: Build arc-tardis
+    name: Build arc-storage
     needs: [prepare]
     uses: ./.github/workflows/_reusable-build.yml
     with:
-      service-name: arc-tardis
+      service-name: arc-storage
       service-path: services/storage
       dockerfile: Dockerfile
       platforms: linux/amd64,linux/arm64
@@ -114,7 +114,7 @@ jobs:
 
   # ── Security: Oracle — CRITICAL CVEs block the release ────────────────────
   security-oracle:
-    name: Security Gate — arc-oracle
+    name: Security Gate — arc-sql-db
     needs: [build-oracle]
     uses: ./.github/workflows/_reusable-security.yml
     with:
@@ -123,13 +123,13 @@ jobs:
       severity: CRITICAL,HIGH
       fail-on-severity: CRITICAL
       block-on-failure: true
-      service-name: arc-oracle-release
+      service-name: arc-sql-db-release
       create-issues: true
     secrets: inherit
 
   # ── Security: Cerebro — CRITICAL CVEs block the release ───────────────────
   security-cerebro:
-    name: Security Gate — arc-cerebro
+    name: Security Gate — arc-vector-db
     needs: [build-cerebro]
     uses: ./.github/workflows/_reusable-security.yml
     with:
@@ -138,13 +138,13 @@ jobs:
       severity: CRITICAL,HIGH
       fail-on-severity: CRITICAL
       block-on-failure: true
-      service-name: arc-cerebro-release
+      service-name: arc-vector-db-release
       create-issues: true
     secrets: inherit
 
   # ── Security: Tardis — CRITICAL CVEs block the release ────────────────────
   security-tardis:
-    name: Security Gate — arc-tardis
+    name: Security Gate — arc-storage
     needs: [build-tardis]
     uses: ./.github/workflows/_reusable-security.yml
     with:
@@ -153,7 +153,7 @@ jobs:
       severity: CRITICAL,HIGH
       fail-on-severity: CRITICAL
       block-on-failure: true
-      service-name: arc-tardis-release
+      service-name: arc-storage-release
       create-issues: true
     secrets: inherit
 
@@ -181,16 +181,16 @@ jobs:
 
           | Service | Image | Versioned Tag | Also Tagged |
           |---------|-------|--------------|-------------|
-          | arc-oracle (PostgreSQL) | \`${PREFIX}/arc-oracle\` | \`${IMAGE_TAG}\` | \`latest\`, \`sha-*\` |
-          | arc-cerebro (Qdrant) | \`${PREFIX}/arc-cerebro\` | \`${IMAGE_TAG}\` | \`latest\`, \`sha-*\` |
-          | arc-tardis (MinIO) | \`${PREFIX}/arc-tardis\` | \`${IMAGE_TAG}\` | \`latest\`, \`sha-*\` |
+          | arc-sql-db (PostgreSQL) | \`${PREFIX}/arc-sql-db\` | \`${IMAGE_TAG}\` | \`latest\`, \`sha-*\` |
+          | arc-vector-db (Qdrant) | \`${PREFIX}/arc-vector-db\` | \`${IMAGE_TAG}\` | \`latest\`, \`sha-*\` |
+          | arc-storage (MinIO) | \`${PREFIX}/arc-storage\` | \`${IMAGE_TAG}\` | \`latest\`, \`sha-*\` |
 
           ### Pull
 
           \`\`\`bash
-          docker pull ${PREFIX}/arc-oracle:${IMAGE_TAG}
-          docker pull ${PREFIX}/arc-cerebro:${IMAGE_TAG}
-          docker pull ${PREFIX}/arc-tardis:${IMAGE_TAG}
+          docker pull ${PREFIX}/arc-sql-db:${IMAGE_TAG}
+          docker pull ${PREFIX}/arc-vector-db:${IMAGE_TAG}
+          docker pull ${PREFIX}/arc-storage:${IMAGE_TAG}
           \`\`\`
 
           ### Start

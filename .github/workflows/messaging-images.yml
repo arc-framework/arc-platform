@@ -1,6 +1,6 @@
 name: Messaging Image Pipeline
 
-# CI/push orchestrator for arc-flash, arc-strange, and arc-sonic images.
+# CI/push orchestrator for arc-messaging, arc-streaming, and arc-cache images.
 # Builds on every messaging-related push; pushes to GHCR on main branch merges.
 # For a full versioned release, push a tag: git tag messaging/v1.2.3 && git push --tags
 #
@@ -83,14 +83,14 @@ jobs:
             echo "push-image=false" >> $GITHUB_OUTPUT
           fi
 
-  # ── Build arc-flash (parallel) — only when messaging/ changed ─────────────
+  # ── Build arc-messaging (parallel) — only when messaging/ changed ─────────────
   build-flash:
-    name: Build arc-flash
+    name: Build arc-messaging
     needs: changes
     if: needs.changes.outputs.flash == 'true'
     uses: ./.github/workflows/_reusable-build.yml
     with:
-      service-name: arc-flash
+      service-name: arc-messaging
       service-path: services/messaging
       dockerfile: Dockerfile
       platforms: linux/amd64
@@ -99,14 +99,14 @@ jobs:
       image-prefix: ghcr.io/arc-framework
     secrets: inherit
 
-  # ── Build arc-strange (parallel) — only when streaming/ changed ───────────
+  # ── Build arc-streaming (parallel) — only when streaming/ changed ───────────
   build-strange:
-    name: Build arc-strange
+    name: Build arc-streaming
     needs: changes
     if: needs.changes.outputs.strange == 'true'
     uses: ./.github/workflows/_reusable-build.yml
     with:
-      service-name: arc-strange
+      service-name: arc-streaming
       service-path: services/streaming
       dockerfile: Dockerfile
       platforms: linux/amd64
@@ -115,14 +115,14 @@ jobs:
       image-prefix: ghcr.io/arc-framework
     secrets: inherit
 
-  # ── Build arc-sonic (parallel) — only when cache/ changed ─────────────────
+  # ── Build arc-cache (parallel) — only when cache/ changed ─────────────────
   build-sonic:
-    name: Build arc-sonic
+    name: Build arc-cache
     needs: changes
     if: needs.changes.outputs.sonic == 'true'
     uses: ./.github/workflows/_reusable-build.yml
     with:
-      service-name: arc-sonic
+      service-name: arc-cache
       service-path: services/cache
       dockerfile: Dockerfile
       platforms: linux/amd64
@@ -133,7 +133,7 @@ jobs:
 
   # ── Security: Flash (after build-flash, non-blocking in CI) ──────────────
   security-flash:
-    name: Security Scan — arc-flash
+    name: Security Scan — arc-messaging
     needs: [build-flash]
     if: always() && !cancelled() && needs.build-flash.result == 'success'
     uses: ./.github/workflows/_reusable-security.yml
@@ -143,13 +143,13 @@ jobs:
       severity: CRITICAL,HIGH,MEDIUM
       fail-on-severity: CRITICAL
       block-on-failure: false
-      service-name: arc-flash
+      service-name: arc-messaging
       create-issues: false
     secrets: inherit
 
   # ── Security: Strange (after build-strange, non-blocking in CI) ──────────
   security-strange:
-    name: Security Scan — arc-strange
+    name: Security Scan — arc-streaming
     needs: [build-strange]
     if: always() && !cancelled() && needs.build-strange.result == 'success'
     uses: ./.github/workflows/_reusable-security.yml
@@ -159,13 +159,13 @@ jobs:
       severity: CRITICAL,HIGH,MEDIUM
       fail-on-severity: CRITICAL
       block-on-failure: false
-      service-name: arc-strange
+      service-name: arc-streaming
       create-issues: false
     secrets: inherit
 
   # ── Security: Sonic (after build-sonic, non-blocking in CI) ──────────────
   security-sonic:
-    name: Security Scan — arc-sonic
+    name: Security Scan — arc-cache
     needs: [build-sonic]
     if: always() && !cancelled() && needs.build-sonic.result == 'success'
     uses: ./.github/workflows/_reusable-security.yml
@@ -175,6 +175,6 @@ jobs:
       severity: CRITICAL,HIGH,MEDIUM
       fail-on-severity: CRITICAL
       block-on-failure: false
-      service-name: arc-sonic
+      service-name: arc-cache
       create-issues: false
     secrets: inherit

@@ -1,6 +1,7 @@
-name: arc-cerebro
+name: arc-vector-db
+role: vector-db
 codename: cerebro
-image: ghcr.io/arc-framework/arc-cerebro:latest
+image: ghcr.io/arc-framework/arc-vector-db:latest
 tech: qdrant
 upstream: qdrant/qdrant
 ports:

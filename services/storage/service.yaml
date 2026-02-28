@@ -1,6 +1,7 @@
-name: arc-tardis
+name: arc-storage
+role: storage
 codename: tardis
-image: ghcr.io/arc-framework/arc-tardis:latest
+image: ghcr.io/arc-framework/arc-storage:latest
 tech: minio
 upstream: minio/minio
 ports:

@@ -17,14 +17,14 @@ receivers:
   prometheus:
     config:
       scrape_configs:
-        - job_name: arc-flash
+        - job_name: arc-messaging
           scrape_interval: 15s
           static_configs:
-            - targets: ['arc-flash:8222']
-        - job_name: arc-strange
+            - targets: ['arc-messaging:8222']
+        - job_name: arc-streaming
           scrape_interval: 15s
           static_configs:
-            - targets: ['arc-strange:8080']
+            - targets: ['arc-streaming:8080']
 
 processors:
   batch:
