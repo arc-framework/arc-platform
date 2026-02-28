@@ -1,4 +1,4 @@
-codename: widow
+codename: friday-collector
 tech: arc-friday-collector
 upstream: signoz/signoz-otel-collector
 ports:

@@ -20,7 +20,7 @@ A.R.C. is a distributed intelligence orchestration engine designed to remove inf
 - 🏗️ **Platform, Not Library:** Compose a complete ecosystem with one command—no manual wiring of services.
 - ⚡ **Minutes, Not Months:** Go from idea to deployment immediately while A.R.C. handles the plumbing.
 - 🔧 **Your Stack, Your Rules:** Everything is standards-based and swappable with zero vendor lock-in.
-- 🧭 **Role-Aware Services:** Heimdall (Traefik) gates ingress, Sherlock (LangGraph) reasons, T-800 (Chaos Mesh) pressure-tests the cluster, and Friday (Grafana) shows the vitals.
+- 🧭 **Role-Aware Services:** Heimdall (Traefik) gates ingress, Sherlock (LangGraph) reasons, T-800 (Chaos Mesh) pressure-tests the cluster, and Friday (SigNoz) shows the vitals.
 
 ---
 
@@ -56,7 +56,7 @@ A.R.C. is a distributed intelligence orchestration engine designed to remove inf
 | 🔒 Risk of vendor lock-in           | 🆓 Open-source freedom               |
 | 🐛 Painful debugging cycles         | 🔍 Sherlock + Friday trace issues    |
 | 📈 Scaling bottlenecks              | 🚀 Auto-scaling infrastructure       |
-| 👓 Limited observability            | 📊 OTEL + Grafana built in           |
+| 👓 Limited observability            | 📊 OTEL + SigNoz built in            |
 | 💸 High maintenance costs           | 💰 Cost-effective operations         |
 | 📚 Steep learning curves            | 🎯 Production-ready in minutes       |
 | 💤 Unknown resilience               | 🛡️ Chaos-tested by the T-800         |

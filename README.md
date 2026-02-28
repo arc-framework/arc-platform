@@ -85,12 +85,8 @@ Your agents aren't just scripts; they are specialized workers in a distributed s
 
 | Role | Codename | Technology | Description |
 | :--- | :--- | :--- | :--- |
-| **Collector** | **Black Widow** | **OTEL** | The Spy. Intercepts all signals and traces without being seen. |
-| **Metrics** | **Dr. House** | **Prometheus** | Diagnostics. Trusts the vitals, not the patient. |
-| **Logs** | **Watson** | **Loki** | The Chronicler. Writes down every messy detail for later deduction. |
-| **Traces** | **Columbo** | **Tempo** | The Detective. "Just one more thing." Follows the request path. |
-| **UI** | **Friday** | **Grafana** | The visual interface overlay for all metrics and logs. |
-| **Shipper** | **Hermes** | **Promtail** | The Messenger. Delivers the logs to Watson. |
+| **Collector** | **Friday Collector** | **SigNoz OTEL Collector** | The Spy. Intercepts all telemetry signals and routes them to Friday. |
+| **Dashboard** | **Friday** | **SigNoz** | The Eyes. Unified observability UI — traces, metrics, and logs (:3301). |
 
 ---
 
