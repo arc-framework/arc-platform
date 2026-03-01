@@ -1,0 +1,44 @@
+name: arc-platform
+
+services:
+
+  # ── Sherlock: LangGraph reasoning engine ──────────────────────────────────
+  # Three invocation modes:
+  #   - HTTP sync:  POST http://localhost:8083/chat
+  #   - NATS:       subscribe sherlock.request (queue group: sherlock_workers)
+  #   - Pulsar:     sherlock-requests topic (opt-in, SHERLOCK_PULSAR_ENABLED=true)
+  #
+  # Networks:
+  #   arc_platform_net — reaches arc-sql-db, arc-vector-db, arc-messaging, arc-streaming
+  #   arc_otel_net     — reaches arc-friday-collector for OTLP telemetry
+  #
+  # No depends_on — orchestration handled by resolve-deps.sh using service.yaml
+  arc-sherlock:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/arc-framework/arc-sherlock:latest
+    container_name: arc-sherlock
+    ports:
+      - "127.0.0.1:8083:8000"   # localhost-only; cortex=8081, pulsar-admin=8082
+    environment:
+      SHERLOCK_POSTGRES_URL: "postgresql+asyncpg://arc:arc@arc-sql-db:5432/arc"
+      SHERLOCK_QDRANT_HOST: "arc-vector-db"
+      SHERLOCK_NATS_URL: "nats://arc-messaging:4222"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://arc-friday-collector:4317"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s   # sentence-transformers model download on first cold start
+    networks:
+      - arc_platform_net
+      - arc_otel_net
+    restart: unless-stopped
+
+networks:
+  arc_platform_net:
+    external: true   # created by the platform infra stack (make dev)
+  arc_otel_net:
+    external: true   # created by: make otel-up

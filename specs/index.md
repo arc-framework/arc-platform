@@ -16,6 +16,7 @@ statically rendered site with full-text search and mermaid diagram support.
 | 006 | Platform Control | Implemented | [spec](006-platform-control/spec.md) |
 | 007 | Voice Stack | Implemented | [spec](007-voice-stack/spec.md) |
 | 008 | Specs Site | Implemented | [spec](008-specs-site/spec.md) |
+| 009 | Sherlock Reasoning | In Progress | [spec](009-sherlock-reasoning/spec.md) |
 
 ## Local Development
 

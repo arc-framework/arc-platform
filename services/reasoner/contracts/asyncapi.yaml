@@ -1,0 +1,293 @@
+asyncapi: 3.0.0
+
+info:
+  title: Sherlock Reasoning Service — Async API
+  version: 0.1.0
+  description: |
+    Event-driven interfaces for Sherlock (`arc-sherlock`).
+
+    Two transports are documented here:
+    - **NATS** (Flash, `arc-messaging:4222`): real-time request-reply and fire-and-forget
+    - **Pulsar** (Dr. Strange, `arc-streaming:6650`): durable at-least-once async processing
+
+    Pulsar is opt-in — only active when `SHERLOCK_PULSAR_ENABLED=true`.
+    For synchronous HTTP see `openapi.yaml`.
+
+servers:
+  nats:
+    host: arc-messaging:4222
+    protocol: nats
+    description: |
+      Flash — NATS messaging broker. Real-time request-reply via ephemeral
+      `_INBOX` subjects. Queue group `sherlock_workers` distributes load
+      across multiple Sherlock replicas.
+    tags:
+      - name: transport:nats
+        description: Real-time low-latency messaging
+
+  pulsar:
+    host: arc-streaming:6650
+    protocol: pulsar
+    description: |
+      Dr. Strange — Apache Pulsar streaming. Persistent topics with
+      at-least-once delivery. Durable reasoning tasks survive Sherlock restarts.
+      Requires `SHERLOCK_PULSAR_ENABLED=true`.
+    tags:
+      - name: transport:pulsar
+        description: Durable async message streaming
+
+channels:
+  sherlockRequest:
+    address: sherlock.request
+    servers:
+      - $ref: '#/servers/nats'
+    description: |
+      Inbound NATS subject for real-time reasoning requests.
+
+      **Request-reply** (blocking caller):
+        Caller sends with `nc.request()` which attaches an ephemeral `_INBOX.xxx`
+        reply subject. Sherlock responds via `msg.respond()` to that inbox.
+
+      **Fire-and-forget** (non-blocking):
+        Caller sends with `nc.publish()` — no reply subject set.
+        Sherlock processes the message but skips `msg.respond()`.
+
+      Queue group `sherlock_workers` ensures exactly one replica processes
+      each message, enabling horizontal scale-out.
+    messages:
+      ReasoningRequest:
+        $ref: '#/components/messages/ReasoningRequest'
+
+  sherlockRequests:
+    address: persistent://public/default/sherlock-requests
+    servers:
+      - $ref: '#/servers/pulsar'
+    description: |
+      Inbound Pulsar topic for durable reasoning tasks.
+      Sherlock subscribes with subscription name `sherlock-workers`
+      (Shared type — round-robin across replicas).
+
+      Requires `SHERLOCK_PULSAR_ENABLED=true` to be active.
+      On successful processing the message is acknowledged.
+      On any exception during `invoke_graph` a `negative_acknowledge`
+      is issued — Pulsar redelivers to another available replica.
+    messages:
+      DurableReasoningRequest:
+        $ref: '#/components/messages/DurableReasoningRequest'
+
+  sherlockResults:
+    address: persistent://public/default/sherlock-results
+    servers:
+      - $ref: '#/servers/pulsar'
+    description: |
+      Outbound Pulsar topic where Sherlock publishes results for durable requests.
+      Callers correlate responses using the `request_id` echoed from the original request.
+
+      Consumers should use a dedicated subscription per caller service.
+      Results are published only after the message is successfully processed;
+      failed requests are negatively-acked on the input topic without publishing here.
+    messages:
+      ReasoningResult:
+        $ref: '#/components/messages/ReasoningResult'
+
+operations:
+  receiveNatsRequest:
+    action: receive
+    channel:
+      $ref: '#/channels/sherlockRequest'
+    title: Receive NATS reasoning request
+    summary: Real-time reasoning request via NATS
+    description: |
+      Sherlock subscribes to `sherlock.request` in queue group `sherlock_workers`.
+
+      Processing flow:
+      1. Decode JSON payload → `{user_id, text}`
+      2. Call `invoke_graph(graph, memory, user_id, text)`
+      3. If `msg.reply` is set: publish result to ephemeral inbox via `msg.respond()`
+      4. If no `msg.reply` (fire-and-forget): skip respond, log and return
+
+      On exception: log error, respond with `{error: str, latency_ms: N}` if `msg.reply` set.
+    messages:
+      - $ref: '#/channels/sherlockRequest/messages/ReasoningRequest'
+
+  receivePulsarRequest:
+    action: receive
+    channel:
+      $ref: '#/channels/sherlockRequests'
+    title: Consume Pulsar durable reasoning task
+    summary: At-least-once durable reasoning via Pulsar
+    description: |
+      Sherlock's PulsarHandler consumes from `sherlock-requests` (Shared subscription).
+
+      Processing flow:
+      1. `consumer.receive(timeout_millis=5000)` via `asyncio.to_thread`
+      2. Spawn `asyncio.Task` per message (concurrent inference)
+      3. Decode JSON → `{request_id, user_id, text}`
+      4. Call `invoke_graph(graph, memory, user_id, text)`
+      5. `consumer.acknowledge(msg)` on success
+      6. `consumer.negative_acknowledge(msg)` on exception → redelivery
+
+      The consume loop itself never blocks the asyncio event loop.
+    messages:
+      - $ref: '#/channels/sherlockRequests/messages/DurableReasoningRequest'
+
+  publishPulsarResult:
+    action: send
+    channel:
+      $ref: '#/channels/sherlockResults'
+    title: Publish reasoning result to Pulsar
+    summary: Publish completed result for caller correlation
+    description: |
+      After successful `invoke_graph`, Sherlock publishes to `sherlock-results`.
+      Callers match results to requests via `request_id`.
+
+      Published via `asyncio.to_thread(producer.send, ...)` to avoid blocking.
+      Not published if graph raises an exception (caller receives nack + redelivery).
+    messages:
+      - $ref: '#/channels/sherlockResults/messages/ReasoningResult'
+
+components:
+  messages:
+    ReasoningRequest:
+      name: ReasoningRequest
+      title: NATS Reasoning Request
+      summary: Real-time request for Sherlock to reason about
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ReasoningRequestPayload'
+      examples:
+        - name: basic_request
+          summary: Single-turn request
+          payload:
+            user_id: "user-123"
+            text: "What are the main benefits of vector databases?"
+        - name: follow_up
+          summary: Follow-up leveraging conversation history
+          payload:
+            user_id: "user-123"
+            text: "Can you expand on the second point?"
+
+    DurableReasoningRequest:
+      name: DurableReasoningRequest
+      title: Pulsar Durable Reasoning Request
+      summary: Persistent reasoning task with caller-assigned correlation ID
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/DurableReasoningRequestPayload'
+      examples:
+        - name: batch_research
+          summary: Background research task
+          payload:
+            request_id: "req-abc-123"
+            user_id: "agent-researcher-7"
+            text: "Summarize the key themes from our last 10 conversations"
+        - name: document_analysis
+          summary: Long document analysis task
+          payload:
+            request_id: "req-def-456"
+            user_id: "agent-analyst-2"
+            text: "Analyze the attached context for inconsistencies"
+
+    ReasoningResult:
+      name: ReasoningResult
+      title: Pulsar Reasoning Result
+      summary: Completed reasoning result echoing the original request_id
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ReasoningResultPayload'
+      examples:
+        - name: successful_result
+          summary: Successful reasoning completion
+          payload:
+            request_id: "req-abc-123"
+            user_id: "agent-researcher-7"
+            text: "Across the last 10 conversations, three recurring themes emerge..."
+            latency_ms: 3750
+        - name: error_result
+          summary: Reasoning failed after retries
+          payload:
+            request_id: "req-def-456"
+            user_id: "agent-analyst-2"
+            error: "LLM unavailable after 3 retries"
+            latency_ms: 9100
+
+  schemas:
+    ReasoningRequestPayload:
+      type: object
+      required:
+        - user_id
+        - text
+      properties:
+        user_id:
+          type: string
+          description: |
+            Unique identifier for the user or agent session.
+            Used to scope Qdrant vector search and PostgreSQL history queries.
+          example: "user-123"
+          minLength: 1
+        text:
+          type: string
+          description: The message or question to reason about.
+          example: "What are the main benefits of vector databases?"
+          minLength: 1
+
+    DurableReasoningRequestPayload:
+      type: object
+      required:
+        - request_id
+        - user_id
+        - text
+      properties:
+        request_id:
+          type: string
+          description: |
+            Caller-assigned unique correlation ID. Echoed verbatim in the result
+            published to `sherlock-results`. Must be unique per request to avoid
+            result correlation ambiguity.
+          example: "req-abc-123"
+          minLength: 1
+        user_id:
+          type: string
+          description: |
+            Unique identifier for the user or agent session.
+            Scopes memory retrieval and persistence.
+          example: "agent-researcher-7"
+          minLength: 1
+        text:
+          type: string
+          description: The reasoning task description or question.
+          example: "Summarize the key themes from our last 10 conversations"
+          minLength: 1
+
+    ReasoningResultPayload:
+      type: object
+      required:
+        - request_id
+        - user_id
+        - latency_ms
+      properties:
+        request_id:
+          type: string
+          description: Echoed from the original DurableReasoningRequest for caller correlation.
+          example: "req-abc-123"
+        user_id:
+          type: string
+          description: Echoed from the original request.
+          example: "agent-researcher-7"
+        text:
+          type: string
+          description: |
+            Sherlock's reasoned response. Present on success.
+            Mutually exclusive with `error`.
+          example: "Across the last 10 conversations, three recurring themes emerge..."
+        error:
+          type: string
+          description: |
+            Error message when reasoning failed after all retries.
+            Present on failure. Mutually exclusive with `text`.
+          example: "LLM unavailable after 3 retries"
+        latency_ms:
+          type: integer
+          description: Total end-to-end processing time in milliseconds.
+          example: 3750
+          minimum: 0
