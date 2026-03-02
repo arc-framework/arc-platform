@@ -19,8 +19,27 @@ receivers:
           scrape_interval: 15s
           static_configs:
             - targets: ['arc-streaming:8080']
-        # arc-cache (Redis) metrics deferred — see tech debt TD-001
-        # TD-001: add oliver006/redis_exporter sidecar when dashboard is needed
+        # arc-gateway: Traefik Prometheus endpoint (traefik entrypoint = container:8081)
+        - job_name: arc-gateway
+          scrape_interval: 15s
+          static_configs:
+            - targets: ['arc-gateway:8081']
+        # arc-cache: redis_exporter sidecar (oliver006/redis_exporter, container:9121)
+        - job_name: arc-cache
+          scrape_interval: 15s
+          static_configs:
+            - targets: ['arc-cache-exporter:9121']
+        # arc-sql-db: postgres_exporter sidecar (prometheuscommunity/postgres-exporter, container:9187)
+        - job_name: arc-sql-db
+          scrape_interval: 15s
+          static_configs:
+            - targets: ['arc-sql-db-exporter:9187']
+        # arc-storage: MinIO native Prometheus endpoint (unauthenticated via MINIO_PROMETHEUS_AUTH_TYPE=public)
+        - job_name: arc-storage
+          scrape_interval: 15s
+          static_configs:
+            - targets: ['arc-storage:9000']
+          metrics_path: /minio/v2/metrics/cluster
 
 processors:
   batch:
