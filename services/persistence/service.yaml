@@ -3,7 +3,7 @@ role: sql-db
 codename: oracle
 image: ghcr.io/arc-framework/arc-sql-db:latest
 tech: postgres
-upstream: postgres:17-alpine
+upstream: pgvector/pgvector:17-alpine
 ports:
   - 5432   # PostgreSQL client
 health: docker exec arc-sql-db pg_isready -U arc

@@ -1,25 +1,27 @@
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 import structlog
-from qdrant_client import AsyncQdrantClient
-from qdrant_client.models import (
-    Distance,
-    FieldCondition,
-    Filter,
-    MatchValue,
-    PointStruct,
-    VectorParams,
-)
+from pgvector.asyncpg import register_vector
+from pgvector.sqlalchemy import Vector
 from sentence_transformers import SentenceTransformer
-from sqlalchemy import text
+from sqlalchemy import event, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 from sherlock.config import Settings
 
 _log = structlog.get_logger(__name__)
+
+
+# ─── MemoryBackend Protocol ───────────────────────────────────────────────────
+
+@runtime_checkable
+class MemoryBackend(Protocol):
+    async def search(self, user_id: str, query: str) -> list[str]: ...
+    async def save(self, user_id: str, role: str, content: str) -> None: ...
+    async def health_check(self) -> dict[str, bool]: ...
 
 
 # ─── ORM Model ────────────────────────────────────────────────────────────────
@@ -36,6 +38,7 @@ class Conversation(Base):
     user_id: Mapped[str] = mapped_column(index=True)
     role: Mapped[str]       # "human" | "ai"
     content: Mapped[str]
+    embedding: Mapped[list] = mapped_column(Vector(384), nullable=True)
     created_at: Mapped[datetime | None] = mapped_column(
         server_default=text("now()"), nullable=True
     )
@@ -44,13 +47,13 @@ class Conversation(Base):
 # ─── SherlockMemory ───────────────────────────────────────────────────────────
 
 class SherlockMemory:
-    """Dual-store memory: Qdrant (semantic search) + PostgreSQL (ordered history)."""
+    """Single-store memory: PostgreSQL + pgvector for semantic search and ordered history.
+
+    Implements: MemoryBackend
+    """
 
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
-        self._qdrant: AsyncQdrantClient = AsyncQdrantClient(
-            host=settings.qdrant_host, port=settings.qdrant_port
-        )
         self._engine: AsyncEngine = create_async_engine(settings.postgres_url)
         self._session_factory: Any = sessionmaker(
             self._engine, class_=AsyncSession, expire_on_commit=False
@@ -59,114 +62,67 @@ class SherlockMemory:
             settings.embedding_model
         )
         self._top_k: int = settings.context_top_k
-        self._collection: str = settings.qdrant_collection
         self._dim: int = settings.embedding_dim
 
-    async def init(self) -> None:
-        """Create Qdrant collection and PostgreSQL schema+table if absent.
+        # asyncpg requires the vector codec registered per connection
+        @event.listens_for(self._engine.sync_engine, "connect")
+        def _on_connect(dbapi_conn: Any, _: Any) -> None:
+            dbapi_conn.run_async(register_vector)
 
-        Best-effort: logs a warning and returns if deps are unreachable.
+    async def init(self) -> None:
+        """Create PostgreSQL schema, table, and HNSW vector index if absent.
+
+        Best-effort: logs a warning and returns if the database is unreachable.
         The service starts in degraded mode; /health/deep reports the status.
         """
         try:
-            collections = await self._qdrant.get_collections()
-            existing = {c.name for c in collections.collections}
-            if self._collection not in existing:
-                await self._qdrant.create_collection(
-                    collection_name=self._collection,
-                    vectors_config=VectorParams(size=self._dim, distance=Distance.COSINE),
-                )
-        except Exception as exc:
-            _log.warning("qdrant_unavailable_at_init", error=str(exc))
-
-        try:
             async with self._engine.begin() as conn:
                 await conn.execute(text("CREATE SCHEMA IF NOT EXISTS sherlock"))
+                await conn.run_sync(Base.metadata.create_all)
                 await conn.execute(
                     text(
-                        """
-                        CREATE TABLE IF NOT EXISTS sherlock.conversations (
-                            id          TEXT PRIMARY KEY,
-                            user_id     TEXT NOT NULL,
-                            role        TEXT NOT NULL,
-                            content     TEXT NOT NULL,
-                            created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
-                        )
-                        """
-                    )
-                )
-                await conn.execute(
-                    text(
-                        "CREATE INDEX IF NOT EXISTS idx_conversations_user_id "
-                        "ON sherlock.conversations (user_id)"
+                        "CREATE INDEX IF NOT EXISTS idx_conversations_embedding "
+                        "ON sherlock.conversations "
+                        "USING hnsw (embedding vector_cosine_ops)"
                     )
                 )
         except Exception as exc:
             _log.warning("postgres_unavailable_at_init", error=str(exc))
 
     async def search(self, user_id: str, text_query: str) -> list[str]:
-        """Encode query and search Qdrant with user_id filter; return top-k strings."""
+        """Encode query and search pgvector with user_id filter; return top-k strings."""
         vector: list[float] = self._encoder.encode(text_query).tolist()
-        results = await self._qdrant.search(
-            collection_name=self._collection,
-            query_vector=vector,
-            limit=self._top_k,
-            query_filter=Filter(
-                must=[
-                    FieldCondition(
-                        key="user_id",
-                        match=MatchValue(value=user_id),
-                    )
-                ]
-            ),
-        )
-        return [hit.payload["content"] for hit in results if hit.payload]
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(Conversation.content)
+                .where(Conversation.user_id == user_id)
+                .order_by(Conversation.embedding.cosine_distance(vector))
+                .limit(self._top_k)
+            )
+            return list(result.scalars().all())
 
     async def save(self, user_id: str, role: str, content: str) -> None:
-        """Persist a conversation turn to both Qdrant (vector) and PostgreSQL (row)."""
+        """Persist a conversation turn to PostgreSQL with vector embedding."""
         vector: list[float] = self._encoder.encode(content).tolist()
-        point_id = str(uuid.uuid4())
-
-        # Qdrant upsert
-        await self._qdrant.upsert(
-            collection_name=self._collection,
-            points=[
-                PointStruct(
-                    id=point_id,
-                    vector=vector,
-                    payload={"user_id": user_id, "role": role, "content": content},
-                )
-            ],
-        )
-
-        # PostgreSQL insert
         async with self._session_factory() as session:
             session.add(
                 Conversation(
-                    id=point_id,
+                    id=str(uuid.uuid4()),
                     user_id=user_id,
                     role=role,
                     content=content,
+                    embedding=vector,
                 )
             )
             await session.commit()
 
     async def health_check(self) -> dict[str, bool]:
-        """Probe Qdrant and PostgreSQL independently; one failure does not mask the other."""
-        qdrant_ok = False
+        """Probe PostgreSQL; returns {"postgres": bool}."""
         postgres_ok = False
-
-        try:
-            await self._qdrant.get_collections()
-            qdrant_ok = True
-        except Exception:
-            pass
-
         try:
             async with self._engine.connect() as conn:
                 await conn.execute(text("SELECT 1"))
             postgres_ok = True
         except Exception:
             pass
-
-        return {"qdrant": qdrant_ok, "postgres": postgres_ok}
+        return {"postgres": postgres_ok}

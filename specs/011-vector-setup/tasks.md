@@ -53,22 +53,22 @@ graph TD
 
 ### Parallel Batch — all Phase 1 tasks are independent
 
-- [ ] **[TASK-001]** [P] [REASONER] [P1] Define `MemoryBackend` Protocol in `memory.py`
+- [x] **[TASK-001]** [P] [REASONER] [P1] Define `MemoryBackend` Protocol in `memory.py`
   - Dependencies: none
   - Module: `services/reasoner/src/sherlock/memory.py`
   - Acceptance: `MemoryBackend(Protocol)` defined with `search`, `save`, `health_check` method signatures; `SherlockMemory` annotated as implementing it; mypy passes
 
-- [ ] **[TASK-010]** [P] [PERSISTENCE] [P1] Upgrade Oracle base image to pgvector
+- [x] **[TASK-010]** [P] [PERSISTENCE] [P1] Upgrade Oracle base image to pgvector
   - Dependencies: none
   - Module: `services/persistence/Dockerfile`, `services/persistence/service.yaml`, `services/persistence/initdb/003_enable_pgvector.sql`
   - Acceptance: Dockerfile uses `FROM pgvector/pgvector:17-alpine`; `003_enable_pgvector.sql` contains `CREATE EXTENSION IF NOT EXISTS vector;`; `service.yaml` upstream updated; `docker build services/persistence/` succeeds
 
-- [ ] **[TASK-022]** [P] [CORTEX] [P1] Add full OTEL env vars to Cortex docker-compose
+- [x] **[TASK-022]** [P] [CORTEX] [P1] Add full OTEL env vars to Cortex docker-compose
   - Dependencies: none
   - Module: `services/cortex/docker-compose.yml`
   - Acceptance: All 9 `OTEL_*` env vars present (`SERVICE_NAME`, `SERVICE_VERSION`, `DEPLOYMENT_ENVIRONMENT`, `RESOURCE_ATTRIBUTES`, `EXPORTER_OTLP_ENDPOINT`, `EXPORTER_OTLP_PROTOCOL`, `TRACES_SAMPLER`, `PROPAGATORS`, `LOG_LEVEL`); `OTEL_EXPORTER_OTLP_ENDPOINT` value is `http://arc-friday-collector:4317` (service DNS — not `localhost`); comment added: `# For local binary runs override with: OTEL_EXPORTER_OTLP_ENDPOINT=127.0.0.1:4317`; no Go source changes
 
-- [ ] **[TASK-023]** [P] [REASONER] [P1] Add full OTEL env vars + Docker healthcheck to Sherlock docker-compose
+- [x] **[TASK-023]** [P] [REASONER] [P1] Add full OTEL env vars + Docker healthcheck to Sherlock docker-compose
   - Dependencies: none
   - Module: `services/reasoner/docker-compose.yml`
   - Acceptance: All 9 `OTEL_*` env vars present; `OTEL_EXPORTER_OTLP_ENDPOINT` value is `http://arc-friday-collector:4317` (service DNS); `healthcheck:` block added (`wget -qO- http://localhost:8000/health`, interval=15s, retries=5, start_period=60s); `SHERLOCK_QDRANT_HOST` and `SHERLOCK_QDRANT_PORT` removed
@@ -77,7 +77,7 @@ graph TD
 
 ## Phase 2: Foundational
 
-- [ ] **[TASK-020]** [REASONER] [P1] Rewrite `SherlockMemory` for pgvector
+- [x] **[TASK-020]** [REASONER] [P1] Rewrite `SherlockMemory` for pgvector
   - Dependencies: TASK-001
   - Module: `services/reasoner/src/sherlock/memory.py`
   - Acceptance:
@@ -92,7 +92,7 @@ graph TD
     - `rg 'qdrant' services/reasoner/src/ --type py` returns zero matches
     - `SherlockMemory` satisfies `MemoryBackend` protocol — verified by `mypy --strict`
 
-- [ ] **[TASK-021]** [P] [REASONER] [P1] Remove Qdrant config settings and dependency
+- [x] **[TASK-021]** [P] [REASONER] [P1] Remove Qdrant config settings and dependency
   - Dependencies: TASK-001
   - Module: `services/reasoner/src/sherlock/config.py`, `services/reasoner/pyproject.toml`
   - Acceptance: `qdrant_host`, `qdrant_port`, `qdrant_collection` fields deleted from `Settings`; `qdrant-client>=1.9` removed from `pyproject.toml`; `pgvector>=0.3.0` added; `pip install` resolves cleanly
@@ -103,7 +103,7 @@ graph TD
 
 ### Parallel Batch A — depends on TASK-020
 
-- [ ] **[TASK-030]** [P] [REASONER] [P1] Rewrite `test_memory.py` for pgvector
+- [x] **[TASK-030]** [P] [REASONER] [P1] Rewrite `test_memory.py` for pgvector
   - Dependencies: TASK-020
   - Module: `services/reasoner/tests/test_memory.py`
   - Acceptance:
@@ -113,7 +113,7 @@ graph TD
     - Integration test with real async engine confirms vector codec loads: insert a row with embedding, retrieve it, verify cosine distance ordering
     - `make reasoner-test` passes (all 40 tests green)
 
-- [ ] **[TASK-031]** [P] [REASONER] [P1] Remove `qdrant` from health check response in `main.py` and `openapi.yaml`
+- [x] **[TASK-031]** [P] [REASONER] [P1] Remove `qdrant` from health check response in `main.py` and `openapi.yaml`
   - Dependencies: TASK-020
   - Module: `services/reasoner/src/sherlock/main.py`, `services/reasoner/contracts/openapi.yaml`
   - Acceptance:
@@ -142,12 +142,12 @@ graph TD
 
 ## Phase 5: Polish
 
-- [ ] **[TASK-050]** [P] [REASONER] [P2] Update `service.yaml` for Sherlock
+- [x] **[TASK-050]** [P] [REASONER] [P2] Update `service.yaml` for Sherlock
   - Dependencies: TASK-040
   - Module: `services/reasoner/service.yaml`
   - Acceptance: `vector-db` removed from `depends_on`; description updated (no mention of Qdrant); `healthcheck:` block added matching docker-compose values
 
-- [ ] **[TASK-900]** [P] [DOCS] [P2] Update docs and links
+- [x] **[TASK-900]** [P] [DOCS] [P2] Update docs and links
   - Dependencies: TASK-040
   - Module: `specs/011-vector-setup/spec.md`, `specs/index.md`, `services/reasoner/service.yaml`
   - Acceptance:

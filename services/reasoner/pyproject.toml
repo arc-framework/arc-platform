@@ -20,8 +20,8 @@ dependencies = [
     "langchain-openai>=0.2",
 
     # Vector store + embeddings
-    "qdrant-client>=1.9",
     "sentence-transformers>=3.0",
+    "pgvector>=0.3.0",
 
     # Relational storage
     "sqlalchemy>=2.0",

@@ -134,7 +134,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
 app = FastAPI(
     title="arc-sherlock",
-    description="LangGraph reasoning engine — Qdrant memory, NATS/Pulsar transports",
+    description="LangGraph reasoning engine — pgvector memory, NATS/Pulsar transports",
     version="0.1.0",
     lifespan=lifespan,
 )
@@ -247,13 +247,12 @@ async def health_deep(request: Request) -> DeepHealthResponse:
             content={
                 "status": "not_ready",
                 "version": "0.1.0",
-                "components": {"qdrant": False, "postgres": False, "nats": False},
+                "components": {"postgres": False, "nats": False},
             },
         )
 
     dep_health = await state.memory.health_check()
     components = {
-        "qdrant": dep_health.get("qdrant", False),
         "postgres": dep_health.get("postgres", False),
         "nats": state.nats.is_connected(),
     }

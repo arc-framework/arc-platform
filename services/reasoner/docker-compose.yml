@@ -23,9 +23,17 @@ services:
       - "127.0.0.1:8083:8000"   # localhost-only; cortex=8081, pulsar-admin=8082
     environment:
       SHERLOCK_POSTGRES_URL: "postgresql+asyncpg://arc:arc@arc-sql-db:5432/arc"
-      SHERLOCK_QDRANT_HOST: "arc-vector-db"
       SHERLOCK_NATS_URL: "nats://arc-messaging:4222"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://arc-friday-collector:4317"
+      # For local binary runs override with: OTEL_EXPORTER_OTLP_ENDPOINT=127.0.0.1:4317
+      OTEL_SERVICE_NAME: "arc-sherlock"
+      OTEL_SERVICE_VERSION: "0.1.0"
+      OTEL_DEPLOYMENT_ENVIRONMENT: "development"
+      OTEL_RESOURCE_ATTRIBUTES: "service.namespace=arc-platform,service.instance.id=arc-sherlock-1"
+      OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
+      OTEL_TRACES_SAMPLER: "always_on"
+      OTEL_PROPAGATORS: "tracecontext,baggage"
+      OTEL_LOG_LEVEL: "warn"
       # LM Studio runs on the host — host.docker.internal resolves to the Mac from inside the container
       SHERLOCK_LLM_BASE_URL: "http://host.docker.internal:1234/v1"
       # SHERLOCK_LLM_SUPPORTS_SYSTEM_ROLE — omitted: auto-detected from model name.
@@ -37,7 +45,7 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 30s   # sentence-transformers model download on first cold start
+      start_period: 60s   # sentence-transformers model download on first cold start
     networks:
       - arc_platform_net
       - arc_otel_net

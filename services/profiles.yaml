@@ -12,7 +12,6 @@ think:
     - streaming
     - cortex
     - sql-db
-    - vector-db
     - gateway
     - friday-collector
     - reasoner

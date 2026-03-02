@@ -1,4 +1,4 @@
-FROM postgres:17-alpine
+FROM pgvector/pgvector:17-alpine
 
 LABEL org.opencontainers.image.title="ARC Oracle — Persistence"
 LABEL org.opencontainers.image.description="PostgreSQL 17 persistence layer for the A.R.C. Platform"

@@ -17,7 +17,7 @@ statically rendered site with full-text search and mermaid diagram support.
 | 007 | Voice Stack | Implemented | [spec](007-voice-stack/spec.md) |
 | 008 | Specs Site | Implemented | [spec](008-specs-site/spec.md) |
 | 009 | Sherlock Reasoning | Implemented | [spec](009-sherlock-reasoning/spec.md) |
-| 011 | Vector Setup | Draft | [spec](011-vector-setup/spec.md) |
+| 011 | Vector Setup | Implemented | [spec](011-vector-setup/spec.md) |
 
 ## Local Development
 

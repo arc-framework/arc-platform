@@ -19,13 +19,6 @@ class Settings(BaseSettings):
         alias="SHERLOCK_POSTGRES_URL",
     )
 
-    # Qdrant (Cerebro — vector semantic search)
-    qdrant_host: str = Field("arc-vector-db", alias="SHERLOCK_QDRANT_HOST")
-    qdrant_port: int = Field(6333, alias="SHERLOCK_QDRANT_PORT")
-    qdrant_collection: str = Field(
-        "sherlock_conversations", alias="SHERLOCK_QDRANT_COLLECTION"
-    )
-
     # NATS (Flash — real-time request-reply)
     nats_url: str = Field("nats://arc-messaging:4222", alias="SHERLOCK_NATS_URL")
     nats_enabled: bool = Field(True, alias="SHERLOCK_NATS_ENABLED")
