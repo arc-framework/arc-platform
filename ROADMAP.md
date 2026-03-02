@@ -493,7 +493,7 @@ gantt
     axisFormat %b %Y
 
     section Phase 1 — Intelligence
-    009 Sherlock Reasoning     :active, p009, 2026-03-01, 21d
+    009 Sherlock Reasoning     :done, p009, 2026-03-01, 21d
     010 Scarlett Voice         :p010, after p009, 14d
     011 Agent Memory SDK       :p011, after p009, 10d
     012 Multi-Agent            :p012, after p011, 14d
