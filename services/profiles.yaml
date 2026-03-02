@@ -5,27 +5,23 @@
 # ─── think ──────────────────────────────────────────────────────
 # Basic reasoning — minimal services to run an agent
 think:
-  description: 'Minimal viable platform — just enough to think'
+  description: 'Default dev stack — core infra + reasoner + observability, no secrets/flags/storage'
   services:
     - messaging
     - cache
     - streaming
-    - friday-collector
     - cortex
     - sql-db
     - vector-db
     - gateway
-    - realtime
+    - friday-collector
+    - reasoner
 
 # ─── reason ─────────────────────────────────────────────────────
 # Full reasoning stack — observability, identity, bootstrap
 reason:
   description: 'Development stack — think profile + observability'
   services:
-    - cortex
-    - messaging
-    - streaming
-    - cache
     - otel
     - storage
     - vault

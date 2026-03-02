@@ -1,0 +1,286 @@
+openapi: 3.1.0
+
+info:
+  title: Sherlock Reasoning Service
+  version: 0.1.0
+  description: |
+    LangGraph reasoning engine with dual-store memory (Qdrant + PostgreSQL).
+    Accepts reasoning requests over HTTP (sync). For inter-service messaging
+    see `asyncapi.yaml` — NATS request-reply and Pulsar durable async.
+  contact:
+    name: A.R.C. Platform
+    url: https://github.com/arc-framework/arc-platform
+
+servers:
+  - url: http://localhost:8083
+    description: Local development
+
+tags:
+  - name: reasoning
+    description: Core reasoning endpoints
+  - name: health
+    description: Service health and readiness probes
+
+paths:
+  /chat:
+    post:
+      operationId: chat
+      tags: [reasoning]
+      summary: Submit a reasoning request
+      description: |
+        Synchronous reasoning request. Sherlock retrieves semantic context from Qdrant,
+        generates a response via Ollama (LangGraph graph), and persists both turns to
+        Qdrant and PostgreSQL before returning.
+
+        Latency is bounded by LLM inference time (default model: `mistral:7b`).
+        For long-running tasks prefer NATS request-reply or Pulsar durable async.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+            examples:
+              basic:
+                summary: First message
+                value:
+                  user_id: "user-123"
+                  text: "What is the capital of France?"
+              follow_up:
+                summary: Follow-up using conversation history
+                value:
+                  user_id: "user-123"
+                  text: "What language do they speak there?"
+      responses:
+        '200':
+          description: Reasoning completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResponse'
+              examples:
+                success:
+                  value:
+                    user_id: "user-123"
+                    text: "The capital of France is Paris."
+                    latency_ms: 1250
+        '422':
+          description: Validation error — missing or invalid fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+              examples:
+                missing_user_id:
+                  value:
+                    detail:
+                      - loc: ["body", "user_id"]
+                        msg: "Field required"
+                        type: "missing"
+        '500':
+          description: Internal error during graph execution
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                llm_error:
+                  value:
+                    detail: "LLM unavailable after 3 retries"
+        '503':
+          description: Service not ready — startup incomplete
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                not_ready:
+                  value:
+                    detail: "Service not ready"
+
+  /health:
+    get:
+      operationId: health
+      tags: [health]
+      summary: Shallow liveness check
+      description: |
+        Always returns 200 if the process is alive and the NATS connection
+        was established during startup. Does NOT probe Qdrant or PostgreSQL.
+        Use `/health/deep` for readiness checks.
+      responses:
+        '200':
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              examples:
+                alive:
+                  value:
+                    status: "ok"
+                    version: "0.1.0"
+
+  /health/deep:
+    get:
+      operationId: health_deep
+      tags: [health]
+      summary: Deep readiness check
+      description: |
+        Probes all dependencies — Qdrant, PostgreSQL, and NATS — and returns
+        per-component status. Returns 503 if any dependency is degraded.
+        Used by Docker healthcheck and the CLI `make dev-health` target.
+      responses:
+        '200':
+          description: All dependencies healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeepHealthResponse'
+              examples:
+                all_healthy:
+                  value:
+                    status: "ok"
+                    version: "0.1.0"
+                    components:
+                      qdrant: true
+                      postgres: true
+                      nats: true
+        '503':
+          description: One or more dependencies are unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeepHealthResponse'
+              examples:
+                qdrant_down:
+                  value:
+                    status: "degraded"
+                    version: "0.1.0"
+                    components:
+                      qdrant: false
+                      postgres: true
+                      nats: true
+
+components:
+  schemas:
+    ChatRequest:
+      type: object
+      required:
+        - user_id
+        - text
+      properties:
+        user_id:
+          type: string
+          description: Unique identifier for the user session. Used to scope memory and context retrieval.
+          example: "user-123"
+          minLength: 1
+        text:
+          type: string
+          description: The user's message to reason about.
+          example: "What is the capital of France?"
+          minLength: 1
+
+    ChatResponse:
+      type: object
+      required:
+        - user_id
+        - text
+        - latency_ms
+      properties:
+        user_id:
+          type: string
+          description: Echo of the request user_id.
+          example: "user-123"
+        text:
+          type: string
+          description: Sherlock's reasoned response.
+          example: "The capital of France is Paris."
+        latency_ms:
+          type: integer
+          description: Total end-to-end processing time in milliseconds.
+          example: 1250
+          minimum: 0
+
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - version
+      properties:
+        status:
+          type: string
+          enum: [ok]
+          example: "ok"
+        version:
+          type: string
+          description: Service version from settings.
+          example: "0.1.0"
+
+    DeepHealthResponse:
+      type: object
+      required:
+        - status
+        - version
+        - components
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+          example: "ok"
+        version:
+          type: string
+          example: "0.1.0"
+        components:
+          type: object
+          required:
+            - qdrant
+            - postgres
+            - nats
+          properties:
+            qdrant:
+              type: boolean
+              description: Qdrant (Cerebro) reachable and collection exists.
+              example: true
+            postgres:
+              type: boolean
+              description: PostgreSQL (Oracle) reachable and schema initialized.
+              example: true
+            nats:
+              type: boolean
+              description: NATS (Flash) connection established.
+              example: true
+
+    ErrorResponse:
+      type: object
+      required:
+        - detail
+      properties:
+        detail:
+          type: string
+          example: "Service not ready"
+
+    ValidationError:
+      type: object
+      required:
+        - detail
+      properties:
+        detail:
+          type: array
+          items:
+            type: object
+            required:
+              - loc
+              - msg
+              - type
+            properties:
+              loc:
+                type: array
+                items:
+                  type: string
+                example: ["body", "user_id"]
+              msg:
+                type: string
+                example: "Field required"
+              type:
+                type: string
+                example: "missing"

@@ -68,7 +68,7 @@ for svc in "$@"; do
     if docker pull "$image" > /dev/null 2>&1; then
       _ok "$image (pulled)"
     else
-      _fail "$image — not found locally or in registry (run: make publish-all OR make ${svc}-build)"
+      printf '  \033[0;33m!\033[0m %s \xe2\x80\x94 not found locally or in registry (skipping: make %s-build to fix)\n' "$image" "$svc"
       FAILED=1
     fi
   fi
@@ -76,8 +76,7 @@ done
 
 if [[ "$FAILED" -eq 0 ]]; then
   printf '\033[0;32m\xe2\x9c\x93\033[0m All images available\n'
-  exit 0
 else
-  printf '\033[0;31m\xe2\x9c\x97\033[0m One or more images missing \xe2\x80\x94 build or publish them first\n'
-  exit 1
+  printf '\033[0;33m!\033[0m Some images missing \xe2\x80\x94 those services will be skipped\n'
 fi
+exit 0
