@@ -4,7 +4,7 @@
 
 ## Table of Contents
 
-### 001 — OTEL Setup
+### 001 — Otel Setup
 
 - [Feature: 001-otel-setup — Stand Up SigNoz as the Observability Backend](/arc-platform/specs-site/001-otel-setup/spec.md)
 - [Implementation Plan: 001-otel-setup — Stand Up SigNoz as the Observability Backend](/arc-platform/specs-site/001-otel-setup/plan.md)
@@ -57,9 +57,10 @@
 - [Tasks: Specs Documentation Site](/arc-platform/specs-site/008-specs-site/tasks.md)
 - [Analysis Report: 008-Specs-Site](/arc-platform/specs-site/008-specs-site/analysis-report.md)
 
-### Other
+### 009 — Sherlock Reasoning
 
-- [Analysis Report: Sherlock Reasoning Service (Re-Audit Post-Fixes)](/arc-platform/specs-site/009-sherlock-reasoning/analysis-report.md)
 - [Feature: Sherlock Reasoning Service](/arc-platform/specs-site/009-sherlock-reasoning/spec.md)
 - [Implementation Plan: Sherlock Reasoning Service](/arc-platform/specs-site/009-sherlock-reasoning/plan.md)
 - [Tasks: Sherlock Reasoning Service](/arc-platform/specs-site/009-sherlock-reasoning/tasks.md)
+- [Analysis Report: Sherlock Reasoning Service (Re-Audit Post-Fixes)](/arc-platform/specs-site/009-sherlock-reasoning/analysis-report.md)
+
