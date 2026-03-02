@@ -96,7 +96,7 @@ graph TD
 
 ## Phase 1: Setup
 
-- [ ] **[TASK-001]** `[SERVICES]` `[P1]` Scaffold `services/reasoner/` directory and `pyproject.toml`
+- [x] **[TASK-001]** `[SERVICES]` `[P1]` Scaffold `services/reasoner/` directory and `pyproject.toml`
   - Dependencies: none
   - Module: `services/reasoner/`
   - Acceptance:
@@ -110,7 +110,7 @@ graph TD
 
 ## Phase 2: Foundational
 
-- [ ] **[TASK-010]** `[SERVICES]` `[P1]` Implement `config.py` — Pydantic BaseSettings foundation
+- [x] **[TASK-010]** `[SERVICES]` `[P1]` Implement `config.py` — Pydantic BaseSettings foundation
   - Dependencies: TASK-001
   - Module: `services/reasoner/src/sherlock/config.py`
   - Acceptance:
@@ -127,7 +127,7 @@ graph TD
 
 ### Parallel Batch A — Independent modules (all depend only on config.py)
 
-- [ ] **[TASK-020]** `[P]` `[SERVICES]` `[P1]` Implement `observability.py` — OTEL + structlog
+- [x] **[TASK-020]** `[P]` `[SERVICES]` `[P1]` Implement `observability.py` — OTEL + structlog
   - Dependencies: TASK-010
   - Module: `services/reasoner/src/sherlock/observability.py`
   - Acceptance:
@@ -142,7 +142,7 @@ graph TD
     - `mypy src/sherlock/observability.py` passes clean
   - Status: [x]
 
-- [ ] **[TASK-021]** `[P]` `[SERVICES]` `[P1]` Implement `memory.py` — dual-store SherlockMemory
+- [x] **[TASK-021]** `[P]` `[SERVICES]` `[P1]` Implement `memory.py` — dual-store SherlockMemory
   - Dependencies: TASK-010
   - Module: `services/reasoner/src/sherlock/memory.py`
   - Acceptance:
@@ -157,7 +157,7 @@ graph TD
 
 ### Parallel Batch B — Graph (depends on memory.py)
 
-- [ ] **[TASK-030]** `[SERVICES]` `[P1]` Implement `graph.py` — LangGraph 1.0.x state machine
+- [x] **[TASK-030]** `[SERVICES]` `[P1]` Implement `graph.py` — LangGraph 1.0.x state machine
   - Dependencies: TASK-021
   - Module: `services/reasoner/src/sherlock/graph.py`
   - Acceptance:
@@ -173,7 +173,7 @@ graph TD
 
 ### Parallel Batch C — Transport handlers (both depend on graph.py)
 
-- [ ] **[TASK-031]** `[P]` `[SERVICES]` `[P1]` Implement `nats_handler.py` — NATS request-reply handler
+- [x] **[TASK-031]** `[P]` `[SERVICES]` `[P1]` Implement `nats_handler.py` — NATS request-reply handler
   - Dependencies: TASK-030
   - Module: `services/reasoner/src/sherlock/nats_handler.py`
   - Acceptance:
@@ -188,7 +188,7 @@ graph TD
     - `mypy src/sherlock/nats_handler.py` passes clean
   - Status: [x]
 
-- [ ] **[TASK-032]** `[P]` `[SERVICES]` `[P2]` Implement `pulsar_handler.py` — durable async Pulsar consumer
+- [x] **[TASK-032]** `[P]` `[SERVICES]` `[P2]` Implement `pulsar_handler.py` — durable async Pulsar consumer
   - Dependencies: TASK-030
   - Module: `services/reasoner/src/sherlock/pulsar_handler.py`
   - Acceptance:
@@ -205,7 +205,7 @@ graph TD
 
 ### Parallel Batch D — Infrastructure files (depend only on T001 scaffold)
 
-- [ ] **[TASK-033]** `[P]` `[SERVICES]` `[P1]` Write `Dockerfile` — multi-stage Alpine, non-root
+- [x] **[TASK-033]** `[P]` `[SERVICES]` `[P1]` Write `Dockerfile` — multi-stage Alpine, non-root
   - Dependencies: TASK-001
   - Module: `services/reasoner/Dockerfile`
   - Acceptance:
@@ -218,7 +218,7 @@ graph TD
     - Comment noting `python:3.13-slim` fallback for arm64 Alpine failures
   - Status: [x]
 
-- [ ] **[TASK-034]** `[P]` `[SERVICES]` `[P1]` Write `docker-compose.yml` — arc-sherlock service definition
+- [x] **[TASK-034]** `[P]` `[SERVICES]` `[P1]` Write `docker-compose.yml` — arc-sherlock service definition
   - Dependencies: TASK-001
   - Module: `services/reasoner/docker-compose.yml`
   - Acceptance:
@@ -231,7 +231,7 @@ graph TD
     - `image: ghcr.io/arc-framework/arc-sherlock:latest`
   - Status: [x]
 
-- [ ] **[TASK-035]** `[P]` `[SERVICES]` `[P1]` Write `service.yaml` — service registry metadata
+- [x] **[TASK-035]** `[P]` `[SERVICES]` `[P1]` Write `service.yaml` — service registry metadata
   - Dependencies: TASK-001
   - Module: `services/reasoner/service.yaml`
   - Acceptance:
@@ -239,7 +239,7 @@ graph TD
     - `depends_on` lists exactly: `sql-db`, `vector-db`, `messaging`, `streaming`, `friday-collector`
   - Status: [x]
 
-- [ ] **[TASK-036]** `[P]` `[SERVICES]` `[P1]` Write `reasoner.mk` — Make targets following cortex.mk pattern
+- [x] **[TASK-036]** `[P]` `[SERVICES]` `[P1]` Write `reasoner.mk` — Make targets following cortex.mk pattern
   - Dependencies: TASK-001
   - Module: `services/reasoner/reasoner.mk`
   - Acceptance:
@@ -254,7 +254,7 @@ graph TD
 
 ## Phase 4: Integration
 
-- [ ] **[TASK-040]** `[SERVICES]` `[P1]` Implement `main.py` — FastAPI app with AppState dataclass and lifespan
+- [x] **[TASK-040]** `[SERVICES]` `[P1]` Implement `main.py` — FastAPI app with AppState dataclass and lifespan
   - Dependencies: TASK-020, TASK-030, TASK-031, TASK-032
   - Module: `services/reasoner/src/sherlock/main.py`
   - Acceptance:
@@ -270,7 +270,7 @@ graph TD
     - `mypy src/sherlock/main.py` passes clean
   - Status: [x]
 
-- [ ] **[TASK-041]** `[SERVICES]` `[P1]` Write `tests/conftest.py` — shared test fixtures
+- [x] **[TASK-041]** `[SERVICES]` `[P1]` Write `tests/conftest.py` — shared test fixtures
   - Dependencies: TASK-040
   - Module: `services/reasoner/tests/conftest.py`
   - Acceptance:
@@ -284,7 +284,7 @@ graph TD
 
 ### Parallel Batch — Tests (all depend on T041 conftest)
 
-- [ ] **[TASK-050]** `[P]` `[SERVICES]` `[P1]` Write `tests/test_api.py` — HTTP endpoint tests
+- [x] **[TASK-050]** `[P]` `[SERVICES]` `[P1]` Write `tests/test_api.py` — HTTP endpoint tests
   - Dependencies: TASK-041
   - Module: `services/reasoner/tests/test_api.py`
   - Acceptance:
@@ -298,7 +298,7 @@ graph TD
     - **[GAP-2]** `test_chat_response_matches_openapi_schema`: load `contracts/openapi.yaml`, extract `ChatResponse` schema, validate actual response JSON with `jsonschema.validate()` — catches silent contract drift
   - Status: [x]
 
-- [ ] **[TASK-051]** `[P]` `[SERVICES]` `[P1]` Write `tests/test_graph.py` — LangGraph state machine tests
+- [x] **[TASK-051]** `[P]` `[SERVICES]` `[P1]` Write `tests/test_graph.py` — LangGraph state machine tests
   - Dependencies: TASK-041
   - Module: `services/reasoner/tests/test_graph.py`
   - Acceptance:
@@ -309,7 +309,7 @@ graph TD
     - `test_error_handler_triggered_on_llm_failure`: when `llm.ainvoke` raises, `error_handler` node is entered; after 3 retries returns error string (not exception)
   - Status: [x]
 
-- [ ] **[TASK-052]** `[P]` `[SERVICES]` `[P1]` Write `tests/test_memory.py` — dual-store memory tests
+- [x] **[TASK-052]** `[P]` `[SERVICES]` `[P1]` Write `tests/test_memory.py` — dual-store memory tests
   - Dependencies: TASK-041
   - Module: `services/reasoner/tests/test_memory.py`
   - Acceptance:
@@ -321,7 +321,7 @@ graph TD
     - `test_health_check_both_healthy`: returns `{"qdrant":True,"postgres":True}`
   - Status: [x]
 
-- [ ] **[TASK-053]** `[P]` `[SERVICES]` `[P1]` Write `tests/test_nats_handler.py` — NATS handler tests
+- [x] **[TASK-053]** `[P]` `[SERVICES]` `[P1]` Write `tests/test_nats_handler.py` — NATS handler tests
   - Dependencies: TASK-041
   - Module: `services/reasoner/tests/test_nats_handler.py`
   - Acceptance:
@@ -332,7 +332,7 @@ graph TD
     - **[GAP-2]** `test_nats_request_payload_matches_asyncapi_schema`: load `contracts/asyncapi.yaml`, extract `ReasoningRequestPayload` schema, validate test payload with `jsonschema.validate()`
   - Status: [x]
 
-- [ ] **[TASK-054]** `[P]` `[SERVICES]` `[P2]` Write `tests/test_pulsar_handler.py` — PulsarHandler tests
+- [x] **[TASK-054]** `[P]` `[SERVICES]` `[P2]` Write `tests/test_pulsar_handler.py` — PulsarHandler tests
   - Dependencies: TASK-041
   - Module: `services/reasoner/tests/test_pulsar_handler.py`
   - Acceptance:
@@ -348,7 +348,7 @@ graph TD
 
 ## Phase 5: Polish
 
-- [ ] **[TASK-060]** `[SERVICES]` `[P1]` Modify `services/profiles.yaml` — add Sherlock to `reason` profile
+- [x] **[TASK-060]** `[SERVICES]` `[P1]` Modify `services/profiles.yaml` — add Sherlock to `reason` profile
   - Dependencies: TASK-035
   - Module: `services/profiles.yaml`
   - Acceptance:
@@ -358,7 +358,7 @@ graph TD
     - `make dev-regen && grep sherlock .make/registry.mk` returns `SERVICE_reasoner_HEALTH` entry
   - Status: [x]
 
-- [ ] **[TASK-061]** `[SERVICES]` `[P1]` Modify root `Makefile` — include reasoner.mk
+- [x] **[TASK-061]** `[SERVICES]` `[P1]` Modify root `Makefile` — include reasoner.mk
   - Dependencies: TASK-036
   - Module: `Makefile`
   - Acceptance:
@@ -367,7 +367,7 @@ graph TD
     - `make reasoner-test` and `make reasoner-lint` reachable from repo root
   - Status: [x]
 
-- [ ] **[TASK-900]** `[P]` `[DOCS]` `[P1]` Docs & links update
+- [x] **[TASK-900]** `[P]` `[DOCS]` `[P1]` Docs & links update
   - Dependencies: TASK-040
   - Module: `docs/`, `CLAUDE.md`, `specs/`
   - Acceptance:
@@ -378,7 +378,7 @@ graph TD
     - All internal links in spec.md, plan.md, and contracts/ are valid
   - Status: [x]
 
-- [ ] **[TASK-999]** `[REVIEW]` `[P1]` Reviewer agent verification
+- [x] **[TASK-999]** `[REVIEW]` `[P1]` Reviewer agent verification
   - Dependencies: ALL (T001–T900)
   - Module: all affected modules
   - Acceptance:
