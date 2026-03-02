@@ -1,6 +1,6 @@
 import json
 import time
-from typing import Any, Optional
+from typing import Any
 
 import nats
 from nats.aio.client import Client as NATSClient
@@ -30,7 +30,7 @@ class NATSHandler:
         self._memory = memory
         self._settings = settings
         self._metrics = metrics
-        self._nc: Optional[NATSClient] = None
+        self._nc: NATSClient | None = None
 
     async def connect(self) -> None:
         """Establish NATS connection."""
@@ -78,7 +78,9 @@ class NATSHandler:
                 await msg.respond(error_payload.encode())
 
     def is_connected(self) -> bool:
-        """Return True if the NATS connection is active."""
+        """Return True if the NATS connection is active, or if NATS is disabled."""
+        if not self._settings.nats_enabled:
+            return True
         return self._nc is not None and self._nc.is_connected
 
     async def close(self) -> None:

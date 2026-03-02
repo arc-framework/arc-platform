@@ -17,7 +17,7 @@ dependencies = [
     # LangGraph + LLM
     "langgraph>=1.0",
     "langchain-core>=0.3",
-    "langchain-ollama>=0.2",
+    "langchain-openai>=0.2",
 
     # Vector store + embeddings
     "qdrant-client>=1.9",
@@ -26,6 +26,7 @@ dependencies = [
     # Relational storage
     "sqlalchemy>=2.0",
     "asyncpg>=0.30",
+    "greenlet>=3.0",
 
     # Messaging
     "nats-py>=2.9",

@@ -6,5 +6,5 @@ tech: postgres
 upstream: postgres:17-alpine
 ports:
   - 5432   # PostgreSQL client
-health: pg_isready -U arc
+health: docker exec arc-sql-db pg_isready -U arc
 depends_on: []

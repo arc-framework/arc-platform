@@ -1,19 +1,20 @@
 from __future__ import annotations
 
 import time
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from typing import Any, AsyncGenerator, Optional
+from typing import Any
 
 import structlog
 from faker import Faker
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
-from langchain_ollama import ChatOllama
 from pydantic import BaseModel, field_validator
 
 from sherlock.config import Settings
 from sherlock.graph import GraphErrorResponse, build_graph, invoke_graph
+from sherlock.llm_factory import create_llm
 from sherlock.memory import SherlockMemory
 from sherlock.nats_handler import NATSHandler
 from sherlock.observability import (
@@ -68,13 +69,13 @@ class AppState:
     graph: Any
     nats: NATSHandler
     metrics: SherlockMetrics
-    pulsar: Optional[PulsarHandler] = field(default=None)
+    pulsar: PulsarHandler | None = field(default=None)
 
 
 # ─── Lifespan ─────────────────────────────────────────────────────────────────
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """Startup / shutdown sequence — all singletons created here, never at module scope."""
     settings = Settings()
 
@@ -91,16 +92,22 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     memory = SherlockMemory(settings)
     await memory.init()
 
-    llm = ChatOllama(model=settings.llm_model, base_url=settings.llm_base_url)
-    graph = build_graph(memory, llm)
+    llm, supports_system_role = create_llm(settings)
+    graph = build_graph(
+        memory,
+        llm,
+        supports_system_role=supports_system_role,
+        system_prompt=settings.system_prompt,
+    )
 
     metrics = SherlockMetrics()
 
     nats_handler = NATSHandler(graph, memory, settings, metrics)
-    await nats_handler.connect()
-    await nats_handler.subscribe()
+    if settings.nats_enabled:
+        await nats_handler.connect()
+        await nats_handler.subscribe()
 
-    pulsar_handler: Optional[PulsarHandler] = None
+    pulsar_handler: PulsarHandler | None = None
     if settings.pulsar_enabled:
         pulsar_handler = PulsarHandler(graph, memory, settings, metrics)
         await pulsar_handler.start()
@@ -173,7 +180,7 @@ async def chat(body: ChatRequest, request: Request) -> ChatResponse:
     try:
         state = _get_state(request)
     except AttributeError:
-        raise HTTPException(status_code=503, detail="Service not ready")
+        raise HTTPException(status_code=503, detail="Service not ready") from None
 
     if state.graph is None:
         raise HTTPException(status_code=503, detail="Service not ready")

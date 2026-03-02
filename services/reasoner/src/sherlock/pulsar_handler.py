@@ -1,7 +1,8 @@
 import asyncio
+import contextlib
 import json
 import time
-from typing import Any, Optional
+from typing import Any
 
 import pulsar
 
@@ -39,10 +40,10 @@ class PulsarHandler:
         self._memory = memory
         self._settings = settings
         self._metrics = metrics
-        self._client: Optional[pulsar.Client] = None
-        self._consumer: Optional[Any] = None
-        self._producer: Optional[Any] = None
-        self._task: Optional[asyncio.Task[None]] = None
+        self._client: pulsar.Client | None = None
+        self._consumer: Any | None = None
+        self._producer: Any | None = None
+        self._task: asyncio.Task[None] | None = None
 
     def _connect(self) -> None:
         """Blocking connection setup (called via asyncio.to_thread)."""
@@ -136,9 +137,7 @@ class PulsarHandler:
         """Cancel the consume task and close the Pulsar client."""
         if self._task is not None:
             self._task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._task
-            except asyncio.CancelledError:
-                pass
         if self._client is not None:
             await asyncio.to_thread(self._client.close)

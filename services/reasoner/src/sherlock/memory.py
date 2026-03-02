@@ -1,8 +1,8 @@
-import logging
 import uuid
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
+import structlog
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import (
     Distance,
@@ -19,7 +19,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 from sherlock.config import Settings
 
-_log = logging.getLogger(__name__)
+_log = structlog.get_logger(__name__)
 
 
 # ─── ORM Model ────────────────────────────────────────────────────────────────
@@ -36,7 +36,7 @@ class Conversation(Base):
     user_id: Mapped[str] = mapped_column(index=True)
     role: Mapped[str]       # "human" | "ai"
     content: Mapped[str]
-    created_at: Mapped[Optional[datetime]] = mapped_column(
+    created_at: Mapped[datetime | None] = mapped_column(
         server_default=text("now()"), nullable=True
     )
 

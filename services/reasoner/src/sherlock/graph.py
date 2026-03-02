@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import logging
-from typing import Annotated, Any, Optional
+from typing import Annotated, Any
 
-_log = logging.getLogger(__name__)
-
+import structlog
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import END, START, StateGraph
@@ -12,6 +10,8 @@ from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
 
 from sherlock.memory import SherlockMemory
+
+_log = structlog.get_logger(__name__)
 
 MAX_RETRIES = 3
 
@@ -37,8 +37,8 @@ class GraphErrorResponse(Exception):
 class AgentState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
     user_id: str
-    context: Optional[list[str]]
-    final_response: Optional[str]
+    context: list[str] | None
+    final_response: str | None
     error_count: int
     is_error: bool   # True when error_handler exhausted retries (Path A)
 
@@ -59,23 +59,28 @@ def _make_retrieve_context(memory: SherlockMemory) -> Any:
     return retrieve_context
 
 
-def _make_generate_response(llm: Any) -> Any:
+def _make_generate_response(
+    llm: Any,
+    *,
+    supports_system_role: bool = True,
+    system_prompt: str = "",
+) -> Any:
     async def generate_response(state: AgentState) -> dict[str, Any]:
         context_chunks = state.get("context") or []
         context_text = "\n".join(context_chunks) if context_chunks else "No prior context."
+        preamble = f"{system_prompt}\n\nContext:\n{context_text}"
 
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                SystemMessage(
-                    content=(
-                        "You are Sherlock, an analytical reasoning assistant. "
-                        "Use the following conversation context to inform your reply.\n\n"
-                        f"Context:\n{context_text}"
-                    )
-                ),
-                *state["messages"],
-            ]
-        )
+        if supports_system_role:
+            # OpenAI, Anthropic, ChatML — dedicated system slot
+            messages: list[BaseMessage] = [SystemMessage(content=preamble), *state["messages"]]
+        else:
+            # Mistral instruct, Llama 2, etc. — no system slot; prepend to first human turn
+            human_msgs = list(state["messages"])
+            if human_msgs and isinstance(human_msgs[0], HumanMessage):
+                human_msgs[0] = HumanMessage(content=f"{preamble}\n\n{human_msgs[0].content}")
+            messages = human_msgs
+
+        prompt = ChatPromptTemplate.from_messages(messages)
         chain = prompt | llm
         response = await chain.ainvoke({})
         text = response.content if hasattr(response, "content") else str(response)
@@ -135,12 +140,25 @@ def _route_after_error_handler(state: AgentState) -> str:
 
 # ─── Graph Builder ────────────────────────────────────────────────────────────
 
-def build_graph(memory: SherlockMemory, llm: Any) -> Any:
+def build_graph(
+    memory: SherlockMemory,
+    llm: Any,
+    *,
+    supports_system_role: bool = True,
+    system_prompt: str = "",
+) -> Any:
     """Build and compile the LangGraph 1.0.x state machine."""
     workflow: StateGraph = StateGraph(AgentState)
 
     workflow.add_node("retrieve_context", _make_retrieve_context(memory))
-    workflow.add_node("generate_response", _make_generate_response(llm))
+    workflow.add_node(
+        "generate_response",
+        _make_generate_response(
+            llm,
+            supports_system_role=supports_system_role,
+            system_prompt=system_prompt,
+        ),
+    )
     workflow.add_node("error_handler", _make_error_handler(llm))
 
     workflow.add_edge(START, "retrieve_context")

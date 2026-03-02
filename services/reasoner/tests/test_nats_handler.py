@@ -30,6 +30,7 @@ def _make_settings() -> MagicMock:
     s.nats_url = "nats://localhost:4222"
     s.nats_subject = "sherlock.request"
     s.nats_queue_group = "sherlock_workers"
+    s.nats_enabled = True
     return s
 
 

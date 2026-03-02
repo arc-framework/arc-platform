@@ -26,6 +26,12 @@ services:
       SHERLOCK_QDRANT_HOST: "arc-vector-db"
       SHERLOCK_NATS_URL: "nats://arc-messaging:4222"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://arc-friday-collector:4317"
+      # LM Studio runs on the host — host.docker.internal resolves to the Mac from inside the container
+      SHERLOCK_LLM_BASE_URL: "http://host.docker.internal:1234/v1"
+      # SHERLOCK_LLM_SUPPORTS_SYSTEM_ROLE — omitted: auto-detected from model name.
+      # Set to true/false explicitly only when the heuristic is wrong (e.g. ChatML Llama fine-tune).
+      # SHERLOCK_SYSTEM_PROMPT — omitted: uses the default Sherlock persona.
+      # Override to swap persona without rebuilding the image.
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8000/health || exit 1"]
       interval: 15s

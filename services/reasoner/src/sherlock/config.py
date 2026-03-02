@@ -49,10 +49,20 @@ class Settings(BaseSettings):
         "sherlock-workers", alias="SHERLOCK_PULSAR_SUBSCRIPTION"
     )
 
-    # LLM (Ollama)
-    llm_model: str = Field("mistral:7b", alias="SHERLOCK_LLM_MODEL")
+    # LLM (LM Studio — OpenAI-compatible)
+    llm_model: str = Field("mistralai/mistral-7b-instruct-v0.3", alias="SHERLOCK_LLM_MODEL")
     llm_base_url: str = Field(
-        "http://localhost:11434", alias="SHERLOCK_LLM_BASE_URL"
+        "http://localhost:1234/v1", alias="SHERLOCK_LLM_BASE_URL"
+    )
+    # None (default) → auto-detected from model name by llm_factory.
+    # Set True/False explicitly to override for edge cases (e.g. ChatML-format Llama fine-tune).
+    llm_supports_system_role: bool | None = Field(None, alias="SHERLOCK_LLM_SUPPORTS_SYSTEM_ROLE")
+    # System prompt injected into every reasoning request.
+    # Override via SHERLOCK_SYSTEM_PROMPT for persona swaps or A/B deployments.
+    system_prompt: str = Field(
+        "You are Sherlock, an analytical reasoning assistant. "
+        "Use the following conversation context to inform your reply.",
+        alias="SHERLOCK_SYSTEM_PROMPT",
     )
 
     # Embeddings (sentence-transformers)
@@ -69,9 +79,10 @@ class Settings(BaseSettings):
     )
     otel_traces_enabled: bool = Field(True, alias="SHERLOCK_OTEL_TRACES_ENABLED")
     otel_metrics_enabled: bool = Field(True, alias="SHERLOCK_OTEL_METRICS_ENABLED")
+    otel_logs_enabled: bool = Field(True, alias="SHERLOCK_OTEL_LOGS_ENABLED")
 
     # Security: opt-in content tracing (default off — no message content in spans)
     content_tracing: bool = Field(False, alias="SHERLOCK_CONTENT_TRACING")
 
     # Dev mode: mounts /fake/* endpoints for rapid local testing (default off)
-    dev_mode: bool = Field(False, alias="SHERLOCK_DEV_MODE")
+    dev_mode: bool = Field(True, alias="SHERLOCK_DEV_MODE")
