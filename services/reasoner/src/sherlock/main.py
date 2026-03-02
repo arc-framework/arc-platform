@@ -141,6 +141,23 @@ app = FastAPI(
 
 instrument_app(app)
 
+_request_log = structlog.get_logger("sherlock.http")
+
+
+@app.middleware("http")
+async def request_logger(request: Request, call_next):  # type: ignore[no-untyped-def]
+    start = time.monotonic()
+    response = await call_next(request)
+    latency_ms = int((time.monotonic() - start) * 1000)
+    _request_log.info(
+        f"{request.method} {request.url.path} {response.status_code} {latency_ms}ms",
+        method=request.method,
+        path=str(request.url.path),
+        status=response.status_code,
+        latency_ms=latency_ms,
+    )
+    return response
+
 
 # ─── Dev-only faker router ────────────────────────────────────────────────────
 
