@@ -18,6 +18,7 @@ func Recovery(logger *slog.Logger) gin.HandlerFunc {
 			if r := recover(); r != nil {
 				stack := debug.Stack()
 				logger.Error("panic recovered",
+					"event", "exception",
 					"panic", r,
 					"stack", string(stack),
 					"method", c.Request.Method,
@@ -46,6 +47,7 @@ func RequestLogger(logger *slog.Logger) gin.HandlerFunc {
 		start := time.Now()
 		c.Next()
 		logger.Info("request",
+			"event", "http_request",
 			"method", c.Request.Method,
 			"path", c.Request.URL.Path,
 			"status", c.Writer.Status(),

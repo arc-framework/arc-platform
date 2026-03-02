@@ -19,6 +19,7 @@ services:
       dockerfile: Dockerfile
     image: ghcr.io/arc-framework/arc-cortex:latest
     container_name: arc-cortex
+    command: ["server", "--log-level", "debug"]
     ports:
       - "127.0.0.1:8081:8081"   # HTTP API — localhost only
     environment:
