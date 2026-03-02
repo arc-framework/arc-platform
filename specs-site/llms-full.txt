@@ -2776,6 +2776,311 @@ These could be parallelized if needed, but for a single build step, serializatio
 ---
 
 ---
+url: /arc-platform/specs-site/009-sherlock-reasoning/analysis-report.md
+---
+# Analysis Report: Sherlock Reasoning Service (Re-Audit Post-Fixes)
+
+**Date:** 2026-03-01\
+**Stage:** Pre-implementation (Post-fix verification)\
+**Feature:** `specs/009-sherlock-reasoning/`\
+**Previous Report:** Found 1 blocker + 4 warnings; fixes now applied to tasks.md
+
+***
+
+## Verification of Applied Fixes
+
+### Fix 1: \[GAP-6] Pulsar Failure Path — RESOLVED
+
+**Original Issue**: TASK-032 and TASK-054 did not distinguish between error\_handler result (should ack) vs. unhandled exception (should nack).
+
+**Verification**:
+
+* **TASK-032** (lines 199-202): Now explicitly documents two-path design:
+  * **Path A** (error\_handler result): `invoke_graph` returns error string → publish `{"request_id":..., "error": str, ...}` to `sherlock-results` → **`consumer.acknowledge(msg)`** (successful processing of error case)
+  * **Path B** (unhandled exception): Exception escapes → **`consumer.negative_acknowledge(msg)`** → Pulsar redelivers
+
+* **TASK-054** (lines 340-341): Test coverage now includes:
+  * `test_error_handler_result_published_and_acked`: Confirms Path A behavior
+  * `test_unhandled_exception_triggers_negative_ack`: Confirms Path B behavior
+
+**Status**: ✓ FIXED — Design clarity and test coverage both added.
+
+***
+
+### Fix 2: \[GAP-4] TASK-040 Module Globals Enforcement — RESOLVED
+
+**Original Issue**: TASK-040 acceptance criteria (line 255-263) did not include explicit checks for no module-level singletons.
+
+**Verification**:
+
+* **TASK-040** (lines 261-263): Now includes:
+  * "`[GAP-4]` No module-level assignments to `FastAPI()`, `SherlockMemory`, `NATSHandler`, `PulsarHandler`, or any handler instance — all singletons initialized only inside the `@asynccontextmanager lifespan` function and stored in `AppState`"
+  * "`[GAP-4]` Code review confirms: no `app.state.memory = ...` outside lifespan; no bare `memory = SherlockMemory()` at module scope"
+
+**Status**: ✓ FIXED — Explicit acceptance criteria with GAP-4 reference added.
+
+***
+
+### Fix 3: \[GAP-5] TASK-020 Content Tracing Default Test — RESOLVED
+
+**Original Issue**: TASK-020 acceptance did not include test cases for `SHERLOCK_CONTENT_TRACING` default value verification.
+
+**Verification**:
+
+* **TASK-020** (lines 139-141): Now includes three explicit test cases:
+  * `test_content_tracing_default_false`: `Settings().content_tracing == False` when `SHERLOCK_CONTENT_TRACING` is unset
+  * `test_content_tracing_env_override`: Setting `SHERLOCK_CONTENT_TRACING=true` in env → `Settings().content_tracing == True`
+  * `test_otel_span_no_content_when_disabled`: Mock tracer span with `content_tracing=False` → span has no `user_message` or `assistant_message` attributes
+
+**Status**: ✓ FIXED — Security default verification tests added with explicit acceptance criteria.
+
+***
+
+### Fix 4: \[GAP-2] Contract Schema Validation — RESOLVED
+
+**Original Issue**: TASK-050/053/054 did not include schema validation against OpenAPI and AsyncAPI contracts.
+
+**Verification**:
+
+* **TASK-050** (line 298): Now includes: `test_chat_response_matches_openapi_schema` — load `contracts/openapi.yaml`, validate actual response JSON with `jsonschema.validate()`
+
+* **TASK-053** (line 332): Now includes: `test_nats_request_payload_matches_asyncapi_schema` — load `contracts/asyncapi.yaml`, validate test payload with `jsonschema.validate()`
+
+* **TASK-054** (line 344): Now includes: `test_pulsar_result_payload_matches_asyncapi_schema` — load `contracts/asyncapi.yaml`, validate published result payload with `jsonschema.validate()`
+
+* **TASK-999** (lines 393-394): Reviewer checklist expanded to verify contract schemas manually or with automated tools
+
+**Status**: ✓ FIXED — Schema validation tests added across all transport handlers + reviewer checklist.
+
+***
+
+### Fix 5: \[GAP-1] TASK-010 Config Fields — RESOLVED
+
+**Original Issue**: TASK-010 acceptance did not explicitly verify `embedding_dim` and `context_top_k` defaults.
+
+**Verification**:
+
+* **TASK-010** (line 120): Now includes:
+  * "Default values verified: `Settings().embedding_dim == 384`, `Settings().context_top_k == 5`, `Settings().content_tracing == False`, `Settings().pulsar_enabled == False`"
+
+**Status**: ✓ FIXED — Explicit default value verification tests added.
+
+***
+
+## Additional Verification: New Issues Introduced by Fixes
+
+Reviewing the updated tasks.md for consistency and completeness:
+
+### No Conflicts Detected in Two-Path Pulsar Model
+
+The distinction between Path A (error\_handler result → ack) and Path B (unhandled exception → nack) is:
+
+* **Consistent with spec.md**: Error handling via `error_handler` node returns gracefully (line 273)
+* **Consistent with plan.md**: Error\_handler caps retries at 3; returns error response string (not exception)
+* **Testable**: TASK-054 has explicit test cases for both paths
+
+**Status**: ✓ NO NEW GAPS
+
+### Contract Validation Approach is Pragmatic
+
+The schema validation uses `jsonschema.validate()` which:
+
+* Requires loading contract YAML/JSON at test time
+* Works with AsyncAPI 3.0 and OpenAPI 3.1 schema definitions
+* Can catch silent drift between code and contracts
+
+Contracts in `specs/009-sherlock-reasoning/contracts/` are accessible to test suite. No path resolution issues.
+
+**Status**: ✓ NO NEW GAPS
+
+### Module Globals Check is Code-Reviewable
+
+The TASK-040 acceptance now requires:
+
+1. "No module-level assignments to FastAPI(), SherlockMemory, etc."
+2. "Code review confirms: no `app.state.memory = ...` outside lifespan"
+
+This is explicitly code-reviewable; mypy validation of module-level globals is a secondary safety net (line 262 already includes mypy check).
+
+**Status**: ✓ NO NEW GAPS
+
+***
+
+## Full Coverage Matrix (Post-Fix)
+
+### Functional Requirements (FR-1 through FR-14)
+
+| ID | Requirement | Spec Section | Plan Section | Task(s) | Status |
+|-----|-----------|------|------|---------|--------|
+| FR-1 | POST /chat API with validation & response | spec.md:223 | plan.md:356 | TASK-040, TASK-050 | ✓ COVERED |
+| FR-2 | NATS handler queue subscription + reply guard | spec.md:224 | plan.md:300-311 | TASK-031, TASK-053 | ✓ COVERED |
+| FR-3 | Pulsar handler (opt-in) with ack/nack | spec.md:225 | plan.md:313-326 | TASK-032, TASK-054 | ✓ COVERED |
+| FR-4 | LangGraph linear graph with error\_handler | spec.md:226 | plan.md:276-296 | TASK-030, TASK-051 | ✓ COVERED |
+| FR-5 | retrieve\_context: embedding + ANN search | spec.md:227 | plan.md:257-262 | TASK-021, TASK-052 | ✓ COVERED |
+| FR-6 | generate\_response: ChatPromptTemplate + ChatOllama | spec.md:228 | plan.md:276-296 | TASK-030, TASK-051 | ✓ COVERED |
+| FR-7 | Persist turns to Qdrant + PostgreSQL | spec.md:229 | plan.md:257-262 | TASK-021, TASK-052 | ✓ COVERED |
+| FR-8 | GET /health shallow liveness | spec.md:230 | plan.md:349-355 | TASK-040, TASK-050 | ✓ COVERED |
+| FR-9 | GET /health/deep with per-component status | spec.md:231 | plan.md:349-355 | TASK-040, TASK-050 | ✓ COVERED |
+| FR-10 | Qdrant collection creation on startup | spec.md:232 | plan.md:257-262 | TASK-021, TASK-052 | ✓ COVERED |
+| FR-11 | PostgreSQL schema + table creation on startup | spec.md:233 | plan.md:257-262 | TASK-021, TASK-052 | ✓ COVERED |
+| FR-12 | make reasoner-up starts service | spec.md:234 | plan.md:407-425 | TASK-034, TASK-036 | ✓ COVERED |
+| FR-13 | reasoner in reason profile | spec.md:235 | plan.md:225 | TASK-060 | ✓ COVERED |
+| FR-14 | make dev-regen succeeds | spec.md:236 | plan.md:407-425 | TASK-060, TASK-061 | ✓ COVERED |
+
+**Coverage**: 14/14 (100%)
+
+***
+
+### Non-Functional Requirements (NFR-1 through NFR-10)
+
+| ID | Requirement | Spec Section | Plan Section | Task(s) | Status |
+|-----|-----------|------|------|---------|--------|
+| NFR-1 | retrieve\_context < 10s with tenacity 3 retries | spec.md:240 | plan.md:257 | TASK-021, TASK-051 | ✓ COVERED |
+| NFR-2 | generate\_response < 60s | spec.md:241 | plan.md:276 | TASK-030, TASK-051 | ✓ COVERED |
+| NFR-3 | Healthcheck passes in < 30s (cold start) | spec.md:242 | plan.md:437-445 | TASK-033, TASK-034 | ✓ COVERED |
+| NFR-4 | Non-root container (sherlock:sherlock) | spec.md:243 | plan.md:437-445 | TASK-033 | ✓ COVERED |
+| NFR-5 | SHERLOCK\_ prefix, no secrets in logs | spec.md:244 | plan.md:232-245 | TASK-010, TASK-020 | ✓ COVERED |
+| NFR-6 | Tests ≥ 75% coverage critical paths | spec.md:245 | plan.md:456-457 | TASK-050-054, TASK-999 | ✓ COVERED |
+| NFR-7 | OTEL traces/metrics to arc-friday-collector:4317 | spec.md:246 | plan.md:249-255 | TASK-020, TASK-040 | ✓ COVERED |
+| NFR-8 | ruff + mypy pass clean | spec.md:247 | plan.md:456 | TASK-010-040, TASK-999 | ✓ COVERED |
+| NFR-9 | Port 127.0.0.1:8083:8000 (no conflict) | spec.md:248 | plan.md:432-435 | TASK-034 | ✓ COVERED |
+| NFR-10 | SHERLOCK\_PULSAR\_ENABLED=false default | spec.md:249 | plan.md:244 | TASK-010, TASK-032 | ✓ COVERED |
+
+**Coverage**: 10/10 (100%)
+
+***
+
+## Constitution Compliance (Post-Fix)
+
+| Principle | Status | Evidence | Notes |
+|-----------|--------|----------|-------|
+| **II. Platform-in-a-Box** | PASS | `make reasoner-up` + profile integration (TASK-060, TASK-034) | Service integrates into `reason` profile |
+| **III. Modular Services** | PASS | Self-contained `services/reasoner/` with service.yaml, Dockerfile, reasoner.mk | All infrastructure files in TASK-033-036 |
+| **IV. Two-Brain Separation** | PASS | Python only (FastAPI + LangGraph); no Go in service | All TASK-010-054 are Python |
+| **V. Polyglot Standards** | PASS | FastAPI + LangGraph, ruff + mypy, pytest, OTEL, SHERLOCK\_ prefix | TASK-040 now includes explicit no-module-globals check (fixed in GAP-4) |
+| **VII. Observability** | PASS | `/health`, `/health/deep` (TASK-040); OTEL traces/metrics (TASK-020); structured logging | Per-component health probes + metrics counters/histograms |
+| **VIII. Security** | PASS | Non-root container (TASK-033), 127.0.0.1 binding (TASK-034), content tracing default false (TASK-020) | Default-off is verified via TASK-020 tests (fixed in GAP-5) |
+| **XI. Resilience** | PASS | Tenacity retries (TASK-021, TASK-030), Pulsar nack on exception (TASK-032), health start\_period (TASK-033) | Two-path Pulsar design clarified (fixed in GAP-6) |
+
+**Summary**: 7/7 applicable principles **PASS** (Principles I, VI, IX, X, XII not applicable to services)
+
+***
+
+## Remaining Observations (Low-Priority, Pre-Implementation Notes)
+
+### Observation A: AsyncAPI Error Message Schema (GAP-3 — unchanged, LOW priority)
+
+**Status**: Not fixed in this round, remains documented in spec.
+
+The NATS error response format is described in AsyncAPI text (line 109) but lacks a formal message definition. This is clarified in code but external callers rely on text documentation. Not a blocker.
+
+**Recommendation**: Document in developer notes if time permits post-implementation.
+
+***
+
+### Observation B: Dockerfile arm64 Fallback Automation (GAP-7 — unchanged, MEDIUM priority)
+
+**Status**: Not fixed in this round, but present in TASK-033 as documented comment.
+
+TASK-033 (line 218) includes comment noting fallback to `python:3.13-slim` for arm64 failures. No automated conditional build logic. Manual workaround is documented.
+
+**Recommendation**: If Alpine build fails during implementation, use documented fallback; no blocker.
+
+***
+
+### Observation C: make dev-regen Flow Documentation (GAP-8 — unchanged, LOW priority)
+
+**Status**: Implicit in task dependencies; remains undocumented in narrative.
+
+The dependency chain (service.yaml → profiles.yaml → make dev-regen → registry.mk) is correct in task ordering but not narratively explained.
+
+**Recommendation**: Document in CLAUDE.md or README if needed post-implementation; no blocker.
+
+***
+
+### Observation D: Qdrant Dimension Mismatch Recovery (RISK-4 — unchanged, MEDIUM priority)
+
+**Status**: Mitigation present in plan.md:484 ("raises if mismatch"), but recovery procedure not documented.
+
+**Recommendation**: If dimension mismatch occurs during development, delete Qdrant collection and re-initialize. Document in troubleshooting guide post-implementation.
+
+***
+
+## Dependency Graph Validation (Post-Fix)
+
+The task DAG remains well-structured with no cycles:
+
+```
+T001 (scaffold) 
+  → T010 (config)
+    → T020, T021 (parallel)
+    → T030 (graph, depends on T021)
+      → T031, T032 (parallel, both depend on T030)
+  → T033, T034, T035, T036 (parallel infra)
+      → T040 (main.py, depends on T020+T030+T031+T032)
+        → T041 (conftest)
+          → T050-T054 (parallel tests)
+        → T900 (docs)
+          → T999 (reviewer, depends on all)
+```
+
+All parallel markers `[P]` are valid — no shared module writes.
+
+**Status**: ✓ VALID DAG
+
+***
+
+## Summary: Final Pre-Implementation Assessment
+
+### Blockers (must resolve before implementing)
+
+**0 remaining** ✓ (all 5 fixes applied)
+
+Previous blockers:
+
+* GAP-6 (Pulsar failure path) — FIXED
+* GAP-4 (module globals) — FIXED
+* GAP-5 (content tracing tests) — FIXED
+* GAP-2 (contract validation) — FIXED
+* GAP-1 (config fields) — FIXED
+
+### Warnings (should address)
+
+**0 remaining** ✓ (all issues converted to acceptance criteria or documented observations)
+
+### Observations (nice to know)
+
+**4 items** (low-priority, pre-implementation documentation):
+
+* AsyncAPI error message schema (formally define NATS error response)
+* arm64 Alpine fallback (use documented workaround if needed)
+* make dev-regen flow (implicit but not narratively explained)
+* Qdrant mismatch recovery (procedure exists; document in troubleshooting)
+
+***
+
+## Final Recommendation
+
+**STATUS: PASS — READY TO IMPLEMENT**
+
+All functional and non-functional requirements have task coverage. All 5 previously identified gaps are now fixed in tasks.md with explicit acceptance criteria or test cases. Constitution compliance is verified across 7 applicable principles. Task dependency graph is valid with no cycles.
+
+**Pre-implementation readiness**:
+
+* 23 total tasks (1 setup + 1 config + 10 core/handlers + 4 infra + 7 tests + 2 wiring + 1 docs + 1 reviewer)
+* 14 parallel-safe tasks marked `[P]`
+* Coverage matrix: 24/24 FR/NFR requirements (100%)
+* Estimated parallel batches: 7 (setup → config → \[parallel modules] → \[parallel infra] → \[parallel tests] → \[wiring] → \[reviewer])
+
+**Proceed with implementation.**
+
+***
+
+**Audit completed**: Post-fix re-audit confirms all 5 previous findings are now resolved with explicit acceptance criteria, test cases, and design clarifications. No new gaps introduced. Constitution compliance maintained across 7/7 applicable principles. Ready for implementation phase.
+
+---
+
+---
 url: /arc-platform/specs-site/001-otel-setup/spec.md
 ---
 # Feature: 001-otel-setup — Stand Up SigNoz as the Observability Backend
@@ -4747,6 +5052,354 @@ graph LR
 | API keys dev strategy | Static `devkey`/`devsecret` in config files; vault integration is future production work |
 | Profiles | All three — `think`, `reason`, `ultra-instinct` |
 | Co-location | Single directory, shared compose, one profiles.yaml entry (`realtime`) |
+
+---
+
+---
+url: /arc-platform/specs-site/009-sherlock-reasoning/spec.md
+---
+# Feature: Sherlock Reasoning Service
+
+> **Spec**: 009-sherlock-reasoning
+> **Date**: 2026-03-01
+> **Status**: Draft
+> **Informed by**: `specs/009-sherlock-reasoning/.work-docs/system-design.md`, `spec-doc.md`
+
+## Target Modules
+
+| Module | Path | Impact |
+|--------|------|--------|
+| Services | `services/reasoner/` | New — full Python service (19 files) |
+| Services | `services/profiles.yaml` | Modify — add `reasoner` to `reason` profile |
+| Services | `Makefile` | Modify — add `include services/reasoner/reasoner.mk` |
+
+No CLI, SDK, or Docs changes in v1.
+
+## Overview
+
+Sherlock (`arc-sherlock`) is the first Python intelligence service in the A.R.C. monorepo. It provides stateful, context-aware reasoning via a LangGraph state machine, with conversation memory split across Qdrant (semantic ANN search) and PostgreSQL (ordered history). It accepts requests over three transports: HTTP (sync), NATS request-reply (real-time inter-service), and Pulsar (durable async, opt-in).
+
+## Architecture
+
+```mermaid
+graph TB
+    subgraph Callers
+        CLI[CLI / HTTP :8083]
+        Scarlett[Scarlett — NATS]
+        Batch[Batch Jobs — Pulsar]
+    end
+
+    subgraph "arc-sherlock"
+        API["FastAPI\nPOST /chat\nGET /health\nGET /health/deep"]
+        NH["NATSHandler\nsherlock.request\nqueue: sherlock_workers"]
+        PH["PulsarHandler\nsherlock-requests\nshared: sherlock-workers"]
+
+        subgraph "LangGraph StateGraph"
+            RC[retrieve_context]
+            GR[generate_response]
+            EH[error_handler]
+        end
+    end
+
+    subgraph Memory
+        QD[(Cerebro\nQdrant :6333\nsherlock_conversations)]
+        PG[(Oracle\nPostgreSQL :5432\nsherlock.conversations)]
+        EM[all-MiniLM-L6-v2\n384-dim embeddings]
+    end
+
+    subgraph Messaging
+        NATS[Flash — NATS :4222]
+        Pulsar[Dr. Strange — Pulsar :6650]
+    end
+
+    subgraph LLM
+        OL[Ollama / vLLM\nChatOllama]
+    end
+
+    CLI --> API
+    Scarlett --> NATS --> NH
+    Batch --> Pulsar --> PH
+
+    API --> RC
+    NH --> RC
+    PH --> RC
+
+    RC --> GR
+    RC -->|error| EH
+    GR -->|error| EH
+    EH -->|retry < 3| GR
+
+    RC --> QD
+    RC --> EM
+    RC --> PG
+    GR --> OL
+    GR --> PG
+```
+
+### LangGraph Graph
+
+```mermaid
+stateDiagram-v2
+    [*] --> retrieve_context
+    retrieve_context --> generate_response : context retrieved
+    retrieve_context --> error_handler : retrieval failed
+    generate_response --> [*] : success
+    generate_response --> error_handler : LLM failed
+    error_handler --> generate_response : retry (attempts < 3)
+    error_handler --> [*] : max retries — return error response
+```
+
+**AgentState** (`TypedDict` + `Annotated` reducers):
+
+| Field | Type | Reducer |
+|-------|------|---------|
+| `messages` | `list[BaseMessage]` | `add_messages` (append-only) |
+| `user_id` | `str` | last-write-wins |
+| `context` | `Optional[list[str]]` | last-write-wins |
+| `final_response` | `Optional[str]` | last-write-wins |
+
+### Memory Architecture
+
+```mermaid
+graph LR
+    subgraph "Tier 1 — Working Memory"
+        ST[LangGraph State\nin-graph per invocation]
+    end
+    subgraph "Tier 2 — Semantic Memory"
+        QD[Qdrant\ncosine ANN\nuser_id scoped]
+    end
+    subgraph "Tier 3 — Chronological History"
+        PG[PostgreSQL\nORDER BY created_at\nsherlock schema]
+    end
+
+    ST -->|query last message| QD
+    QD -->|top-k context| ST
+    ST -->|persist after exchange| PG
+```
+
+### Invocation Modes
+
+```mermaid
+sequenceDiagram
+    participant C as Caller
+    participant S as arc-sherlock
+    participant M as Memory
+    participant L as LLM
+
+    Note over C,S: Mode 1 — HTTP (sync)
+    C->>S: POST /chat {user_id, text}
+    S->>M: search(user_id, query) → context
+    S->>L: ainvoke(messages + context)
+    S->>M: store(user_id, role, text)
+    S-->>C: {user_id, text, latency_ms}
+
+    Note over C,S: Mode 2 — NATS (request-reply)
+    C->>S: nc.request("sherlock.request", payload)
+    S->>M: search + generate + store
+    S-->>C: msg.respond(result) → _INBOX
+
+    Note over C,S: Mode 3 — Pulsar (durable async)
+    C->>S: producer.send("sherlock-requests", {request_id,...})
+    S->>M: search + generate + store
+    S->>C: producer.send("sherlock-results", {request_id,...})
+```
+
+***
+
+## User Scenarios & Testing
+
+### P1 — Must Have
+
+**US-1**: As an agent developer, I want to send a reasoning request via HTTP so that I can test Sherlock directly.
+
+* **Given**: `arc-sherlock` is running with Qdrant, PostgreSQL, and Ollama available
+* **When**: `POST http://localhost:8083/chat {"user_id": "u1", "text": "Hello"}`
+* **Then**: Response `200 {"user_id": "u1", "text": "...", "latency_ms": N}` within 90s
+* **Test**: `test_api.py::test_chat_happy_path` (mock graph)
+
+**US-2**: As Scarlett (voice service), I want to invoke Sherlock via NATS so that I don't need an HTTP client.
+
+* **Given**: Both `arc-messaging` (NATS) and `arc-sherlock` are running
+* **When**: `nc.request("sherlock.request", {"user_id":"u1","text":"hi"}, timeout=30)`
+* **Then**: Response payload `{"user_id":"u1","text":"...","latency_ms":N}` delivered to `_INBOX`
+* **Test**: `test_nats_handler.py::test_request_reply` (mock nc, mock graph)
+
+**US-3**: As a platform operator, I want `make reasoner-up` to start Sherlock so that it integrates with the platform.
+
+* **Given**: `arc_platform_net` and `arc_otel_net` Docker networks exist
+* **When**: `make reasoner-build && make reasoner-up`
+* **Then**: `curl http://localhost:8083/health` → `{"status":"ok"}` within 30s
+* **Test**: `make reasoner-health` exits 0
+
+**US-4**: As a platform operator, I want `make dev PROFILE=reason` to include Sherlock so that the full dev stack is cohesive.
+
+* **Given**: `reasoner` is listed in `services/profiles.yaml` under `reason`
+* **When**: `make dev PROFILE=reason`
+* **Then**: `arc-sherlock` container starts alongside cortex, messaging, cache, otel, etc.
+* **Test**: `make dev-health PROFILE=reason` exits 0 with all services healthy
+
+**US-5**: As a platform developer, I want `make reasoner-test` to pass without live services so that CI is fast and isolated.
+
+* **Given**: All tests mock Qdrant, PostgreSQL, NATS, and LLM
+* **When**: `make reasoner-test`
+* **Then**: All tests pass; coverage ≥ 75% on critical paths
+* **Test**: `pytest tests/ --cov=sherlock`
+
+### P2 — Should Have
+
+**US-6**: As a batch processing agent, I want to publish reasoning tasks via Pulsar and receive durable results so that long-running tasks survive Sherlock restarts.
+
+* **Given**: `arc-streaming` (Pulsar) is running; `SHERLOCK_PULSAR_ENABLED=true`
+* **When**: `producer.send("persistent://public/default/sherlock-requests", {"request_id":"r1","user_id":"u1","text":"..."}`
+* **Then**: Result published to `sherlock-results` with matching `request_id`; message acked
+* **Test**: `test_pulsar_handler.py::test_process_and_ack`
+
+**US-7**: As a platform developer, I want `/health/deep` to report per-dependency status so that I can diagnose startup failures.
+
+* **Given**: Sherlock running; Qdrant is unavailable
+* **When**: `GET /health/deep`
+* **Then**: `503 {"status":"degraded","components":{"qdrant":false,"postgres":true,"nats":true}}`
+* **Test**: `test_api.py::test_health_deep_qdrant_down`
+
+**US-8**: As a developer, I want `make reasoner-lint` to pass clean so that code quality is enforced.
+
+* **Given**: `ruff` and `mypy` installed
+* **When**: `make reasoner-lint`
+* **Then**: Both tools exit 0 with no errors or warnings
+* **Test**: CI gate
+
+### P3 — Nice to Have
+
+**US-9**: As a developer, I want content tracing to be disabled by default so that prompt/response content is not leaked to OTEL collectors.
+
+* **Given**: `SHERLOCK_CONTENT_TRACING` is unset (default `false`)
+* **When**: A `/chat` request is processed
+* **Then**: OTEL spans contain no `user_id` message content; only latency + status attributes
+* **Test**: `test_observability.py::test_content_tracing_disabled`
+
+**US-10**: As a Pulsar caller that didn't provide a `reply_to`, I want the NATS handler to silently skip responding so that fire-and-forget messages don't error.
+
+* **Given**: NATS message with no `reply` field
+* **When**: Handler processes the message
+* **Then**: `msg.respond()` is NOT called; no exception raised
+* **Test**: `test_nats_handler.py::test_fire_and_forget`
+
+***
+
+## Requirements
+
+### Functional
+
+* \[ ] **FR-1**: `POST /chat` accepts `{user_id: str, text: str}`, returns `{user_id, text, latency_ms}` (HTTP 200) or error codes 422/503/500
+* \[ ] **FR-2**: NATS handler subscribes to `sherlock.request` in queue group `sherlock_workers`; responds via `msg.respond()` only when `msg.reply` is set
+* \[ ] **FR-3**: Pulsar handler (when `SHERLOCK_PULSAR_ENABLED=true`) consumes `sherlock-requests`, publishes to `sherlock-results`, acks on success, negative-acks on failure
+* \[ ] **FR-4**: LangGraph executes linear graph: `START → retrieve_context → generate_response → END`, with `error_handler` conditional edge on failure
+* \[ ] **FR-5**: `retrieve_context` encodes the last user message with `all-MiniLM-L6-v2` (384-dim), performs cosine ANN search on `sherlock_conversations` collection, filtered by `user_id`, returns top-k results
+* \[ ] **FR-6**: `generate_response` builds a `ChatPromptTemplate` with system prompt + retrieved context + message history, calls `ChatOllama.ainvoke()`
+* \[ ] **FR-7**: After each exchange, both user turn and assistant turn are stored in Qdrant (vector) and PostgreSQL (`sherlock.conversations`)
+* \[ ] **FR-8**: `GET /health` → shallow liveness (checks NATS connection flag only); always 200 if process is alive
+* \[ ] **FR-9**: `GET /health/deep` → probes Qdrant, PostgreSQL, and NATS; returns `{"status","version","components"}` with per-component booleans; 503 if any component fails
+* \[ ] **FR-10**: Qdrant collection `sherlock_conversations` created on startup if absent
+* \[ ] **FR-11**: PostgreSQL schema `sherlock` and table `sherlock.conversations` created on startup if absent
+* \[ ] **FR-12**: `make reasoner-up` starts `arc-sherlock`; container joins `arc_platform_net` + `arc_otel_net`
+* \[ ] **FR-13**: `reasoner` added to `reason` profile in `services/profiles.yaml`
+* \[ ] **FR-14**: `make dev-regen` succeeds after `service.yaml` is created
+
+### Non-Functional
+
+* \[ ] **NFR-1**: `retrieve_context` completes in < 10s (tenacity 3 retries, exponential backoff)
+* \[ ] **NFR-2**: `generate_response` completes in < 60s (Ollama default timeout)
+* \[ ] **NFR-3**: Container health check passes within 30s (`start_period: 30s` for embedding model download)
+* \[ ] **NFR-4**: Non-root container — user `sherlock:sherlock` (Constitution VIII)
+* \[ ] **NFR-5**: All env vars prefixed `SHERLOCK_`; no secrets, prompts, or responses in logs by default
+* \[ ] **NFR-6**: Test suite passes with ≥ 75% coverage on `sherlock/` package; no live services required
+* \[ ] **NFR-7**: OTEL traces, metrics, and structured logs exported to `arc-friday-collector:4317`
+* \[ ] **NFR-8**: `ruff check src/` and `mypy src/` both pass clean
+* \[ ] **NFR-9**: Host port `127.0.0.1:8083:8000` (cortex=8081, pulsar-admin=8082 — no conflict)
+* \[ ] **NFR-10**: `SHERLOCK_PULSAR_ENABLED=false` by default; Pulsar consumer only starts when explicitly enabled
+
+### Key Entities
+
+| Entity | Module | Description |
+|--------|--------|-------------|
+| `AgentState` | `sherlock/graph.py` | LangGraph `TypedDict` — messages, user\_id, context, final\_response |
+| `SherlockMemory` | `sherlock/memory.py` | Dual-store manager — Qdrant (vectors) + PostgreSQL (history) |
+| `AppState` | `sherlock/main.py` | FastAPI app state dataclass — holds all singletons, no module globals |
+| `Settings` | `sherlock/config.py` | Pydantic `BaseSettings` — all config, `SHERLOCK_` prefix |
+| `Conversation` | `sherlock/memory.py` | SQLAlchemy ORM model — `sherlock.conversations` table |
+| `NATSHandler` | `sherlock/nats_handler.py` | Manages NATS connection, queue subscription, message dispatch |
+| `PulsarHandler` | `sherlock/pulsar_handler.py` | `asyncio.to_thread` wrapper for blocking `pulsar-client` |
+| `SherlockMetrics` | `sherlock/observability.py` | OTEL counters + histograms for requests, errors, latency, context size |
+
+***
+
+## Edge Cases
+
+| Scenario | Expected Behavior |
+|----------|-------------------|
+| Qdrant unavailable at startup | Startup fails with clear error; healthcheck fails; container restarts |
+| Qdrant becomes unavailable mid-request | `tenacity` retries 3x with exponential backoff; `/health/deep` returns 503 |
+| PostgreSQL unavailable at startup | Startup fails; schema init raises exception |
+| LLM (Ollama) unavailable | `RetryPolicy` retries 3x; `error_handler` node returns graceful error response |
+| NATS message with no `reply` field | Handler skips `msg.respond()`; no error; message processed normally |
+| Pulsar message fails during `invoke_graph` | `negative_acknowledge(msg)` → Pulsar redelivers to another replica |
+| First cold start (no embedding cache) | `sentence-transformers` downloads ~90MB; `start_period: 30s` prevents premature health failures |
+| `/chat` request while service not ready | Returns `503 Service not ready` (graph not yet built) |
+| Missing `user_id` or `text` in request | Returns `422 Unprocessable Entity` (Pydantic validation) |
+| LangGraph `recursion_limit` hit | Returns error response after `recursion_limit: 10` steps |
+| `request_id` missing in Pulsar message | Handler raises `KeyError`; negative-ack; message redelivered |
+| Qdrant collection exists with wrong dimensions | Collection check passes; search returns incorrect results — requires manual migration |
+
+***
+
+## Success Criteria
+
+* \[ ] **SC-1**: `make reasoner-up` starts `arc-sherlock`; `curl http://localhost:8083/health` returns `{"status":"ok"}` within 30s
+* \[ ] **SC-2**: `POST http://localhost:8083/chat {"user_id":"test","text":"Hello"}` returns `200 {"user_id":"test","text":"...","latency_ms":N}` (requires Ollama)
+* \[ ] **SC-3**: `make reasoner-test` passes; `pytest --cov=sherlock` reports ≥ 75% coverage on critical paths; no live services needed
+* \[ ] **SC-4**: `make reasoner-lint` exits 0 — both `ruff check src/` and `mypy src/` clean
+* \[ ] **SC-5**: NATS `nc.request("sherlock.request", payload, timeout=30)` returns valid response
+* \[ ] **SC-6**: `make dev PROFILE=reason && make dev-health PROFILE=reason` exits 0 with Sherlock healthy
+* \[ ] **SC-7**: `GET /health/deep` returns per-component booleans; returns 503 when Qdrant is stopped
+* \[ ] **SC-8**: `make dev-regen` succeeds; `grep sherlock .make/registry.mk` finds `SERVICE_reasoner_HEALTH` entry
+* \[ ] **SC-9**: Pulsar round-trip: message published to `sherlock-requests` → result appears on `sherlock-results` with matching `request_id` (requires `SHERLOCK_PULSAR_ENABLED=true`)
+
+***
+
+## Docs & Links Update
+
+* \[ ] Update `SERVICE.MD` — add Sherlock row to the service matrix table
+* \[ ] Update `specs/index.md` — add `009-sherlock-reasoning` entry
+* \[ ] Remove or archive `spec-doc.md` from repo root (temporary draft, not a permanent artifact)
+* \[ ] Verify `CLAUDE.md` monorepo layout comment for `services/reasoner/` is accurate post-implementation
+
+### API Contracts (in `contracts/`)
+
+| File | Standard | Describes |
+|------|----------|-----------|
+| `contracts/openapi.yaml` | OpenAPI 3.1 | HTTP: `POST /chat`, `GET /health`, `GET /health/deep` |
+| `contracts/asyncapi.yaml` | AsyncAPI 3.0 | NATS: `sherlock.request` · Pulsar: `sherlock-requests` + `sherlock-results` |
+
+FastAPI serves the live Swagger UI at `http://localhost:8083/docs` and raw spec at `http://localhost:8083/openapi.json`. The `contracts/openapi.yaml` is the design-time contract (spec-first) — the two should remain in sync. There is no runtime AsyncAPI server; `contracts/asyncapi.yaml` is the authoritative reference for all message-based callers.
+
+***
+
+## Constitution Compliance
+
+| Principle | Applies | Compliant | Notes |
+|-----------|---------|-----------|-------|
+| I. Zero-Dep CLI | ✗ | n/a | Service only — no CLI changes |
+| II. Platform-in-a-Box | ✓ | ✓ | `make reasoner-up` + profile integration |
+| III. Modular Services | ✓ | ✓ | Self-contained `services/reasoner/` with `service.yaml` |
+| IV. Two-Brain | ✓ | ✓ | Python = intelligence only; no Go in this service |
+| V. Polyglot Standards | ✓ | ✓ | FastAPI + LangGraph, ruff + mypy, pytest, OTEL, `SHERLOCK_` prefix |
+| VI. Local-First | ✗ | n/a | CLI principle — not applicable |
+| VII. Observability | ✓ | ✓ | `/health`, `/health/deep`, OTEL traces/metrics/structlog |
+| VIII. Security | ✓ | ✓ | Non-root `sherlock:sherlock`, `127.0.0.1` binding, content tracing off by default |
+| IX. Declarative | ✗ | n/a | CLI principle — not applicable |
+| X. Stateful Ops | ✗ | n/a | CLI principle — not applicable |
+| XI. Resilience | ✓ | ✓ | `tenacity` retries, Pulsar negative-ack, health check `start_period: 30s` |
+| XII. Interactive | ✗ | n/a | CLI principle — not applicable |
 
 ---
 
@@ -7702,6 +8355,509 @@ gantt
 ---
 
 ---
+url: /arc-platform/specs-site/009-sherlock-reasoning/plan.md
+---
+# Implementation Plan: Sherlock Reasoning Service
+
+> **Spec**: 009-sherlock-reasoning
+> **Date**: 2026-03-01
+
+## Summary
+
+Sherlock (`arc-sherlock`) is the first Python intelligence service in the arc-platform monorepo — a LangGraph 1.0.x reasoning engine with dual-store memory (Qdrant for semantic ANN, PostgreSQL for ordered history) and three invocation transports: HTTP sync, NATS request-reply, and Pulsar durable async (opt-in). The service is adapted from the POC at `platform-spike/services/arc-sherlock-brain`, replacing pgvector with Qdrant (Cerebro), adding a full test suite, proper OTEL instrumentation, and a multi-stage Alpine Dockerfile targeting `services/reasoner/`.
+
+***
+
+## Target Modules
+
+| Module | Language | Changes |
+|--------|----------|---------|
+| `services/reasoner/` | Python 3.13 | New — 19 files; full service from scratch |
+| `services/profiles.yaml` | YAML | Modify — add `reasoner` to `reason` profile |
+| `Makefile` | Make | Modify — add `include services/reasoner/reasoner.mk` |
+
+***
+
+## Technical Context
+
+| Aspect | Value |
+|--------|-------|
+| Language | Python 3.13 (Alpine, multi-stage) |
+| Framework | FastAPI + LangGraph 1.0.x |
+| LLM client | `langchain-ollama` — `ChatOllama` |
+| Vector store | Qdrant (`qdrant-client>=1.9`, `AsyncQdrantClient`) |
+| Relational DB | PostgreSQL (`sqlalchemy>=2.0` async + `asyncpg`) |
+| Embeddings | `sentence-transformers>=3.0` — `all-MiniLM-L6-v2`, 384-dim, Cosine |
+| Messaging | NATS (`nats-py>=2.9`) — request-reply + fire-and-forget |
+| Streaming | Pulsar (`pulsar-client>=3.4`) — durable async, opt-in |
+| Config | Pydantic `BaseSettings` — `SHERLOCK_` prefix, 12-Factor |
+| Observability | `opentelemetry-*>=1.27` + `structlog>=24.4` |
+| Testing | `pytest>=8` + `pytest-asyncio>=0.24` + `httpx>=0.27` (all mocked) |
+| Linting | `ruff>=0.6` + `mypy>=1.11` |
+
+**POC delta** (key differences from `platform-spike/services/arc-sherlock-brain`):
+
+| POC | Production |
+|-----|------------|
+| pgvector in PostgreSQL | Qdrant (Cerebro) — dedicated vector DB |
+| `os.getenv()` | `Pydantic BaseSettings` — `SHERLOCK_` prefix |
+| `langchain_community.ChatOllama` | `langchain_ollama.ChatOllama` |
+| No tests | Full pytest suite, 75% coverage target |
+| NATS subject `brain.request` | `sherlock.request` |
+| LangGraph `set_entry_point()` | `workflow.add_edge(START, ...)` (1.0.x API) |
+| No OTEL | OTEL traces + metrics + structlog |
+| Port 8000 | Host port 8083 (cortex=8081, pulsar-admin=8082) |
+
+***
+
+## Architecture
+
+### Component Overview
+
+```mermaid
+graph TB
+    subgraph Callers
+        CLI[CLI / HTTP :8083]
+        Scarlett[Scarlett — NATS]
+        Batch[Batch Jobs — Pulsar]
+    end
+
+    subgraph "services/reasoner — arc-sherlock"
+        API["FastAPI\nPOST /chat\nGET /health\nGET /health/deep"]
+        NH["NATSHandler\nsherlock.request\nqueue: sherlock_workers"]
+        PH["PulsarHandler\nsherlock-requests\nsub: sherlock-workers\nasyncio.to_thread wrapper"]
+
+        subgraph "LangGraph StateGraph"
+            ST[START]
+            RC[retrieve_context]
+            GR[generate_response]
+            EH[error_handler]
+            EN[END]
+            ST --> RC
+            RC --> GR
+            GR --> EN
+            RC -->|exception| EH
+            GR -->|exception| EH
+            EH -->|retry < 3| GR
+            EH --> EN
+        end
+
+        subgraph "AppState dataclass"
+            AS["memory: SherlockMemory\ngraph: CompiledGraph\nnats: NATSHandler\npulsar: PulsarHandler\nmetrics: SherlockMetrics"]
+        end
+    end
+
+    subgraph "Platform Dependencies"
+        QD[(Cerebro\nQdrant :6333\nsherlock_conversations)]
+        PG[(Oracle\nPostgreSQL :5432\nsherlock.conversations)]
+        NATS[Flash — NATS :4222]
+        Pulsar[Dr. Strange — Pulsar :6650]
+        OL[Ollama / vLLM :11434]
+        OTEL[Friday Collector :4317]
+    end
+
+    CLI --> API
+    Scarlett --> NATS --> NH
+    Batch --> Pulsar --> PH
+
+    API --> RC
+    NH --> RC
+    PH --> RC
+
+    RC -->|search| QD
+    RC -->|history| PG
+    GR -->|ainvoke| OL
+    GR -->|save| PG
+    GR -->|upsert| QD
+    API -.->|traces/metrics| OTEL
+```
+
+### Invocation Sequence
+
+```mermaid
+sequenceDiagram
+    participant C as Caller
+    participant S as arc-sherlock
+    participant M as SherlockMemory
+    participant L as Ollama
+
+    Note over C,S: Mode 1 — HTTP sync
+    C->>S: POST /chat {user_id, text}
+    S->>M: search(user_id, text) → context
+    S->>L: ainvoke(messages + context)
+    S->>M: save(user_id, human + ai turns)
+    S-->>C: {user_id, text, latency_ms}
+
+    Note over C,S: Mode 2 — NATS request-reply
+    C->>S: nc.request("sherlock.request", payload, timeout=30)
+    S->>M: search + generate + save
+    S-->>C: msg.respond(result) → ephemeral _INBOX
+
+    Note over C,S: Mode 3 — Pulsar durable async (opt-in)
+    C->>S: producer.send("sherlock-requests", {request_id,...})
+    note right of S: asyncio.to_thread wraps<br/>blocking pulsar-client
+    S->>M: search + generate + save
+    S->>C: producer.send("sherlock-results", {request_id,...})
+    S->>S: consumer.acknowledge(msg)
+```
+
+### Memory Architecture
+
+```mermaid
+graph LR
+    subgraph "Tier 1 — Working Memory (per-invocation)"
+        AG[AgentState in LangGraph]
+    end
+    subgraph "Tier 2 — Semantic Memory"
+        QD["Qdrant\ncosine ANN 384-dim\nuser_id filter\ntop-k context"]
+    end
+    subgraph "Tier 3 — Chronological History"
+        PG["PostgreSQL\nsherlock.conversations\nORDER BY created_at"]
+    end
+
+    AG -->|encode + search| QD
+    QD -->|top-k context strings| AG
+    AG -->|persist human+ai turns| PG
+    AG -->|upsert vectors| QD
+```
+
+***
+
+## Constitution Check
+
+| # | Principle | Status | Evidence |
+|---|-----------|--------|----------|
+| I | Zero-Dep CLI | N/A | Service only — no CLI changes |
+| II | Platform-in-a-Box | **PASS** | `make reasoner-up` starts service; `reason` profile includes it |
+| III | Modular Services | **PASS** | Self-contained `services/reasoner/` with `service.yaml`, own Dockerfile |
+| IV | Two-Brain | **PASS** | Python only — intelligence layer; no Go mixed in |
+| V | Polyglot Standards | **PASS** | FastAPI + LangGraph, ruff + mypy, pytest, `SHERLOCK_` prefix, structlog |
+| VI | Local-First | N/A | CLI principle |
+| VII | Observability | **PASS** | `/health` + `/health/deep`, OTEL traces/metrics/structlog, `arc-friday-collector` |
+| VIII | Security | **PASS** | Non-root `sherlock:sherlock`, `127.0.0.1:8083` bind, content tracing off by default |
+| IX | Declarative | N/A | CLI principle |
+| X | Stateful Ops | N/A | CLI principle |
+| XI | Resilience | **PASS** | `tenacity` retries on retrieval, Pulsar `negative_acknowledge` on failure, `start_period: 30s` |
+| XII | Interactive | N/A | CLI principle |
+
+***
+
+## Project Structure
+
+```
+arc-platform/
+├── specs/
+│   └── 009-sherlock-reasoning/
+│       └── contracts/
+│           ├── openapi.yaml                # OpenAPI 3.1 — HTTP API contract
+│           └── asyncapi.yaml              # AsyncAPI 3.0 — NATS + Pulsar event contracts
+│
+├── services/
+│   ├── reasoner/                           # NEW SERVICE
+│   │   ├── Dockerfile                      # multi-stage, python:3.13-alpine, non-root
+│   │   ├── docker-compose.yml              # arc-sherlock, port 127.0.0.1:8083:8000
+│   │   ├── service.yaml                    # codename: sherlock, role: reasoner
+│   │   ├── reasoner.mk                     # make targets following cortex.mk pattern
+│   │   ├── pyproject.toml                  # deps: fastapi, langgraph, qdrant-client, nats-py, ...
+│   │   └── src/
+│   │       └── sherlock/
+│   │           ├── __init__.py
+│   │           ├── config.py               # Pydantic BaseSettings — SHERLOCK_ prefix
+│   │           ├── observability.py        # configure_logging, init_telemetry, SherlockMetrics
+│   │           ├── memory.py               # SherlockMemory — Qdrant + PostgreSQL, Conversation ORM
+│   │           ├── graph.py                # LangGraph 1.0.x — AgentState, build_graph, invoke_graph
+│   │           ├── nats_handler.py         # NATSHandler — queue group sherlock_workers
+│   │           ├── pulsar_handler.py       # PulsarHandler — asyncio.to_thread, shared subscription
+│   │           └── main.py                 # FastAPI + AppState dataclass + lifespan + /chat + /health*
+│   │   └── tests/
+│   │       ├── __init__.py
+│   │       ├── conftest.py                 # shared fixtures: mock_memory, mock_graph, test_client
+│   │       ├── test_api.py                 # /chat, /health, /health/deep — all mocked
+│   │       ├── test_graph.py               # build_graph, invoke_graph, error paths
+│   │       ├── test_memory.py              # Qdrant upsert/search, PG save, health_check
+│   │       ├── test_nats_handler.py        # request-reply, fire-and-forget
+│   │       └── test_pulsar_handler.py      # process+ack, failure+nack, asyncio.to_thread
+│   │
+│   └── profiles.yaml                       # MODIFY — add reasoner to reason profile
+│
+└── Makefile                                # MODIFY — add include services/reasoner/reasoner.mk
+```
+
+**Total new files**: 20 (7 source + 6 tests + 5 infra + `__init__.py` files)
+**Modified files**: 2 (`profiles.yaml`, `Makefile`)
+
+***
+
+## Module Designs
+
+### `config.py`
+
+Pydantic `BaseSettings` with `model_config = SettingsConfigDict(env_prefix="SHERLOCK_")` pattern. All fields have sensible defaults pointing at platform service names (e.g. `arc-vector-db`, `arc-messaging`).
+
+Key settings groups:
+
+* **Service**: `service_name`, `service_version`, `host`, `port`
+* **LLM**: `llm_model` (default: `mistral:7b`), `llm_base_url`, `embedding_model`, `embedding_dim`, `context_top_k`
+* **Qdrant**: `qdrant_host` (`arc-vector-db`), `qdrant_port` (6333), `qdrant_collection` (`sherlock_conversations`)
+* **PostgreSQL**: `postgres_url` (`postgresql+asyncpg://arc:arc@arc-sql-db:5432/arc`)
+* **NATS**: `nats_url` (`nats://arc-messaging:4222`), `nats_enabled` (True), `nats_subject` (`sherlock.request`), `nats_queue_group` (`sherlock_workers`)
+* **Pulsar**: `pulsar_url` (`pulsar://arc-streaming:6650`), `pulsar_enabled` (**False** — opt-in), `pulsar_request_topic`, `pulsar_result_topic`, `pulsar_subscription` (`sherlock-workers`)
+* **OTEL**: `otel_endpoint` (`http://arc-friday-collector:4317`) — uses standard `OTEL_EXPORTER_OTLP_ENDPOINT` env var alias; `otel_traces_enabled`, `otel_metrics_enabled`, `content_tracing` (**False** — no prompts/responses in spans)
+
+### `observability.py`
+
+Three exported functions + one class:
+
+* `configure_logging()` — structlog with JSON processors, level from env
+* `init_telemetry(settings)` — `TracerProvider` + `MeterProvider`, OTLP gRPC exporters
+* `instrument_app(app)` — `FastAPIInstrumentor().instrument_app(app)`
+* `SherlockMetrics` — counters: `sherlock.requests.total`, `sherlock.errors.total`; histograms: `sherlock.latency` (ms), `sherlock.context.size`
+
+OTEL span attributes: `user_id`, `transport` (http|nats|pulsar), `latency_ms`. No message content when `content_tracing=False`.
+
+### `memory.py`
+
+`SherlockMemory` class — two async clients:
+
+* **Qdrant** (`AsyncQdrantClient`): `init()` creates collection if absent (vectors `size=384`, distance `Cosine`), `search(user_id, text)` → `list[str]`, `upsert(user_id, role, text)` — both user + AI turns stored with `user_id` payload filter
+* **PostgreSQL** (SQLAlchemy async): `init()` creates `sherlock` schema + `sherlock.conversations` table if absent, `save(user_id, role, text)` — INSERT with timestamp, `get_history(user_id, limit)` — ORDER BY created\_at
+
+`health_check()` → `{"qdrant": bool, "postgres": bool}` — probes each independently.
+
+`Conversation` ORM model (`sherlock.conversations`):
+
+```
+id          UUID primary key
+user_id     TEXT NOT NULL (indexed)
+role        TEXT NOT NULL  -- "human" | "ai"
+content     TEXT NOT NULL
+created_at  TIMESTAMPTZ DEFAULT now()
+```
+
+Embedding is computed inline via `SentenceTransformer` (loaded once on `SherlockMemory.init()`).
+
+### `graph.py`
+
+LangGraph 1.0.x `StateGraph` with `AgentState` TypedDict:
+
+```python
+class AgentState(TypedDict):
+    messages:       Annotated[list[BaseMessage], add_messages]
+    user_id:        str
+    context:        Optional[list[str]]
+    final_response: Optional[str]
+    error_count:    int
+```
+
+Graph edges:
+
+* `START → retrieve_context`
+* `retrieve_context → generate_response` (normal)
+* `retrieve_context → error_handler` (exception)
+* `generate_response → END` (normal)
+* `generate_response → error_handler` (exception)
+* `error_handler → generate_response` (if `error_count < 3`)
+* `error_handler → END` (max retries exhausted — returns error response string)
+
+Nodes capture `memory` and `llm` via closure. `invoke_graph(graph, memory, user_id, text)` is the public function called by all three transports.
+
+### `nats_handler.py`
+
+```python
+class NATSHandler:
+    async def connect(self) -> None           # nc.connect(settings.nats_url)
+    async def subscribe(self) -> None         # nc.subscribe(subject, queue=queue_group, cb=_handle)
+    async def _handle(self, msg: Msg) -> None # parse → invoke_graph → msg.respond (if msg.reply)
+    async def close(self) -> None
+    def is_connected(self) -> bool
+```
+
+Fire-and-forget guard: `if msg.reply: await msg.respond(...)` — missing `reply` is silently skipped.
+
+### `pulsar_handler.py`
+
+`pulsar-client` is a synchronous C++ binding — all blocking calls wrapped with `asyncio.to_thread()`. Consumer loop is a background `asyncio.Task` that spawns a sub-task per message (slow inferences don't block the receive loop).
+
+```python
+class PulsarHandler:
+    async def start(self) -> None    # thread: _connect; task: _consume_loop
+    async def close(self) -> None    # cancel task; thread: client.close
+    def _connect(self) -> None       # Client + subscribe(Shared) + create_producer
+    async def _consume_loop(self) -> None   # background; receive(timeout_millis=5000)
+    async def _process(self, msg) -> None   # invoke_graph → send result → ack; on error: nack
+```
+
+Pulsar only instantiated when `settings.pulsar_enabled` is `True`.
+
+### `main.py`
+
+```python
+@dataclass
+class AppState:
+    memory:  SherlockMemory
+    graph:   CompiledGraph
+    nats:    NATSHandler
+    pulsar:  Optional[PulsarHandler]
+    metrics: SherlockMetrics
+```
+
+Lifespan startup order:
+
+1. `configure_logging()`
+2. `init_telemetry(settings)`
+3. `memory.init()` — creates Qdrant collection + PostgreSQL schema
+4. `llm = ChatOllama(model=settings.llm_model, base_url=settings.llm_base_url)`
+5. `graph = build_graph(memory, llm)`
+6. `nats.connect()` + `nats.subscribe()`
+7. `pulsar.start()` — only if `settings.pulsar_enabled`
+
+Endpoints:
+
+| Path | Method | Description |
+|------|--------|-------------|
+| `/chat` | POST | `{user_id, text}` → `invoke_graph` → `{user_id, text, latency_ms}` |
+| `/health` | GET | Shallow — always 200 if NATS connected |
+| `/health/deep` | GET | Probes Qdrant + Postgres + NATS → `{status, version, components}` |
+
+***
+
+## Parallel Execution Strategy
+
+```mermaid
+gantt
+    title Sherlock Implementation Phases
+    dateFormat  X
+    axisFormat  Phase %s
+
+    section Phase 1 — Foundation
+    pyproject.toml + Dockerfile skeleton    :p1a, 0, 1
+    config.py (Pydantic BaseSettings)       :p1b, 0, 1
+
+    section Phase 2 — Parallel Core
+    observability.py                        :p2a, after p1b, 1
+    memory.py (Qdrant + PostgreSQL)         :p2b, after p1b, 2
+    nats_handler.py                         :p2c, after p1b, 1
+
+    section Phase 3 — Graph + Pulsar
+    graph.py (LangGraph 1.0.x)              :p3a, after p2b, 2
+    pulsar_handler.py                       :p3b, after p2c, 1
+
+    section Phase 4 — Integration
+    main.py (FastAPI + AppState)            :p4a, after p3a, 1
+
+    section Phase 5 — Tests (parallel)
+    conftest.py + test_api.py               :p5a, after p4a, 1
+    test_graph.py + test_memory.py          :p5b, after p4a, 1
+    test_nats_handler.py + test_pulsar_handler.py :p5c, after p4a, 1
+
+    section Phase 6 — Infra + Wiring
+    docker-compose.yml + service.yaml       :p6a, after p4a, 1
+    reasoner.mk                             :p6b, after p4a, 1
+    Modify profiles.yaml + Makefile         :p6c, after p6a, 1
+```
+
+**Parallelism opportunities**:
+
+* Phase 2: `observability.py`, `memory.py`, `nats_handler.py` — all depend only on `config.py` → run concurrently
+* Phase 5: All test files can be written concurrently (mock interfaces defined by Phase 4)
+* Phase 6: `docker-compose.yml` + `reasoner.mk` can be written concurrently
+
+**Sequential constraints**:
+
+* `graph.py` must wait for `memory.py` (closure captures `SherlockMemory`)
+* `main.py` must wait for all modules (ties everything together)
+* `profiles.yaml` + `Makefile` modification must wait for `service.yaml` to exist
+
+***
+
+## Infrastructure Files
+
+### `service.yaml`
+
+```yaml
+name: arc-sherlock
+role: reasoner
+codename: sherlock
+image: ghcr.io/arc-framework/arc-sherlock:latest
+version: "0.1.0"
+language: python
+port: 8083
+health: http://localhost:8083/health
+timeout: 180
+depends_on:
+  - sql-db
+  - vector-db
+  - messaging
+  - streaming
+  - friday-collector
+```
+
+### `docker-compose.yml`
+
+* Image: `ghcr.io/arc-framework/arc-sherlock:latest`
+* Container name: `arc-sherlock`
+* Port: `127.0.0.1:8083:8000` (localhost-only)
+* Networks: `arc_platform_net` (external), `arc_otel_net` (external)
+* Healthcheck: `wget -qO- http://localhost:8000/health || exit 1`, `start_period: 30s`
+* No `depends_on` — handled by `resolve-deps.sh` (follows cortex pattern exactly)
+
+### `Dockerfile`
+
+Multi-stage Alpine:
+
+1. **Builder** (`python:3.13-alpine`) — `gcc musl-dev libffi-dev` for C extensions; `pip install --prefix=/install .`
+2. **Runtime** (`python:3.13-alpine`) — `libstdc++ libgomp` for PyTorch; non-root `sherlock:sherlock`; copy `/install`; `CMD uvicorn sherlock.main:app`
+
+Fallback: `python:3.13-slim` if Alpine + sentence-transformers fails on arm64.
+
+### `reasoner.mk`
+
+Follows `cortex.mk` pattern exactly — same color macros (`COLOR_INFO/OK/ERR`), same `COMPOSE_VAR` pattern.
+
+Targets: `reasoner-help`, `reasoner-build`, `reasoner-build-fresh`, `reasoner-up`, `reasoner-down`, `reasoner-health`, `reasoner-logs`, `reasoner-test`, `reasoner-test-cover`, `reasoner-lint`, `reasoner-check`, `reasoner-push`, `reasoner-publish`, `reasoner-tag`, `reasoner-clean`, `reasoner-nuke`
+
+***
+
+## Reviewer Checklist
+
+* \[ ] All 20 files in `services/reasoner/` created and non-empty
+* \[ ] `make reasoner-test` passes; `pytest --cov=sherlock` reports ≥ 75% on critical packages
+* \[ ] `make reasoner-lint` exits 0 — `ruff check src/` and `mypy src/` both clean
+* \[ ] `make reasoner-build` produces working Docker image (verify with `docker inspect`)
+* \[ ] `make dev-regen && grep sherlock .make/registry.mk` returns `SERVICE_reasoner_HEALTH` entry
+* \[ ] `services/profiles.yaml` — `reasoner` present under `reason` profile
+* \[ ] `Makefile` — `include services/reasoner/reasoner.mk` present after other realtime includes
+* \[ ] `services/reasoner/service.yaml` — `depends_on` lists `sql-db`, `vector-db`, `messaging`, `streaming`, `friday-collector`
+* \[ ] `Dockerfile` — `USER sherlock` before `CMD`; non-root enforced
+* \[ ] `docker-compose.yml` — port binding is `127.0.0.1:8083:8000`; no `depends_on` block
+* \[ ] No module globals in `main.py` — all singletons live in `AppState` dataclass
+* \[ ] `PulsarHandler` only instantiated when `settings.pulsar_enabled=True`
+* \[ ] NATS handler guards `msg.respond()` with `if msg.reply:` check
+* \[ ] OTEL span attributes contain no message content when `SHERLOCK_CONTENT_TRACING=false`
+* \[ ] Constitution compliance: II, III, IV, V, VII, VIII, XI all PASS
+* \[ ] `spec-doc.md` removed from project root
+* \[ ] `specs/index.md` updated with `009-sherlock-reasoning` entry
+* \[ ] `contracts/openapi.yaml` schemas match Pydantic models in `main.py`
+* \[ ] `contracts/asyncapi.yaml` payload schemas match `NATSHandler` + `PulsarHandler` JSON structures
+
+***
+
+## Risks & Mitigations
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| Alpine + `sentence-transformers` build fails on arm64 | H | Fallback: `python:3.13-slim`; document in Dockerfile comment |
+| `pulsar-client` C++ bindings unavailable for target arch | M | Document in `pyproject.toml`; Pulsar is opt-in so service still works without it |
+| Ollama not running at startup | M | `ChatOllama` lazy — connection attempted only on first `ainvoke()`; health endpoint stays green |
+| Qdrant collection created with wrong dimensions | M | `init()` checks `collection.config.params.vectors.size == embedding_dim`; raises if mismatch |
+| LangGraph 1.0.x API breaks from 0.2.x POC | L | Explicitly pinned `langchain-langgraph>=1.0`; `START`/`END`/`add_messages` from `langgraph.graph` |
+| `sentence-transformers` download on cold start (90MB) | L | `start_period: 30s` in healthcheck; model cached in Docker layer if baked in |
+| Pulsar negative-ack message storm on repeated LLM failures | L | `error_handler` caps retries at 3; returns error payload instead of raising; message acked on error response |
+| PostgreSQL `sherlock.conversations` table missing on first run | L | `memory.init()` creates schema + table if absent; idempotent |
+
+---
+
+---
 url: /arc-platform/specs-site/008-specs-site/plan.md
 ---
 # Implementation Plan: Specs Documentation Site
@@ -10029,6 +11185,443 @@ Both workflows are independent and can be implemented concurrently.
 | Integration | 1 | 1 | 0 |
 | Polish | 2 | 2 | 0 |
 | **Total** | **14** | **14** | **9** |
+
+---
+
+---
+url: /arc-platform/specs-site/009-sherlock-reasoning/tasks.md
+---
+# Tasks: Sherlock Reasoning Service
+
+> **Spec**: 009-sherlock-reasoning
+> **Date**: 2026-03-01
+
+## Task Format
+
+```
+[TASK-NNN] [P?] [MODULE] [PRIORITY] Description
+  Dependencies: [TASK-XXX] or none
+  Module: services/reasoner
+  Acceptance: Testable criteria
+  Status: [ ] pending | [~] in-progress | [x] done
+```
+
+* `[P]` = Safe for parallel agent execution
+* Priority: P1 (must), P2 (should), P3 (nice)
+
+***
+
+## Dependency Graph
+
+```mermaid
+graph TD
+    T001["T001\nScaffold + pyproject.toml"]
+    T010["T010\nconfig.py"]
+    T020["T020 ⬡\nobservability.py"]
+    T021["T021 ⬡\nmemory.py"]
+    T030["T030\ngraph.py"]
+    T031["T031 ⬡\nnats_handler.py"]
+    T032["T032 ⬡\npulsar_handler.py"]
+    T033["T033 ⬡\nDockerfile"]
+    T034["T034 ⬡\ndocker-compose.yml"]
+    T035["T035 ⬡\nservice.yaml"]
+    T036["T036 ⬡\nreasoner.mk"]
+    T040["T040\nmain.py"]
+    T041["T041\nconftest.py"]
+    T050["T050 ⬡\ntest_api.py"]
+    T051["T051 ⬡\ntest_graph.py"]
+    T052["T052 ⬡\ntest_memory.py"]
+    T053["T053 ⬡\ntest_nats_handler.py"]
+    T054["T054 ⬡\ntest_pulsar_handler.py"]
+    T060["T060\nprofiles.yaml"]
+    T061["T061\nMakefile"]
+    T900["T900 ⬡\nDocs & Links"]
+    T999["T999\nReviewer"]
+
+    T001 --> T010
+    T010 --> T020
+    T010 --> T021
+    T021 --> T030
+    T030 --> T031
+    T030 --> T032
+    T020 --> T040
+    T030 --> T040
+    T031 --> T040
+    T032 --> T040
+    T001 --> T033
+    T001 --> T034
+    T001 --> T035
+    T001 --> T036
+    T040 --> T041
+    T041 --> T050
+    T041 --> T051
+    T041 --> T052
+    T041 --> T053
+    T041 --> T054
+    T035 --> T060
+    T036 --> T061
+    T040 --> T900
+    T050 --> T999
+    T051 --> T999
+    T052 --> T999
+    T053 --> T999
+    T054 --> T999
+    T060 --> T999
+    T061 --> T999
+    T900 --> T999
+
+    style T001 fill:#f0f0f0
+    style T010 fill:#ffe0b2
+    style T999 fill:#e8f5e9
+```
+
+> ⬡ = parallel-safe task
+
+***
+
+## Quality Requirements
+
+| Module | Coverage | Lint |
+|--------|----------|------|
+| `services/reasoner` (Python) | 75% critical / 60% core / 40% infra | `ruff check src/` + `mypy src/` |
+
+***
+
+## Phase 1: Setup
+
+* \[x] **\[TASK-001]** `[SERVICES]` `[P1]` Scaffold `services/reasoner/` directory and `pyproject.toml`
+  * Dependencies: none
+  * Module: `services/reasoner/`
+  * Acceptance:
+    * `services/reasoner/src/sherlock/__init__.py` and `tests/__init__.py` exist
+    * `pyproject.toml` declares all dependencies (fastapi, uvicorn, langgraph>=1.0, langchain-core>=0.3, langchain-ollama>=0.2, qdrant-client, sqlalchemy, asyncpg, sentence-transformers, nats-py, pulsar-client, opentelemetry-\*, structlog, tenacity) and dev deps (pytest, pytest-asyncio, httpx, pytest-cov, ruff, mypy)
+    * `pip install -e ".[dev]"` dry-run succeeds (or `pyproject.toml` validates with `pip check`)
+    * Package name: `arc-sherlock`, version `0.1.0`
+  * Status: \[x]
+
+***
+
+## Phase 2: Foundational
+
+* \[x] **\[TASK-010]** `[SERVICES]` `[P1]` Implement `config.py` — Pydantic BaseSettings foundation
+  * Dependencies: TASK-001
+  * Module: `services/reasoner/src/sherlock/config.py`
+  * Acceptance:
+    * `Settings()` instantiates with no env vars set (all defaults valid)
+    * All `SHERLOCK_*` env var aliases present for: service\_name, version, postgres\_url, qdrant\_host, qdrant\_port, qdrant\_collection, nats\_url, nats\_enabled, nats\_subject, nats\_queue\_group, pulsar\_url, pulsar\_enabled (default `False`), pulsar\_request\_topic, pulsar\_result\_topic, pulsar\_subscription, llm\_model, llm\_base\_url, embedding\_model, embedding\_dim, context\_top\_k, otel\_endpoint, otel\_traces\_enabled, otel\_metrics\_enabled, content\_tracing (default `False`)
+    * `OTEL_EXPORTER_OTLP_ENDPOINT` env var accepted as alias for `otel_endpoint`
+    * Default values verified: `Settings().embedding_dim == 384`, `Settings().context_top_k == 5`, `Settings().content_tracing == False`, `Settings().pulsar_enabled == False`
+    * `mypy src/sherlock/config.py` passes clean
+  * Status: \[x]
+
+***
+
+## Phase 3: Implementation
+
+### Parallel Batch A — Independent modules (all depend only on config.py)
+
+* \[x] **\[TASK-020]** `[P]` `[SERVICES]` `[P1]` Implement `observability.py` — OTEL + structlog
+  * Dependencies: TASK-010
+  * Module: `services/reasoner/src/sherlock/observability.py`
+  * Acceptance:
+    * `configure_logging()` emits structured JSON output (structlog)
+    * `init_telemetry(settings)` creates `TracerProvider` + `MeterProvider` with OTLP gRPC exporters; no exception when called
+    * `instrument_app(app)` calls `FastAPIInstrumentor().instrument_app(app)` without error
+    * `SherlockMetrics` exposes: counters `sherlock.requests.total` and `sherlock.errors.total`; histograms `sherlock.latency` (ms) and `sherlock.context.size`
+    * When `settings.content_tracing=False` no message content added to spans
+    * **\[GAP-5]** `test_content_tracing_default_false`: `Settings().content_tracing == False` when `SHERLOCK_CONTENT_TRACING` is unset — security default verified
+    * **\[GAP-5]** `test_content_tracing_env_override`: setting `SHERLOCK_CONTENT_TRACING=true` in env → `Settings().content_tracing == True`
+    * **\[GAP-5]** `test_otel_span_no_content_when_disabled`: mock tracer span, call span-attribute helper with `content_tracing=False` → span has no `user_message` or `assistant_message` attributes
+    * `mypy src/sherlock/observability.py` passes clean
+  * Status: \[x]
+
+* \[x] **\[TASK-021]** `[P]` `[SERVICES]` `[P1]` Implement `memory.py` — dual-store SherlockMemory
+  * Dependencies: TASK-010
+  * Module: `services/reasoner/src/sherlock/memory.py`
+  * Acceptance:
+    * `SherlockMemory.init()` creates Qdrant collection `sherlock_conversations` if absent (vectors `size=384`, distance `Cosine`); idempotent — re-running init does not error
+    * `init()` creates PostgreSQL schema `sherlock` and table `sherlock.conversations` if absent
+    * `Conversation` ORM model has fields: `id` (UUID PK), `user_id` (TEXT, indexed), `role` (TEXT — "human"|"ai"), `content` (TEXT), `created_at` (TIMESTAMPTZ DEFAULT now())
+    * `search(user_id, text)` encodes `text` with `all-MiniLM-L6-v2`, queries Qdrant with `user_id` payload filter, returns `list[str]` (top-k content strings)
+    * `save(user_id, role, text)` upserts to Qdrant and inserts to PostgreSQL
+    * `health_check()` returns `{"qdrant": bool, "postgres": bool}` — probes each independently; one failure does not mask the other
+    * `mypy src/sherlock/memory.py` passes clean
+  * Status: \[x]
+
+### Parallel Batch B — Graph (depends on memory.py)
+
+* \[x] **\[TASK-030]** `[SERVICES]` `[P1]` Implement `graph.py` — LangGraph 1.0.x state machine
+  * Dependencies: TASK-021
+  * Module: `services/reasoner/src/sherlock/graph.py`
+  * Acceptance:
+    * `AgentState` TypedDict has fields: `messages` (`Annotated[list[BaseMessage], add_messages]`), `user_id` (str), `context` (`Optional[list[str]]`), `final_response` (`Optional[str]`), `error_count` (int)
+    * `build_graph(memory, llm)` returns a compiled `StateGraph` using LangGraph 1.0.x API (`workflow.add_edge(START, ...)`, not `set_entry_point`)
+    * Graph has three nodes: `retrieve_context`, `generate_response`, `error_handler`
+    * Conditional edge: exceptions in `retrieve_context` or `generate_response` route to `error_handler`
+    * `error_handler` retries `generate_response` when `error_count < 3`; returns error response string when retries exhausted
+    * `invoke_graph(graph, memory, user_id, text)` runs the graph and returns `str` response
+    * `ChatPromptTemplate` used to inject retrieved context into the system prompt
+    * `mypy src/sherlock/graph.py` passes clean
+  * Status: \[x]
+
+### Parallel Batch C — Transport handlers (both depend on graph.py)
+
+* \[x] **\[TASK-031]** `[P]` `[SERVICES]` `[P1]` Implement `nats_handler.py` — NATS request-reply handler
+  * Dependencies: TASK-030
+  * Module: `services/reasoner/src/sherlock/nats_handler.py`
+  * Acceptance:
+    * `NATSHandler.__init__` accepts `graph`, `memory`, `settings`, `metrics` (injected — no module globals)
+    * `connect()` calls `nats.connect(settings.nats_url)` asynchronously
+    * `subscribe()` subscribes to `settings.nats_subject` with queue group `settings.nats_queue_group`
+    * `_handle(msg)` decodes JSON `{user_id, text}`, calls `invoke_graph`, increments metrics
+    * **Fire-and-forget guard**: `if msg.reply: await msg.respond(...)` — missing reply subject silently skipped
+    * Error response on exception: `{"error": str(e), "latency_ms": N}` (only if `msg.reply` set)
+    * `is_connected()` returns connection status bool (used by `/health`)
+    * `close()` drains and closes connection
+    * `mypy src/sherlock/nats_handler.py` passes clean
+  * Status: \[x]
+
+* \[x] **\[TASK-032]** `[P]` `[SERVICES]` `[P2]` Implement `pulsar_handler.py` — durable async Pulsar consumer
+  * Dependencies: TASK-030
+  * Module: `services/reasoner/src/sherlock/pulsar_handler.py`
+  * Acceptance:
+    * `PulsarHandler.__init__` accepts `graph`, `memory`, `settings`, `metrics` (injected)
+    * `start()` calls `_connect()` via `asyncio.to_thread` then spawns `_consume_loop()` as background `asyncio.Task`
+    * `_connect()` creates `pulsar.Client`, subscribes with `ConsumerType.Shared` (subscription name = `settings.pulsar_subscription`), creates producer for `settings.pulsar_result_topic`
+    * `_consume_loop()` calls `consumer.receive(timeout_millis=5000)` via `asyncio.to_thread`; spawns `asyncio.create_task(_process(msg))` per message
+    * **\[GAP-6 resolved]** `_process(msg)` failure path — two distinct outcomes:
+      * **Path A — graph returned error string** (error\_handler capped retries): `invoke_graph` returns a string; `_process` publishes `{"request_id":..., "error": str, "latency_ms": N}` to `sherlock-results` → **`consumer.acknowledge(msg)`** (successful processing of bad input)
+      * **Path B — unhandled exception** (JSON decode failure, missing `request_id`, Pulsar send error): exception escapes before or after `invoke_graph` → **`consumer.negative_acknowledge(msg)`** → Pulsar redelivers to another replica
+    * `close()` cancels consume task, calls `client.close()` via `asyncio.to_thread`
+    * `mypy src/sherlock/pulsar_handler.py` passes clean
+  * Status: \[x]
+
+### Parallel Batch D — Infrastructure files (depend only on T001 scaffold)
+
+* \[x] **\[TASK-033]** `[P]` `[SERVICES]` `[P1]` Write `Dockerfile` — multi-stage Alpine, non-root
+  * Dependencies: TASK-001
+  * Module: `services/reasoner/Dockerfile`
+  * Acceptance:
+    * Two stages: `builder` (python:3.13-alpine + gcc musl-dev libffi-dev) and runtime (python:3.13-alpine)
+    * Builder installs deps to `/install` prefix; runtime copies `/install`
+    * Runtime installs `libstdc++ libgomp` (required by sentence-transformers on Alpine)
+    * `RUN addgroup -S sherlock && adduser -S -G sherlock sherlock`
+    * `USER sherlock` appears before `CMD`
+    * `CMD ["uvicorn", "sherlock.main:app", "--host", "0.0.0.0", "--port", "8000"]`
+    * Comment noting `python:3.13-slim` fallback for arm64 Alpine failures
+  * Status: \[x]
+
+* \[x] **\[TASK-034]** `[P]` `[SERVICES]` `[P1]` Write `docker-compose.yml` — arc-sherlock service definition
+  * Dependencies: TASK-001
+  * Module: `services/reasoner/docker-compose.yml`
+  * Acceptance:
+    * `name: arc-platform`; service name `arc-sherlock`
+    * Port binding: `127.0.0.1:8083:8000` (localhost-only, no conflict with cortex=8081, pulsar-admin=8082)
+    * Networks: `arc_platform_net` and `arc_otel_net` both declared as `external: true`
+    * **No `depends_on`** block (handled by `resolve-deps.sh`)
+    * Healthcheck: `wget -qO- http://localhost:8000/health || exit 1`, `interval: 15s`, `timeout: 5s`, `retries: 5`, `start_period: 30s`
+    * `restart: unless-stopped`
+    * `image: ghcr.io/arc-framework/arc-sherlock:latest`
+  * Status: \[x]
+
+* \[x] **\[TASK-035]** `[P]` `[SERVICES]` `[P1]` Write `service.yaml` — service registry metadata
+  * Dependencies: TASK-001
+  * Module: `services/reasoner/service.yaml`
+  * Acceptance:
+    * Fields present: `name: arc-sherlock`, `role: reasoner`, `codename: sherlock`, `image`, `version: "0.1.0"`, `language: python`, `port: 8083`, `health: http://localhost:8083/health`, `timeout: 180`
+    * `depends_on` lists exactly: `sql-db`, `vector-db`, `messaging`, `streaming`, `friday-collector`
+  * Status: \[x]
+
+* \[x] **\[TASK-036]** `[P]` `[SERVICES]` `[P1]` Write `reasoner.mk` — Make targets following cortex.mk pattern
+  * Dependencies: TASK-001
+  * Module: `services/reasoner/reasoner.mk`
+  * Acceptance:
+    * Uses same color macros (`COLOR_INFO`/`COLOR_OK`/`COLOR_ERR`) and `COMPOSE_VAR` pattern as `cortex.mk`
+    * Implements targets: `reasoner-help`, `reasoner-build`, `reasoner-build-fresh`, `reasoner-up`, `reasoner-down`, `reasoner-health`, `reasoner-logs`, `reasoner-test`, `reasoner-test-cover`, `reasoner-lint`, `reasoner-check`, `reasoner-push`, `reasoner-publish`, `reasoner-tag`, `reasoner-clean`, `reasoner-nuke`
+    * `reasoner-test` runs `pytest tests/`; `reasoner-lint` runs `ruff check src/ && mypy src/`
+    * `reasoner-health` checks `http://localhost:8083/health`
+    * `make reasoner-help` outputs usage without error
+  * Status: \[x]
+
+***
+
+## Phase 4: Integration
+
+* \[x] **\[TASK-040]** `[SERVICES]` `[P1]` Implement `main.py` — FastAPI app with AppState dataclass and lifespan
+  * Dependencies: TASK-020, TASK-030, TASK-031, TASK-032
+  * Module: `services/reasoner/src/sherlock/main.py`
+  * Acceptance:
+    * `AppState` dataclass holds: `memory: SherlockMemory`, `graph: CompiledGraph`, `nats: NATSHandler`, `pulsar: Optional[PulsarHandler]`, `metrics: SherlockMetrics` — no module globals
+    * **\[GAP-4]** No module-level assignments to `SherlockMemory`, `NATSHandler`, `PulsarHandler`, or any handler/service singleton — all initialized only inside the `@asynccontextmanager lifespan` function and stored in `AppState`. Note: `app = FastAPI(...)` at module scope is the standard ASGI entry point convention and is explicitly exempt from this rule — uvicorn requires it at module scope for service discovery.
+    * **\[GAP-4]** Code review confirms: no `app.state.memory = ...` outside lifespan; no bare `memory = SherlockMemory()` at module scope
+    * Lifespan startup order: `configure_logging → init_telemetry → memory.init() → ChatOllama init → build_graph → nats.connect() + subscribe() → pulsar.start()` (only if `settings.pulsar_enabled`)
+    * `POST /chat` calls `invoke_graph`, returns `ChatResponse(user_id, text, latency_ms)` with 200; returns 503 `{"detail":"Service not ready"}` if graph not initialized; 422 on Pydantic validation failure
+    * `GET /health` returns `{"status":"ok","version":...}` 200 always (if process alive + NATS connected)
+    * `GET /health/deep` calls `memory.health_check()` + NATS `is_connected()`; returns `{"status","version","components":{"qdrant","postgres","nats"}}`; 503 if any component `False`
+    * `instrument_app(app)` called after app creation (OTEL FastAPI instrumentation)
+    * OTEL span started per `/chat` request with `user_id` and `transport: http` attributes
+    * `mypy src/sherlock/main.py` passes clean
+  * Status: \[x]
+
+* \[x] **\[TASK-041]** `[SERVICES]` `[P1]` Write `tests/conftest.py` — shared test fixtures
+  * Dependencies: TASK-040
+  * Module: `services/reasoner/tests/conftest.py`
+  * Acceptance:
+    * `mock_memory` fixture: `AsyncMock(SherlockMemory)` with `search()→["ctx1","ctx2"]`, `save()→None`, `health_check()→{"qdrant":True,"postgres":True}`, `init()→None`
+    * `mock_graph` fixture: `MagicMock(CompiledGraph)` — `invoke_graph` patched to return `"mocked response"`
+    * `mock_nats` fixture: mock `NATSHandler` with `is_connected()→True`
+    * `app_state` fixture: fully-populated `AppState` using mocks above
+    * `test_client` fixture: `httpx.AsyncClient` wrapping the FastAPI app with `app_state` injected
+    * All fixtures `pytest.mark.asyncio` compatible; no live services required
+  * Status: \[x]
+
+### Parallel Batch — Tests (all depend on T041 conftest)
+
+* \[x] **\[TASK-050]** `[P]` `[SERVICES]` `[P1]` Write `tests/test_api.py` — HTTP endpoint tests
+  * Dependencies: TASK-041
+  * Module: `services/reasoner/tests/test_api.py`
+  * Acceptance:
+    * `test_chat_happy_path`: POST `/chat` with valid body → 200 `{user_id, text, latency_ms}` (mock graph)
+    * `test_chat_422_missing_user_id`: POST without `user_id` → 422
+    * `test_chat_422_empty_text`: POST with `text=""` → 422
+    * `test_chat_503_service_not_ready`: POST when graph is None → 503 `{"detail":"Service not ready"}`
+    * `test_health_200`: GET `/health` → 200 `{"status":"ok"}`
+    * `test_health_deep_all_healthy`: GET `/health/deep` with all mocks healthy → 200 `{..., "components":{"qdrant":true,"postgres":true,"nats":true}}`
+    * `test_health_deep_qdrant_down`: mock `health_check()→{"qdrant":False,"postgres":True}` → 503 with `"status":"degraded"`
+    * **\[GAP-2]** `test_chat_response_matches_openapi_schema`: load `contracts/openapi.yaml`, extract `ChatResponse` schema, validate actual response JSON with `jsonschema.validate()` — catches silent contract drift
+  * Status: \[x]
+
+* \[x] **\[TASK-051]** `[P]` `[SERVICES]` `[P1]` Write `tests/test_graph.py` — LangGraph state machine tests
+  * Dependencies: TASK-041
+  * Module: `services/reasoner/tests/test_graph.py`
+  * Acceptance:
+    * `test_build_graph_returns_compiled_graph`: `build_graph(mock_memory, mock_llm)` returns a non-None compiled graph
+    * `test_invoke_graph_calls_memory_search`: `memory.search()` called once per `invoke_graph()`
+    * `test_invoke_graph_calls_memory_save_twice`: `memory.save()` called twice (human turn + AI turn)
+    * `test_invoke_graph_returns_string`: return value is `str`
+    * `test_error_handler_triggered_on_llm_failure`: when `llm.ainvoke` raises, `error_handler` node is entered; after 3 retries returns error string (not exception)
+  * Status: \[x]
+
+* \[x] **\[TASK-052]** `[P]` `[SERVICES]` `[P1]` Write `tests/test_memory.py` — dual-store memory tests
+  * Dependencies: TASK-041
+  * Module: `services/reasoner/tests/test_memory.py`
+  * Acceptance:
+    * `test_init_creates_qdrant_collection`: `init()` calls `qdrant_client.create_collection` when collection absent; skips if exists (idempotent)
+    * `test_init_creates_postgres_schema`: `init()` executes `CREATE SCHEMA IF NOT EXISTS sherlock` + table DDL
+    * `test_search_returns_list_of_strings`: `search("user1","query")` calls Qdrant with `user_id` filter, returns `list[str]`
+    * `test_save_upserts_qdrant_and_inserts_postgres`: `save()` calls both `qdrant_client.upsert` and SQLAlchemy `session.execute`
+    * `test_health_check_qdrant_down`: Qdrant mock raises → `health_check()` returns `{"qdrant":False,"postgres":True}` (PG still probed)
+    * `test_health_check_both_healthy`: returns `{"qdrant":True,"postgres":True}`
+  * Status: \[x]
+
+* \[x] **\[TASK-053]** `[P]` `[SERVICES]` `[P1]` Write `tests/test_nats_handler.py` — NATS handler tests
+  * Dependencies: TASK-041
+  * Module: `services/reasoner/tests/test_nats_handler.py`
+  * Acceptance:
+    * `test_request_reply`: handler receives msg with `reply="INBOX.xxx"` → `invoke_graph` called → `msg.respond()` called with JSON bytes
+    * `test_fire_and_forget`: msg with `reply=None` → `invoke_graph` called → `msg.respond()` NOT called; no exception raised
+    * `test_error_response_on_exception`: `invoke_graph` raises → error JSON `{"error":str,"latency_ms":N}` sent via `msg.respond()` (only if reply set)
+    * `test_is_connected_true_after_connect`: `is_connected()` returns `True` after `connect()`
+    * **\[GAP-2]** `test_nats_request_payload_matches_asyncapi_schema`: load `contracts/asyncapi.yaml`, extract `ReasoningRequestPayload` schema, validate test payload with `jsonschema.validate()`
+  * Status: \[x]
+
+* \[x] **\[TASK-054]** `[P]` `[SERVICES]` `[P2]` Write `tests/test_pulsar_handler.py` — PulsarHandler tests
+  * Dependencies: TASK-041
+  * Module: `services/reasoner/tests/test_pulsar_handler.py`
+  * Acceptance:
+    * `test_process_and_ack`: valid `{request_id, user_id, text}` msg → `invoke_graph` returns response string → result `{request_id, user_id, text, latency_ms}` published to `sherlock-results` → `consumer.acknowledge(msg)` called
+    * **\[GAP-6 resolved]** `test_error_handler_result_published_and_acked`: `invoke_graph` returns error string (simulating error\_handler exhausted retries) → `{"request_id":..., "error": str, "latency_ms": N}` published to `sherlock-results` → `consumer.acknowledge(msg)` called — NOT negative-acked (it was successfully processed)
+    * **\[GAP-6 resolved]** `test_unhandled_exception_triggers_negative_ack`: `invoke_graph` raises `RuntimeError` (e.g. Pulsar send fails) → `consumer.negative_acknowledge(msg)` called → no exception propagated from `_process()`
+    * `test_missing_request_id_triggers_nack`: msg without `request_id` → `KeyError` during decode → negative-ack before `invoke_graph` is called
+    * `test_asyncio_to_thread_used_for_blocking_calls`: all `producer.send`, `consumer.acknowledge`, `consumer.negative_acknowledge` calls wrapped via `asyncio.to_thread` (verify with mock)
+    * **\[GAP-2]** `test_pulsar_result_payload_matches_asyncapi_schema`: load `contracts/asyncapi.yaml`, extract `ReasoningResultPayload` schema, validate published result payload with `jsonschema.validate()`
+  * Status: \[x]
+
+***
+
+## Phase 5: Polish
+
+* \[x] **\[TASK-060]** `[SERVICES]` `[P1]` Modify `services/profiles.yaml` — add Sherlock to `reason` profile
+  * Dependencies: TASK-035
+  * Module: `services/profiles.yaml`
+  * Acceptance:
+    * `reasoner` listed under `reason.services` array
+    * `ultra-instinct: services: '*'` unchanged (auto-includes via service.yaml)
+    * Sherlock NOT added to `think` profile (requires external Ollama LLM)
+    * `make dev-regen && grep sherlock .make/registry.mk` returns `SERVICE_reasoner_HEALTH` entry
+  * Status: \[x]
+
+* \[x] **\[TASK-061]** `[SERVICES]` `[P1]` Modify root `Makefile` — include reasoner.mk
+  * Dependencies: TASK-036
+  * Module: `Makefile`
+  * Acceptance:
+    * `include services/reasoner/reasoner.mk` added after `include services/realtime/realtime.mk`
+    * `make reasoner-help` runs from repo root without error
+    * `make reasoner-test` and `make reasoner-lint` reachable from repo root
+  * Status: \[x]
+
+* \[x] **\[TASK-900]** `[P]` `[DOCS]` `[P1]` Docs & links update
+  * Dependencies: TASK-040
+  * Module: `docs/`, `CLAUDE.md`, `specs/`
+  * Acceptance:
+    * `SERVICE.MD` (or equivalent service matrix) includes Sherlock row: codename, role, tech, port
+    * `specs/index.md` includes `009-sherlock-reasoning` entry with title and status
+    * `spec-doc.md` removed from repo root (was a temporary draft artifact)
+    * `CLAUDE.md` monorepo layout comment for `services/reasoner/` matches actual implementation
+    * All internal links in spec.md, plan.md, and contracts/ are valid
+  * Status: \[x]
+
+* \[x] **\[TASK-999]** `[REVIEW]` `[P1]` Reviewer agent verification
+  * Dependencies: ALL (T001–T900)
+  * Module: all affected modules
+  * Acceptance:
+    * All tasks T001–T900 show `[x]` done
+    * `make reasoner-test` passes; `pytest --cov=sherlock` reports ≥ 75% on critical packages
+    * `make reasoner-lint` exits 0 — `ruff check src/` and `mypy src/` both clean
+    * `make reasoner-build` produces a valid Docker image
+    * `docker inspect arc-sherlock` confirms non-root user `sherlock`
+    * `make dev-regen && grep sherlock .make/registry.mk` finds `SERVICE_reasoner_HEALTH`
+    * `services/profiles.yaml` has `reasoner` under `reason`
+    * `Makefile` includes `services/reasoner/reasoner.mk`
+    * **\[GAP-2]** `GET http://localhost:8083/openapi.json` response matches `contracts/openapi.yaml` — compare `ChatRequest`, `ChatResponse`, `DeepHealthResponse` schemas manually or with `openapi-diff`
+    * **\[GAP-2]** `contracts/asyncapi.yaml` `ReasoningRequestPayload`, `DurableReasoningRequestPayload`, `ReasoningResultPayload` schemas verified against `NATSHandler._handle` and `PulsarHandler._process` JSON structures
+    * **\[GAP-4]** `main.py` has zero module-level singleton assignments — confirmed by code review
+    * Constitution compliance confirmed: II, III, IV, V, VII, VIII, XI all PASS
+    * No `Co-Authored-By:` or AI attribution in any commit messages
+  * Status: \[x]
+
+***
+
+## Progress Summary
+
+| Phase | Total | Done | Parallel-safe |
+|-------|-------|------|---------------|
+| Phase 1 — Setup | 1 | 1 | 0 |
+| Phase 2 — Foundational | 1 | 1 | 0 |
+| Phase 3 — Implementation | 10 | 10 | 9 |
+| Phase 4 — Integration | 7 | 7 | 5 |
+| Phase 5 — Polish | 4 | 4 | 2 |
+| **Total** | **23** | **23** | **16** |
+
+***
+
+## Parallel Execution Guide
+
+When running `/speckit.implement`, the following batches can be dispatched simultaneously:
+
+| Batch | Tasks | Gate |
+|-------|-------|------|
+| After T001 | T010 (sequential) | scaffold exists |
+| After T010 | T020, T021 in parallel | config.py exists |
+| Anytime after T001 | T033, T034, T035, T036 in parallel | scaffold exists (infra has no code deps) |
+| After T021 | T030 | memory.py exists |
+| After T030 | T031, T032 in parallel | invoke\_graph exists |
+| After T020+T030+T031+T032 | T040 | all modules exist |
+| After T040 | T041, T900 in parallel | main.py + AppState exist |
+| After T041 | T050, T051, T052, T053, T054 in parallel | conftest fixtures exist |
+| After T035 | T060 | service.yaml exists |
+| After T036 | T061 | reasoner.mk exists |
+| After all | T999 | reviewer gate |
 
 ---
 

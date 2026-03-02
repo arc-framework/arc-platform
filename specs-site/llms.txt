@@ -57,3 +57,9 @@
 - [Tasks: Specs Documentation Site](/arc-platform/specs-site/008-specs-site/tasks.md)
 - [Analysis Report: 008-Specs-Site](/arc-platform/specs-site/008-specs-site/analysis-report.md)
 
+### Other
+
+- [Analysis Report: Sherlock Reasoning Service (Re-Audit Post-Fixes)](/arc-platform/specs-site/009-sherlock-reasoning/analysis-report.md)
+- [Feature: Sherlock Reasoning Service](/arc-platform/specs-site/009-sherlock-reasoning/spec.md)
+- [Implementation Plan: Sherlock Reasoning Service](/arc-platform/specs-site/009-sherlock-reasoning/plan.md)
+- [Tasks: Sherlock Reasoning Service](/arc-platform/specs-site/009-sherlock-reasoning/tasks.md)
