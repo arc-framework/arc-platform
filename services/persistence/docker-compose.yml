@@ -26,17 +26,6 @@ services:
       - arc_platform_net
     restart: unless-stopped
 
-  # ── postgres_exporter: Prometheus metrics sidecar for arc-sql-db ─────────
-  # Exposes PostgreSQL metrics at :9187/metrics — scraped by arc-friday-collector.
-  arc-sql-db-exporter:
-    image: prometheuscommunity/postgres-exporter:latest
-    container_name: arc-sql-db-exporter
-    environment:
-      DATA_SOURCE_NAME: "postgresql://arc:arc@arc-sql-db:5432/arc?sslmode=disable"
-    networks:
-      - arc_platform_net
-    restart: unless-stopped
-
 volumes:
   oracle-data:
     name: arc-sql-db-data
