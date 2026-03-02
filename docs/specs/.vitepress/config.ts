@@ -3,6 +3,40 @@ import { withMermaid } from 'vitepress-plugin-mermaid'
 import { GitChangelog } from '@nolebase/vitepress-plugin-git-changelog/vite'
 import { groupIconMdPlugin, groupIconVitePlugin } from 'vitepress-plugin-group-icons'
 import llmstxt from 'vitepress-plugin-llms'
+import { readdirSync, existsSync } from 'node:fs'
+import { resolve, join } from 'node:path'
+
+const CONTENT_DIR = resolve(__dirname, '../content')
+
+// Known doc filenames in display order
+const DOC_FILES = [
+  { file: 'spec',            label: 'Specification' },
+  { file: 'plan',            label: 'Implementation Plan' },
+  { file: 'tasks',           label: 'Task Breakdown' },
+  { file: 'analysis-report', label: 'Analysis Report' },
+  { file: 'quickstart',      label: 'Quick Start' },
+  { file: 'research',        label: 'Research' },
+  { file: 'data-model',      label: 'Data Model' },
+]
+
+function buildSidebar() {
+  const dirs = readdirSync(CONTENT_DIR, { withFileTypes: true })
+    .filter(d => d.isDirectory() && /^\d{3}-/.test(d.name))
+    .sort((a, b) => a.name.localeCompare(b.name))
+
+  return [
+    { text: 'Overview', link: '/' },
+    ...dirs.map(dir => {
+      const slug = dir.name
+      const num = slug.slice(0, 3)
+      const name = slug.slice(4).replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+      const items = DOC_FILES
+        .filter(({ file }) => existsSync(join(CONTENT_DIR, slug, `${file}.md`)))
+        .map(({ file, label }) => ({ text: label, link: `/${slug}/${file}` }))
+      return { text: `${num} — ${name}`, items }
+    }),
+  ]
+}
 
 export default withMermaid(defineConfig({
   title: 'A.R.C. Platform — Specs',
@@ -18,78 +52,7 @@ export default withMermaid(defineConfig({
       { text: 'GitHub', link: 'https://github.com/arc-framework/arc-platform' }
     ],
 
-    sidebar: [
-      { text: 'Overview', link: '/' },
-      {
-        text: '001 — OTEL Setup',
-        items: [
-          { text: 'Specification', link: '/001-otel-setup/spec' },
-          { text: 'Implementation Plan', link: '/001-otel-setup/plan' },
-          { text: 'Task Breakdown', link: '/001-otel-setup/tasks' },
-        ]
-      },
-      {
-        text: '002 — Cortex Setup',
-        items: [
-          { text: 'Specification', link: '/002-cortex-setup/spec' },
-          { text: 'Implementation Plan', link: '/002-cortex-setup/plan' },
-          { text: 'Task Breakdown', link: '/002-cortex-setup/tasks' },
-        ]
-      },
-      {
-        text: '003 — Messaging Setup',
-        items: [
-          { text: 'Specification', link: '/003-messaging-setup/spec' },
-          { text: 'Implementation Plan', link: '/003-messaging-setup/plan' },
-          { text: 'Task Breakdown', link: '/003-messaging-setup/tasks' },
-        ]
-      },
-      {
-        text: '004 — Dev Setup',
-        items: [
-          { text: 'Specification', link: '/004-dev-setup/spec' },
-          { text: 'Implementation Plan', link: '/004-dev-setup/plan' },
-          { text: 'Task Breakdown', link: '/004-dev-setup/tasks' },
-          { text: 'Analysis Report', link: '/004-dev-setup/analysis-report' },
-        ]
-      },
-      {
-        text: '005 — Data Layer',
-        items: [
-          { text: 'Specification', link: '/005-data-layer/spec' },
-          { text: 'Implementation Plan', link: '/005-data-layer/plan' },
-          { text: 'Task Breakdown', link: '/005-data-layer/tasks' },
-          { text: 'Analysis Report', link: '/005-data-layer/analysis-report' },
-        ]
-      },
-      {
-        text: '006 — Platform Control',
-        items: [
-          { text: 'Specification', link: '/006-platform-control/spec' },
-          { text: 'Implementation Plan', link: '/006-platform-control/plan' },
-          { text: 'Task Breakdown', link: '/006-platform-control/tasks' },
-          { text: 'Analysis Report', link: '/006-platform-control/analysis-report' },
-        ]
-      },
-      {
-        text: '007 — Voice Stack',
-        items: [
-          { text: 'Specification', link: '/007-voice-stack/spec' },
-          { text: 'Implementation Plan', link: '/007-voice-stack/plan' },
-          { text: 'Task Breakdown', link: '/007-voice-stack/tasks' },
-          { text: 'Analysis Report', link: '/007-voice-stack/analysis-report' },
-        ]
-      },
-      {
-        text: '008 — Specs Site',
-        items: [
-          { text: 'Specification', link: '/008-specs-site/spec' },
-          { text: 'Implementation Plan', link: '/008-specs-site/plan' },
-          { text: 'Task Breakdown', link: '/008-specs-site/tasks' },
-          { text: 'Analysis Report', link: '/008-specs-site/analysis-report' },
-        ]
-      },
-    ],
+    sidebar: buildSidebar(),
 
     editLink: {
       pattern: 'https://github.com/arc-framework/arc-platform/edit/main/specs/:path',
