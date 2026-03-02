@@ -103,7 +103,7 @@ help:
 
 .PHONY: dev dev-up dev-down dev-wait dev-health dev-logs dev-status \
         dev-clean dev-nuke dev-prereqs dev-networks dev-regen dev-images \
-        scrub
+        scrub specs-dev
 
 ## dev: Start all services in $(PROFILE) profile in dependency order
 dev: dev-prereqs dev-networks .make/profiles.mk .make/registry.mk dev-images dev-up dev-wait
@@ -211,3 +211,8 @@ scrub:
 	@# Make — generated registry/profile files
 	@rm -rf .make/
 	@printf "$(COLOR_OK)✓$(COLOR_OFF) Monorepo scrubbed — run 'make dev' to regenerate\n"
+
+## specs-dev: Start the VitePress specs site dev server (http://localhost:5173/arc-platform/specs-site/)
+specs-dev:
+	@printf "$(COLOR_INFO)→$(COLOR_OFF) Starting specs site dev server...\n"
+	@cd docs/specs && npm install --silent && npm run dev
