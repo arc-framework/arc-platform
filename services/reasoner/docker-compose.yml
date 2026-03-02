@@ -24,6 +24,7 @@ services:
     environment:
       SHERLOCK_POSTGRES_URL: "postgresql+asyncpg://arc:arc@arc-sql-db:5432/arc"
       SHERLOCK_NATS_URL: "nats://arc-messaging:4222"
+      LOG_LEVEL: "debug"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://arc-friday-collector:4317"
       # For local binary runs override with: OTEL_EXPORTER_OTLP_ENDPOINT=127.0.0.1:4317
       OTEL_SERVICE_NAME: "arc-sherlock"

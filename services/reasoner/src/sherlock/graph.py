@@ -206,13 +206,14 @@ async def invoke_graph(
         raise RuntimeError(f"Graph invocation failed: {exc}") from exc
 
     response: str = final_state.get("final_response") or "No response generated."
+    _log.debug("graph_invoked", user_id=user_id, event="service_call")
 
     # Persist both turns — best-effort, don't fail the response if storage is down
     try:
         await memory.save(user_id, "human", text)
         await memory.save(user_id, "ai", response)
     except Exception as exc:
-        _log.warning("memory_save_failed", error=str(exc))
+        _log.warning("memory_save_failed", error=str(exc), event="exception")
 
     # Path A: error_handler exhausted retries — raise typed exception so callers can
     # publish with "error" key and still ACK (do not redeliver — message was processed)

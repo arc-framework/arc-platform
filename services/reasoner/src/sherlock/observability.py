@@ -1,4 +1,5 @@
 import logging
+import os
 from typing import Any
 
 import structlog
@@ -72,7 +73,8 @@ def configure_logging() -> None:
 
     root = logging.getLogger()
     root.handlers = [stdout_handler]
-    root.setLevel(logging.INFO)
+    _level = getattr(logging, os.environ.get("LOG_LEVEL", "info").upper(), logging.INFO)
+    root.setLevel(_level)
 
     # Quiet noisy library loggers that add no signal.
     logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
