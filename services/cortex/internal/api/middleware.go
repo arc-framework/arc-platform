@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
 	"runtime/debug"
@@ -46,12 +47,13 @@ func RequestLogger(logger *slog.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
 		c.Next()
-		logger.Info("request",
+		latency := time.Since(start).Milliseconds()
+		logger.Info(fmt.Sprintf("%s %s %d %dms", c.Request.Method, c.Request.URL.Path, c.Writer.Status(), latency),
 			"event", "http_request",
 			"method", c.Request.Method,
 			"path", c.Request.URL.Path,
 			"status", c.Writer.Status(),
-			"latency_ms", time.Since(start).Milliseconds(),
+			"latency_ms", latency,
 			"client_ip", c.ClientIP(),
 		)
 	}
