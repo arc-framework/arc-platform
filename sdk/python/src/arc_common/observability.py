@@ -11,14 +11,15 @@ Usage in a new service:
         service_version="0.1.0",
     )
 
-Log event taxonomy — use the `event=` keyword so SigNoz queries work across all services:
+Log event taxonomy — use the event type as the first positional arg (structlog outputs it
+as `"event": ...` in JSON). SigNoz queries filter on the event field across all services:
 
-    _log.debug("handler_entry",  event="method_invocation", handler="my_handler")
-    _log.info ("request_done",   event="http_request",      status=200, latency_ms=12)
-    _log.debug("called_service", event="service_call",      service="postgres", latency_ms=5)
-    _log.debug("msg_received",   event="message_received",  subject="topic.name")
-    _log.warning("save_failed",  event="exception",         error="...")
-    _log.error  ("unhandled",    event="exception",         error="...", exc_info=True)
+    _log.debug("method_invocation", handler="my_handler")
+    _log.info ("http_request",      status=200, latency_ms=12)
+    _log.debug("service_call",      service="postgres", latency_ms=5)
+    _log.debug("message_received",  subject="topic.name")
+    _log.warning("exception",       error="...")
+    _log.error  ("exception",       error="...", exc_info=True)
 """
 
 from __future__ import annotations

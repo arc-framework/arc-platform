@@ -53,7 +53,7 @@ class NATSHandler:
         """Process an incoming NATS message. Responds only if reply subject is set."""
         start = time.monotonic()
         self._metrics.requests_total.add(1, {"transport": "nats"})
-        _log.debug("nats_message_received", subject=msg.subject, event="message_received")
+        _log.debug("message_received", subject=msg.subject, transport="nats")
 
         try:
             payload = json.loads(msg.data.decode())
@@ -74,7 +74,7 @@ class NATSHandler:
         except Exception as exc:
             self._metrics.errors_total.add(1, {"transport": "nats"})
             latency_ms = int((time.monotonic() - start) * 1000)
-            _log.error("nats_handle_error", error=str(exc), event="exception")
+            _log.error("exception", error=str(exc), transport="nats")
 
             if msg.reply:
                 error_payload = json.dumps(
