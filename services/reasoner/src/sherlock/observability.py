@@ -7,7 +7,8 @@ from typing import Any
 import structlog
 from fastapi import FastAPI
 from opentelemetry import metrics, trace
-from opentelemetry._logs import LogRecord as OTELLogRecord, SeverityNumber, set_logger_provider
+from opentelemetry._logs import LogRecord as OTELLogRecord
+from opentelemetry._logs import SeverityNumber, set_logger_provider
 from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter

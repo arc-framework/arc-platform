@@ -126,7 +126,7 @@ graph TD
 
 ## Phase 4: Integration
 
-- [ ] **[TASK-040]** [PLATFORM] [P1] Wire profiles + add persistence healthcheck + verify end-to-end
+- [x] **[TASK-040]** [PLATFORM] [P1] Wire profiles + add persistence healthcheck + verify end-to-end
   - Dependencies: TASK-010, TASK-020, TASK-021, TASK-022, TASK-023, TASK-030, TASK-031
   - Module: `services/profiles.yaml`, `services/persistence/docker-compose.yml`
   - Acceptance:

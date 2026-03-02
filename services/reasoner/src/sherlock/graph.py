@@ -213,7 +213,9 @@ async def invoke_graph(
         await memory.save(user_id, "human", text)
         await memory.save(user_id, "ai", response)
     except Exception as exc:
-        _log.warning(f"memory save failed: {type(exc).__name__}", error=str(exc), handler="memory_save")
+        _log.warning(
+            f"memory save failed: {type(exc).__name__}", error=str(exc), handler="memory_save"
+        )
 
     # Path A: error_handler exhausted retries — raise typed exception so callers can
     # publish with "error" key and still ACK (do not redeliver — message was processed)
