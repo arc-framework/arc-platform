@@ -35,7 +35,6 @@ services:
       - "127.0.0.1:8090:8081"   # Dashboard / ping / metrics — localhost only
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-    user: "1000:1000"
     environment:
       OTEL_SERVICE_NAME: "arc-gateway"
       OTEL_SERVICE_VERSION: "0.1.0"
