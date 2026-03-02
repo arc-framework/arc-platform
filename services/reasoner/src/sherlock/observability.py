@@ -1,16 +1,18 @@
+import json as _json
 import logging
 import os
+import time as _time
 from typing import Any
 
 import structlog
 from fastapi import FastAPI
 from opentelemetry import metrics, trace
-from opentelemetry._logs import set_logger_provider
+from opentelemetry._logs import LogRecord as OTELLogRecord, SeverityNumber, set_logger_provider
 from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+from opentelemetry.sdk._logs import LoggerProvider
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
@@ -19,6 +21,23 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 from sherlock.config import Settings
+
+# ─── Severity mapping ─────────────────────────────────────────────────────────
+
+_LEVEL_TO_SEVERITY: dict[int, SeverityNumber] = {
+    logging.DEBUG: SeverityNumber.DEBUG,
+    logging.INFO: SeverityNumber.INFO,
+    logging.WARNING: SeverityNumber.WARN,
+    logging.ERROR: SeverityNumber.ERROR,
+    logging.CRITICAL: SeverityNumber.FATAL,
+}
+
+# Fields that are structlog/OTEL meta — not emitted as log attributes.
+_STRUCTLOG_META = frozenset({
+    "event", "level", "timestamp", "logger",
+    "_logger", "_name", "trace_id", "span_id",
+})
+
 
 # ─── Trace-context injection ──────────────────────────────────────────────────
 
@@ -37,6 +56,60 @@ def _inject_trace_context(
         event_dict["trace_id"] = format(ctx.trace_id, "032x")
         event_dict["span_id"] = format(ctx.span_id, "016x")
     return event_dict
+
+
+# ─── OTEL log bridge ─────────────────────────────────────────────────────────
+
+class _OTELStructlogHandler(logging.Handler):
+    """Structlog-aware OTEL log bridge.
+
+    structlog's ProcessorFormatter serialises the event_dict to a JSON string
+    and mutates record.msg before any handler runs — so the SDK's LoggingHandler
+    would ship the whole blob as body with no structured attributes.
+
+    This handler parses that JSON back so that:
+      • body       = the event string  (e.g. "http_request", "exception")
+      • attributes = remaining kv pairs (method, path, status, latency_ms, …)
+
+    Falls back gracefully for non-structlog records (uvicorn, sqlalchemy, …).
+    """
+
+    def __init__(self, logger_provider: LoggerProvider, level: int = logging.INFO) -> None:
+        super().__init__(level)
+        self._lp = logger_provider
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            raw = record.getMessage()
+            try:
+                event_dict = _json.loads(raw)
+                body = str(event_dict.get("event", raw))
+                attrs: dict[str, Any] = {
+                    k: str(v)
+                    for k, v in event_dict.items()
+                    if k not in _STRUCTLOG_META
+                }
+            except (_json.JSONDecodeError, TypeError, ValueError):
+                body = raw
+                attrs = {}
+
+            span_ctx = trace.get_current_span().get_span_context()
+            otel_logger = self._lp.get_logger(record.name)
+            otel_logger.emit(
+                OTELLogRecord(
+                    timestamp=int(record.created * 1e9),
+                    observed_timestamp=_time.time_ns(),
+                    trace_id=span_ctx.trace_id if span_ctx.is_valid else 0,
+                    span_id=span_ctx.span_id if span_ctx.is_valid else 0,
+                    trace_flags=span_ctx.trace_flags if span_ctx.is_valid else None,
+                    body=body,
+                    severity_text=record.levelname,
+                    severity_number=_LEVEL_TO_SEVERITY.get(record.levelno, SeverityNumber.INFO),
+                    attributes=attrs,
+                )
+            )
+        except Exception:
+            self.handleError(record)
 
 
 # ─── Logging setup ────────────────────────────────────────────────────────────
@@ -130,12 +203,11 @@ def init_telemetry(settings: Settings) -> None:
         )
         set_logger_provider(log_provider)
 
-        # Bridge: root stdlib logger → OTEL log pipeline.
-        # Because configure_logging() switched structlog to stdlib.LoggerFactory,
-        # ALL log records (structlog, uvicorn, sqlalchemy, asyncpg) now flow through
-        # stdlib and are captured here — same as Cortex's TeeHandler.
-        otel_handler = LoggingHandler(logger_provider=log_provider, level=logging.INFO)
-        logging.root.addHandler(otel_handler)
+        # Bridge: structlog-aware handler that parses the JSON body structlog
+        # emits and ships body=event_string + attributes=kv_pairs to OTEL.
+        # Replaces the SDK's LoggingHandler which receives the pre-rendered JSON
+        # blob and can't extract structured attributes from it.
+        logging.root.addHandler(_OTELStructlogHandler(log_provider, level=logging.INFO))
 
 
 # ─── FastAPI instrumentation ──────────────────────────────────────────────────

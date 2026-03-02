@@ -11,8 +11,9 @@ Usage in a new service:
         service_version="0.1.0",
     )
 
-Log event taxonomy — use the event type as the first positional arg (structlog outputs it
-as `"event": ...` in JSON). SigNoz queries filter on the event field across all services:
+Log event taxonomy — use the event type as the first positional arg.
+structlog outputs it as `"event": ...` in JSON (stdout) and as `body` in OTEL/SigNoz.
+SigNoz queries filter on body or attributes across all services:
 
     _log.debug("method_invocation", handler="my_handler")
     _log.info ("http_request",      status=200, latency_ms=12)
@@ -24,23 +25,41 @@ as `"event": ...` in JSON). SigNoz queries filter on the event field across all 
 
 from __future__ import annotations
 
+import json as _json
 import logging
 import os
+import time as _time
 from typing import Any
 
 import structlog
 from opentelemetry import metrics, trace
-from opentelemetry._logs import set_logger_provider
+from opentelemetry._logs import LogRecord as OTELLogRecord, SeverityNumber, set_logger_provider
 from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+from opentelemetry.sdk._logs import LoggerProvider
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import SERVICE_NAME, SERVICE_VERSION, Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+# ─── Severity mapping ─────────────────────────────────────────────────────────
+
+_LEVEL_TO_SEVERITY: dict[int, SeverityNumber] = {
+    logging.DEBUG: SeverityNumber.DEBUG,
+    logging.INFO: SeverityNumber.INFO,
+    logging.WARNING: SeverityNumber.WARN,
+    logging.ERROR: SeverityNumber.ERROR,
+    logging.CRITICAL: SeverityNumber.FATAL,
+}
+
+# Fields that are structlog/OTEL meta — not emitted as log attributes.
+_STRUCTLOG_META = frozenset({
+    "event", "level", "timestamp", "logger",
+    "_logger", "_name", "trace_id", "span_id",
+})
 
 
 # ─── Trace-context injection ──────────────────────────────────────────────────
@@ -59,6 +78,60 @@ def _inject_trace_context(
         event_dict["trace_id"] = format(ctx.trace_id, "032x")
         event_dict["span_id"] = format(ctx.span_id, "016x")
     return event_dict
+
+
+# ─── OTEL log bridge ─────────────────────────────────────────────────────────
+
+class _OTELStructlogHandler(logging.Handler):
+    """Structlog-aware OTEL log bridge.
+
+    structlog's ProcessorFormatter serialises the event_dict to a JSON string
+    and mutates record.msg before any handler runs — so the SDK's LoggingHandler
+    would ship the whole blob as body with no structured attributes.
+
+    This handler parses that JSON back so that:
+      • body       = the event string  (e.g. "http_request", "exception")
+      • attributes = remaining kv pairs (method, path, status, latency_ms, …)
+
+    Falls back gracefully for non-structlog records (uvicorn, sqlalchemy, …).
+    """
+
+    def __init__(self, logger_provider: LoggerProvider, level: int = logging.INFO) -> None:
+        super().__init__(level)
+        self._lp = logger_provider
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            raw = record.getMessage()
+            try:
+                event_dict = _json.loads(raw)
+                body = str(event_dict.get("event", raw))
+                attrs: dict[str, Any] = {
+                    k: str(v)
+                    for k, v in event_dict.items()
+                    if k not in _STRUCTLOG_META
+                }
+            except (_json.JSONDecodeError, TypeError, ValueError):
+                body = raw
+                attrs = {}
+
+            span_ctx = trace.get_current_span().get_span_context()
+            otel_logger = self._lp.get_logger(record.name)
+            otel_logger.emit(
+                OTELLogRecord(
+                    timestamp=int(record.created * 1e9),
+                    observed_timestamp=_time.time_ns(),
+                    trace_id=span_ctx.trace_id if span_ctx.is_valid else 0,
+                    span_id=span_ctx.span_id if span_ctx.is_valid else 0,
+                    trace_flags=span_ctx.trace_flags if span_ctx.is_valid else None,
+                    body=body,
+                    severity_text=record.levelname,
+                    severity_number=_LEVEL_TO_SEVERITY.get(record.levelno, SeverityNumber.INFO),
+                    attributes=attrs,
+                )
+            )
+        except Exception:
+            self.handleError(record)
 
 
 # ─── Logging setup ────────────────────────────────────────────────────────────
@@ -149,4 +222,6 @@ def init_telemetry(
         lp = LoggerProvider(resource=resource)
         lp.add_log_record_processor(BatchLogRecordProcessor(OTLPLogExporter(endpoint=endpoint)))
         set_logger_provider(lp)
-        logging.root.addHandler(LoggingHandler(logger_provider=lp, level=logging.INFO))
+        # Structlog-aware bridge: parses the JSON body structlog emits so that
+        # body=event_string and attributes=kv_pairs reach SigNoz correctly.
+        logging.root.addHandler(_OTELStructlogHandler(logger_provider=lp, level=logging.INFO))
