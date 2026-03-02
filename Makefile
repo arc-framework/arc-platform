@@ -102,7 +102,8 @@ help:
 # ─────────────────────────────────────────────────────────────────────────────
 
 .PHONY: dev dev-up dev-down dev-wait dev-health dev-logs dev-status \
-        dev-clean dev-nuke dev-prereqs dev-networks dev-regen dev-images
+        dev-clean dev-nuke dev-prereqs dev-networks dev-regen dev-images \
+        scrub
 
 ## dev: Start all services in $(PROFILE) profile in dependency order
 dev: dev-prereqs dev-networks .make/profiles.mk .make/registry.mk dev-images dev-up dev-wait
@@ -189,3 +190,24 @@ dev-clean: .make/profiles.mk .make/registry.mk
 ## dev-nuke: [DESTRUCTIVE] Remove containers + volumes + images + orphans for $(PROFILE) profile
 dev-nuke: .make/profiles.mk .make/registry.mk
 	@scripts/lib/dev-nuke.sh $(PROFILE)
+
+## scrub: Remove all build/tool caches across the monorepo (Python, Go, Node, Make)
+scrub:
+	@printf "$(COLOR_INFO)→$(COLOR_OFF) Scrubbing monorepo caches...\n"
+	@# Python — bytecode, test, type, lint caches
+	@find . -type d \( -name __pycache__ -o -name .pytest_cache -o -name .mypy_cache -o -name .ruff_cache \) \
+	  -not -path './.git/*' -exec rm -rf {} + 2>/dev/null; true
+	@find . -type d -name '*.egg-info' -not -path './.git/*' -exec rm -rf {} + 2>/dev/null; true
+	@find . -type d \( -name dist -o -name build \) -not -path './.git/*' -not -path './node_modules/*' \
+	  -exec rm -rf {} + 2>/dev/null; true
+	@find . -name '*.pyc' -o -name '*.pyo' | xargs rm -f 2>/dev/null; true
+	@find . -name '.coverage' -o -name 'coverage.xml' -o -name 'htmlcov' | xargs rm -rf 2>/dev/null; true
+	@# Go — build cache (go clean, not rm — respects GOPATH correctly)
+	@which go >/dev/null 2>&1 && go clean -cache -testcache 2>/dev/null; true
+	@# Node — dependency + build artefacts (skip if no node_modules present)
+	@find . -type d -name node_modules -not -path './.git/*' -prune -o \
+	  -type d -name '.next' -print -o -type d -name '.nuxt' -print -o \
+	  -type d -name '.vite' -print | xargs rm -rf 2>/dev/null; true
+	@# Make — generated registry/profile files
+	@rm -rf .make/
+	@printf "$(COLOR_OK)✓$(COLOR_OFF) Monorepo scrubbed — run 'make dev' to regenerate\n"
