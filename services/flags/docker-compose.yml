@@ -13,6 +13,14 @@ services:
       REDIS_PORT: 6379
     ports:
       - "127.0.0.1:4242:4242"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=arc_platform_net"
+      - "traefik.http.routers.flags.rule=PathPrefix(`/api/flags`)"
+      - "traefik.http.routers.flags.entrypoints=web"
+      - "traefik.http.middlewares.strip-flags.stripprefix.prefixes=/api/flags"
+      - "traefik.http.routers.flags.middlewares=strip-flags"
+      - "traefik.http.services.flags.loadbalancer.server.port=4242"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:4242/health || exit 1"]
       interval: 10s

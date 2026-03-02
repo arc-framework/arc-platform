@@ -40,6 +40,14 @@ services:
       # Set to true/false explicitly only when the heuristic is wrong (e.g. ChatML Llama fine-tune).
       # SHERLOCK_SYSTEM_PROMPT — omitted: uses the default Sherlock persona.
       # Override to swap persona without rebuilding the image.
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=arc_platform_net"
+      - "traefik.http.routers.reasoner.rule=PathPrefix(`/api/reasoner`)"
+      - "traefik.http.routers.reasoner.entrypoints=web"
+      - "traefik.http.middlewares.strip-reasoner.stripprefix.prefixes=/api/reasoner"
+      - "traefik.http.routers.reasoner.middlewares=strip-reasoner"
+      - "traefik.http.services.reasoner.loadbalancer.server.port=8000"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8000/health || exit 1"]
       interval: 15s

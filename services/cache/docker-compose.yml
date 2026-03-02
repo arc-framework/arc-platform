@@ -31,6 +31,17 @@ services:
       - arc_platform_net
     restart: unless-stopped
 
+  # ── redis_exporter: Prometheus metrics sidecar for arc-cache ─────────────
+  # Exposes Redis metrics at :9121/metrics — scraped by arc-friday-collector.
+  arc-cache-exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: arc-cache-exporter
+    environment:
+      REDIS_ADDR: "redis://arc-cache:6379"
+    networks:
+      - arc_platform_net
+    restart: unless-stopped
+
 volumes:
   sonic-data:
     name: arc-cache-data

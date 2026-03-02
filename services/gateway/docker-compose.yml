@@ -8,19 +8,45 @@ services:
     image: ghcr.io/arc-framework/arc-gateway:latest
     container_name: arc-gateway
     command:
+      # Entrypoints — non-privileged ports inside the container
+      - --entrypoints.web.address=:8080
+      - --entrypoints.traefik.address=:8081
+      # API / dashboard on the traefik entrypoint
       - --api.insecure=true
       - --api.dashboard=true
       - --ping=true
+      - --ping.entrypoint=traefik
+      # Docker provider
       - --providers.docker=true
       - --providers.docker.network=arc_platform_net
       - --providers.docker.exposedbydefault=false
-      - --entrypoints.web.address=:80
+      # Access logs (structured JSON → SigNoz)
+      - --accesslog=true
+      - --accesslog.format=json
+      # Prometheus metrics endpoint (on traefik entrypoint = arc-gateway:8081/metrics)
+      - --metrics.prometheus=true
+      - --metrics.prometheus.entrypoint=traefik
+      # OTLP tracing → arc-friday-collector
+      - --tracing.otlp.grpc.endpoint=arc-friday-collector:4317
+      - --tracing.otlp.grpc.insecure=true
+      - --tracing.serviceName=arc-gateway
     ports:
-      - "127.0.0.1:80:80"      # HTTP proxy — localhost only
-      - "127.0.0.1:8090:8080"  # Dashboard / ping (traefik API entrypoint) — localhost only
+      - "127.0.0.1:80:8080"     # HTTP proxy — host:80 → container:8080 (non-privileged)
+      - "127.0.0.1:8090:8081"   # Dashboard / ping / metrics — localhost only
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     user: "1000:1000"
+    environment:
+      OTEL_SERVICE_NAME: "arc-gateway"
+      OTEL_SERVICE_VERSION: "0.1.0"
+      OTEL_DEPLOYMENT_ENVIRONMENT: "development"
+      OTEL_RESOURCE_ATTRIBUTES: "service.namespace=arc-platform,service.instance.id=arc-gateway-1"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://arc-friday-collector:4317"
+      # For local binary runs override with: OTEL_EXPORTER_OTLP_ENDPOINT=127.0.0.1:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
+      OTEL_TRACES_SAMPLER: "always_on"
+      OTEL_PROPAGATORS: "tracecontext,baggage"
+      OTEL_LOG_LEVEL: "warn"
     healthcheck:
       test: ["CMD", "traefik", "healthcheck", "--ping"]
       interval: 5s
@@ -29,9 +55,13 @@ services:
       start_period: 5s
     networks:
       - arc_platform_net
+      - arc_otel_net
     restart: unless-stopped
 
 networks:
   arc_platform_net:
     external: true
     name: arc_platform_net
+  arc_otel_net:
+    external: true
+    name: arc_otel_net
