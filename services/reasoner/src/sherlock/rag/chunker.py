@@ -20,6 +20,15 @@ def chunk_text(text: str, chunk_size: int, overlap: int) -> list[str]:
     if not text.strip():
         return []
 
+    if chunk_size <= 0:
+        raise ValueError(f"chunk_size must be positive, got {chunk_size}")
+    if overlap < 0:
+        raise ValueError(f"overlap must be non-negative, got {overlap}")
+    if overlap >= chunk_size:
+        raise ValueError(
+            f"overlap ({overlap}) must be less than chunk_size ({chunk_size})"
+        )
+
     tokens = _ENCODING.encode(text)
     if not tokens:
         return []
