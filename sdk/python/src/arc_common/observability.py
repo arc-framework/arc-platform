@@ -11,16 +11,18 @@ Usage in a new service:
         service_version="0.1.0",
     )
 
-Log event taxonomy — use the event type as the first positional arg.
-structlog outputs it as `"event": ...` in JSON (stdout) and as `body` in OTEL/SigNoz.
-SigNoz queries filter on body or attributes across all services:
+Log call convention — human-readable message as first arg (→ body in SigNoz),
+event_type= kwarg for the semantic category (→ "event" attribute in OTEL):
 
-    _log.debug("method_invocation", handler="my_handler")
-    _log.info ("http_request",      status=200, latency_ms=12)
-    _log.debug("service_call",      service="postgres", latency_ms=5)
-    _log.debug("message_received",  subject="topic.name")
-    _log.warning("exception",       error="...")
-    _log.error  ("exception",       error="...", exc_info=True)
+    _log.info("GET /health 200 0ms", event_type="http_request",    status=200, latency_ms=12)
+    _log.debug("nats recv: topic",   event_type="message_received", subject="topic")
+    _log.debug("graph done: user=x", event_type="service_call",    handler="invoke_graph")
+    _log.warning("save failed: Err", event_type="exception",       error="...")
+    _log.error("panic: nil pointer", event_type="exception",       error="...")
+
+In SigNoz, filter `event = "http_request"` to see HTTP logs from both Python
+(event_type= kwarg normalized to "event" by _OTELStructlogHandler) and Go
+(slog "event" kv pair passed directly) uniformly.
 """
 
 from __future__ import annotations
@@ -106,11 +108,13 @@ class _OTELStructlogHandler(logging.Handler):
             try:
                 event_dict = _json.loads(raw)
                 body = str(event_dict.get("event", raw))
-                attrs: dict[str, Any] = {
-                    k: str(v)
-                    for k, v in event_dict.items()
-                    if k not in _STRUCTLOG_META
-                }
+                attrs: dict[str, Any] = {}
+                for k, v in event_dict.items():
+                    if k in _STRUCTLOG_META:
+                        continue
+                    # Normalize event_type → event for cross-service parity with Go/slog
+                    otel_key = "event" if k == "event_type" else k
+                    attrs[otel_key] = str(v)
             except (_json.JSONDecodeError, TypeError, ValueError):
                 body = raw
                 attrs = {}

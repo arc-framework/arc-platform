@@ -85,11 +85,13 @@ class _OTELStructlogHandler(logging.Handler):
             try:
                 event_dict = _json.loads(raw)
                 body = str(event_dict.get("event", raw))
-                attrs: dict[str, Any] = {
-                    k: str(v)
-                    for k, v in event_dict.items()
-                    if k not in _STRUCTLOG_META
-                }
+                attrs: dict[str, Any] = {}
+                for k, v in event_dict.items():
+                    if k in _STRUCTLOG_META:
+                        continue
+                    # Normalize event_type → event for cross-service parity with Go/slog
+                    otel_key = "event" if k == "event_type" else k
+                    attrs[otel_key] = str(v)
             except (_json.JSONDecodeError, TypeError, ValueError):
                 body = raw
                 attrs = {}
