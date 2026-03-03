@@ -285,7 +285,7 @@ graph TD
 
 ## Phase 5: Polish
 
-- [ ] **[TASK-900]** [P] [DOCS] [P1] Update OpenAPI and AsyncAPI contracts
+- [x] **[TASK-900]** [P] [DOCS] [P1] Update OpenAPI and AsyncAPI contracts
   - Dependencies: TASK-060
   - Module: `specs/013-sherlock-rag-api/contracts/openapi.yaml`, `specs/013-sherlock-rag-api/contracts/asyncapi.yaml`
   - Acceptance: `openapi.yaml` includes all 13 new paths (`/v1/files`, `/v1/files/{id}`, `/v1/files/{id}/content`, `/v1/vector_stores`, `/v1/vector_stores/{id}`, `/v1/vector_stores/{id}/files`, `/v1/vector_stores/{id}/files/{fid}`, `/v1/vector_stores/{id}/search`, `/v1/embeddings`) with request/response schemas; `asyncapi.yaml` includes 4 channel pairs (`sherlock.v1.rag.ingest.*`, `sherlock.v1.rag.chat.*`, `sherlock.v1.rag.search.*`, `sherlock.v1.rag.embed.*`); files pass YAML lint
@@ -305,5 +305,5 @@ graph TD
 | Foundational | 2 | 0 | 0 |
 | Implementation | 15 | 0 | 12 |
 | Integration | 6 | 0 | 4 |
-| Polish | 2 | 0 | 1 |
-| **Total** | **30** | **0** | **19** |
+| Polish | 2 | 1 | 1 |
+| **Total** | **30** | **1** | **19** |

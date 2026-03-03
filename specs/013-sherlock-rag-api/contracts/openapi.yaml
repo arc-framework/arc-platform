@@ -1,0 +1,969 @@
+openapi: 3.1.0
+
+info:
+  title: Sherlock Reasoning Service — RAG API
+  version: 0.3.0
+  description: |
+    OpenAI-compatible RAG (Retrieval-Augmented Generation) API for Sherlock (`arc-sherlock`).
+
+    013 extends the 012 chat surface with:
+    - **Files API** — upload, list, fetch, delete, and download raw documents
+    - **Vector Stores API** — create named knowledge collections, attach files, trigger
+      hybrid (dense + FTS) ingestion, and run standalone search
+    - **Embeddings API** — encode text using the shared SentenceTransformer (384-dim)
+
+    All RAG routes return `503` when `SHERLOCK_RAG_ENABLED=false` (default in `think` profile).
+    The base 012 routes (`/chat`, `/health`, `/v1/chat/completions`, `/v1/models`, `/v1/responses`)
+    are unchanged — see `services/reasoner/contracts/openapi.yaml` for those.
+  contact:
+    name: A.R.C. Platform
+    url: https://github.com/arc-framework/arc-platform
+
+servers:
+  - url: http://localhost:8083
+    description: Local development (reason profile, SHERLOCK_RAG_ENABLED=true)
+
+tags:
+  - name: files
+    description: Document upload and management
+  - name: vector-stores
+    description: Named knowledge collections — create, attach files, search
+  - name: embeddings
+    description: Text encoding via shared SentenceTransformer
+
+x-tagGroups:
+  - name: Files API
+    tags:
+      - files
+  - name: Vector Stores API
+    tags:
+      - vector-stores
+  - name: Embeddings API
+    tags:
+      - embeddings
+
+paths:
+
+  # ── Files API ──────────────────────────────────────────────────────────────
+
+  /v1/files:
+    post:
+      operationId: upload_file
+      tags: [files]
+      summary: Upload a document
+      description: |
+        Uploads a document via `multipart/form-data`. The file is stored in MinIO
+        (`sherlock-files` bucket) and a `knowledge_files` row is inserted in PostgreSQL.
+
+        **Supported extensions**: `.txt`, `.md`, `.rst`, `.pdf`, `.json`, `.py`, `.go`,
+        `.ts`, `.js`, `.tsx`, `.jsx`, `.docx`, `.csv`
+
+        **Size limit**: controlled by `SHERLOCK_MAX_FILE_BYTES` (default 50 MB).
+
+        The returned `FileObject` has `status: uploaded`. To make the file searchable
+        it must be attached to a Vector Store via `POST /v1/vector_stores/{vs_id}/files`.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The document to upload.
+                purpose:
+                  type: string
+                  default: assistants
+                  description: Usage purpose — currently only `assistants` is accepted.
+            examples:
+              txt_upload:
+                summary: Plain text upload
+                value:
+                  file: "<binary content>"
+                  purpose: assistants
+      responses:
+        '201':
+          description: File uploaded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileObject'
+              examples:
+                uploaded:
+                  value:
+                    id: "file-a1b2c3"
+                    object: file
+                    filename: "doc.txt"
+                    bytes: 4096
+                    purpose: assistants
+                    status: uploaded
+                    created_at: 1741000000
+        '400':
+          description: Unsupported file type or file exceeds size limit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RAGErrorResponse'
+              examples:
+                bad_type:
+                  value:
+                    error: unsupported_file_type
+                    detail: "File extension '.xyz' is not supported"
+                too_large:
+                  value:
+                    error: file_too_large
+                    detail: "File exceeds maximum size of 52428800 bytes"
+        '503':
+          $ref: '#/components/responses/RAGDisabled'
+
+    get:
+      operationId: list_files
+      tags: [files]
+      summary: List all uploaded files
+      description: |
+        Returns all files in the `knowledge_files` table in OpenAI list format.
+        Results are ordered by `created_at` descending.
+      responses:
+        '200':
+          description: File list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileList'
+              examples:
+                list:
+                  value:
+                    object: list
+                    data:
+                      - id: "file-a1b2c3"
+                        object: file
+                        filename: "doc.txt"
+                        bytes: 4096
+                        purpose: assistants
+                        status: uploaded
+                        created_at: 1741000000
+        '503':
+          $ref: '#/components/responses/RAGDisabled'
+
+  /v1/files/{file_id}:
+    parameters:
+      - $ref: '#/components/parameters/file_id'
+
+    get:
+      operationId: get_file
+      tags: [files]
+      summary: Get file metadata
+      description: Returns metadata for a single uploaded file.
+      responses:
+        '200':
+          description: File metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileObject'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/RAGDisabled'
+
+    delete:
+      operationId: delete_file
+      tags: [files]
+      summary: Delete a file and its chunks
+      description: |
+        Deletes the file from MinIO and removes all associated `knowledge_chunks` rows
+        (cascaded via FK on `vector_store_files → knowledge_files`).
+
+        If ingestion is in progress when delete is called, the ingest task sets
+        `status=failed` and `error_message="file deleted during ingestion"`.
+      responses:
+        '200':
+          description: File deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeletedResponse'
+              examples:
+                deleted:
+                  value:
+                    id: "file-a1b2c3"
+                    object: file
+                    deleted: true
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/RAGDisabled'
+
+  /v1/files/{file_id}/content:
+    parameters:
+      - $ref: '#/components/parameters/file_id'
+
+    get:
+      operationId: download_file_content
+      tags: [files]
+      summary: Download raw file bytes
+      description: |
+        Streams the original file bytes from MinIO with the `Content-Type` that
+        matches the uploaded file's extension.
+
+        Returns a `StreamingResponse` — the body is the raw file content.
+        Use this to verify that uploaded bytes are stored intact.
+      responses:
+        '200':
+          description: Raw file content stream
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/RAGDisabled'
+
+  # ── Vector Stores API ──────────────────────────────────────────────────────
+
+  /v1/vector_stores:
+    post:
+      operationId: create_vector_store
+      tags: [vector-stores]
+      summary: Create a named knowledge collection
+      description: |
+        Creates a new `vector_stores` row. The store is initially empty (`file_count: 0`).
+        Files are attached via `POST /v1/vector_stores/{vs_id}/files`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateVectorStoreRequest'
+            examples:
+              create:
+                summary: Create a named store
+                value:
+                  name: "Q4 Financials"
+      responses:
+        '201':
+          description: Vector store created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VectorStore'
+              examples:
+                created:
+                  value:
+                    id: "vs-d4e5f6"
+                    object: vector_store
+                    name: "Q4 Financials"
+                    file_count: 0
+                    created_at: 1741000100
+                    updated_at: 1741000100
+        '503':
+          $ref: '#/components/responses/RAGDisabled'
+
+  /v1/vector_stores/{vs_id}:
+    parameters:
+      - $ref: '#/components/parameters/vs_id'
+
+    get:
+      operationId: get_vector_store
+      tags: [vector-stores]
+      summary: Get vector store metadata
+      description: Returns metadata for a single vector store including current `file_count`.
+      responses:
+        '200':
+          description: Vector store metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VectorStore'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/RAGDisabled'
+
+    delete:
+      operationId: delete_vector_store
+      tags: [vector-stores]
+      summary: Delete vector store and cascade
+      description: |
+        Deletes the vector store. Cascade order:
+        1. Delete all `knowledge_chunks` for this store
+        2. Delete all `vector_store_files` rows for this store
+        3. Delete the `vector_stores` row
+
+        MinIO objects for the original files are **not** deleted by this operation —
+        files remain in `knowledge_files` and can be attached to other stores.
+        Use `DELETE /v1/files/{file_id}` to remove MinIO objects.
+      responses:
+        '200':
+          description: Vector store deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeletedResponse'
+              examples:
+                deleted:
+                  value:
+                    id: "vs-d4e5f6"
+                    object: vector_store
+                    deleted: true
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/RAGDisabled'
+
+  /v1/vector_stores/{vs_id}/files:
+    parameters:
+      - $ref: '#/components/parameters/vs_id'
+
+    post:
+      operationId: attach_file_to_vector_store
+      tags: [vector-stores]
+      summary: Attach a file and trigger ingestion
+      description: |
+        Attaches `file_id` to the vector store and starts the ingestion pipeline:
+        **parse → chunk → embed → INSERT knowledge_chunks**.
+
+        **Async (default)** — `?sync=false` or omitted:
+        - Inserts a `vector_store_files` row with `status: queued`
+        - Starts ingestion as a `BackgroundTask`
+        - Returns `202 Accepted` immediately
+
+        **Sync** — `?sync=true`:
+        - Runs ingestion inline with `asyncio.wait_for(timeout=SHERLOCK_SYNC_TIMEOUT_S)`
+        - Returns `200` with `status: completed` and `chunk_count`
+        - If the timeout fires, falls back to background mode and returns `202`
+
+        **Idempotent**: attaching the same file twice returns the existing
+        `VectorStoreFile` row without re-ingesting.
+      parameters:
+        - name: sync
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: |
+            When `true`, block until ingestion completes (or times out).
+            On timeout, ingestion continues in the background and `202` is returned.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttachFileRequest'
+            examples:
+              attach:
+                summary: Attach a file for async ingestion
+                value:
+                  file_id: "file-a1b2c3"
+      responses:
+        '200':
+          description: |
+            Sync ingestion completed (only when `?sync=true` and ingestion finished
+            before timeout).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VectorStoreFile'
+              examples:
+                completed_sync:
+                  value:
+                    vector_store_id: "vs-d4e5f6"
+                    file_id: "file-a1b2c3"
+                    status: completed
+                    chunk_count: 12
+                    error_message: null
+                    created_at: 1741000200
+                    updated_at: 1741000205
+        '202':
+          description: Ingestion accepted and running in background
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VectorStoreFile'
+              examples:
+                queued:
+                  value:
+                    vector_store_id: "vs-d4e5f6"
+                    file_id: "file-a1b2c3"
+                    status: queued
+                    chunk_count: null
+                    error_message: null
+                    created_at: 1741000200
+                    updated_at: 1741000200
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/RAGDisabled'
+
+  /v1/vector_stores/{vs_id}/files/{file_id}:
+    parameters:
+      - $ref: '#/components/parameters/vs_id'
+      - $ref: '#/components/parameters/file_id'
+
+    get:
+      operationId: get_vector_store_file
+      tags: [vector-stores]
+      summary: Get file ingestion status within a vector store
+      description: |
+        Returns the `vector_store_files` row for the `(vs_id, file_id)` pair.
+        Poll this endpoint until `status` transitions from `queued` → `completed` or `failed`.
+
+        `status` values:
+        - `queued` — ingestion is pending or in progress
+        - `completed` — `chunk_count` chunks successfully indexed
+        - `failed` — `error_message` describes the failure
+      responses:
+        '200':
+          description: File ingestion status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VectorStoreFile'
+              examples:
+                completed:
+                  value:
+                    vector_store_id: "vs-d4e5f6"
+                    file_id: "file-a1b2c3"
+                    status: completed
+                    chunk_count: 12
+                    error_message: null
+                    created_at: 1741000200
+                    updated_at: 1741000210
+                failed:
+                  value:
+                    vector_store_id: "vs-d4e5f6"
+                    file_id: "file-a1b2c3"
+                    status: failed
+                    chunk_count: null
+                    error_message: "PDF parse error: encrypted document"
+                    created_at: 1741000200
+                    updated_at: 1741000203
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/RAGDisabled'
+
+    delete:
+      operationId: detach_file_from_vector_store
+      tags: [vector-stores]
+      summary: Detach file from vector store and delete its chunks
+      description: |
+        Removes the `vector_store_files` join row and deletes all `knowledge_chunks`
+        belonging to `file_id` in this vector store.
+
+        The `knowledge_files` row and MinIO object are **not** deleted — the file
+        remains available for attachment to other stores.
+      responses:
+        '200':
+          description: File detached and chunks deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeletedResponse'
+              examples:
+                detached:
+                  value:
+                    id: "file-a1b2c3"
+                    object: vector_store.file
+                    deleted: true
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/RAGDisabled'
+
+  /v1/vector_stores/{vs_id}/search:
+    parameters:
+      - $ref: '#/components/parameters/vs_id'
+
+    post:
+      operationId: search_vector_store
+      tags: [vector-stores]
+      summary: Run hybrid search against a vector store
+      description: |
+        Runs a hybrid search (dense cosine + FTS `ts_rank`) against the `knowledge_chunks`
+        for this vector store. Returns ranked results after cross-encoder reranking.
+
+        **Scoring formula**:
+        ```
+        score = alpha * cosine_sim(query_vec, chunk_vec) + (1 - alpha) * ts_rank(fts_vector, query)
+        ```
+
+        - `alpha = 1.0` — pure dense (pgvector cosine)
+        - `alpha = 0.0` — pure keyword (FTS ts_rank)
+        - Default: `SHERLOCK_HYBRID_ALPHA` (0.7)
+
+        The top-50 SQL candidates are reranked by a `cross-encoder/ms-marco-MiniLM-L-6-v2`
+        model to return `top_k` results.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchRequest'
+            examples:
+              hybrid:
+                summary: Hybrid search with default alpha
+                value:
+                  query: "quarterly revenue growth projections"
+                  top_k: 5
+              keyword_heavy:
+                summary: Keyword-biased search
+                value:
+                  query: "EBITDA margin"
+                  alpha: 0.2
+                  top_k: 10
+      responses:
+        '200':
+          description: Ranked search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+              examples:
+                results:
+                  value:
+                    object: list
+                    data:
+                      - content: "Q4 revenue grew 12% YoY driven by enterprise deals..."
+                        score: 0.87
+                        file_id: "file-a1b2c3"
+                        chunk_index: 3
+                      - content: "EBITDA margins improved to 28% in Q4..."
+                        score: 0.74
+                        file_id: "file-a1b2c3"
+                        chunk_index: 7
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/RAGDisabled'
+
+  # ── Embeddings API ─────────────────────────────────────────────────────────
+
+  /v1/embeddings:
+    post:
+      operationId: create_embeddings
+      tags: [embeddings]
+      summary: Encode text into 384-dimensional vectors
+      description: |
+        Encodes one or more text strings using the shared `SentenceTransformer`
+        (`sentence-transformers/all-MiniLM-L6-v2`, 384 dimensions).
+
+        The same encoder instance used for ingestion and retrieval is reused here —
+        no second model load.
+
+        **Token usage** is populated via `tiktoken` (`cl100k_base`) for accurate
+        billing / quota tracking.
+
+        This endpoint is compatible with the OpenAI Embeddings API wire format.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmbeddingRequest'
+            examples:
+              single:
+                summary: Single string
+                value:
+                  model: "sentence-transformers/all-MiniLM-L6-v2"
+                  input: "Hello world"
+              batch:
+                summary: Batch of strings
+                value:
+                  model: "sentence-transformers/all-MiniLM-L6-v2"
+                  input:
+                    - "Hello world"
+                    - "The quick brown fox"
+      responses:
+        '200':
+          description: Embeddings with usage counts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmbeddingResponse'
+              examples:
+                single:
+                  value:
+                    object: list
+                    model: "sentence-transformers/all-MiniLM-L6-v2"
+                    data:
+                      - object: embedding
+                        index: 0
+                        embedding: [0.012, -0.034, 0.091]
+                    usage:
+                      prompt_tokens: 2
+                      total_tokens: 2
+        '503':
+          $ref: '#/components/responses/RAGDisabled'
+
+components:
+
+  parameters:
+    file_id:
+      name: file_id
+      in: path
+      required: true
+      schema:
+        type: string
+        example: "file-a1b2c3"
+      description: The unique file identifier (prefixed `file-`).
+
+    vs_id:
+      name: vs_id
+      in: path
+      required: true
+      schema:
+        type: string
+        example: "vs-d4e5f6"
+      description: The unique vector store identifier (prefixed `vs-`).
+
+  responses:
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            not_found:
+              value:
+                detail: "file-a1b2c3 not found"
+
+    RAGDisabled:
+      description: RAG is not enabled on this instance
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            disabled:
+              value:
+                detail: "RAG is not enabled — set SHERLOCK_RAG_ENABLED=true"
+
+  schemas:
+
+    # ── Shared ────────────────────────────────────────────────────────────────
+
+    ErrorResponse:
+      type: object
+      required: [detail]
+      properties:
+        detail:
+          type: string
+          example: "RAG is not enabled — set SHERLOCK_RAG_ENABLED=true"
+
+    RAGErrorResponse:
+      type: object
+      required: [error, detail]
+      properties:
+        error:
+          type: string
+          description: Machine-readable error code.
+          enum:
+            - unsupported_file_type
+            - file_too_large
+            - bad_request
+            - storage_unavailable
+          example: unsupported_file_type
+        detail:
+          type: string
+          description: Human-readable error description.
+          example: "File extension '.xyz' is not supported"
+
+    DeletedResponse:
+      type: object
+      required: [id, object, deleted]
+      properties:
+        id:
+          type: string
+          description: The identifier of the deleted resource.
+          example: "file-a1b2c3"
+        object:
+          type: string
+          description: The resource type that was deleted.
+          example: file
+        deleted:
+          type: boolean
+          example: true
+
+    # ── Files API ─────────────────────────────────────────────────────────────
+
+    FileObject:
+      type: object
+      required: [id, object, filename, bytes, purpose, status, created_at]
+      properties:
+        id:
+          type: string
+          description: Unique file identifier (prefixed `file-`).
+          example: "file-a1b2c3"
+        object:
+          type: string
+          enum: [file]
+          example: file
+        filename:
+          type: string
+          description: Original uploaded filename including extension.
+          example: "doc.txt"
+        bytes:
+          type: integer
+          description: File size in bytes.
+          example: 4096
+          minimum: 0
+        purpose:
+          type: string
+          description: Usage purpose. Currently only `assistants`.
+          enum: [assistants]
+          example: assistants
+        status:
+          type: string
+          description: Upload status. Always `uploaded` after a successful POST.
+          enum: [uploaded]
+          example: uploaded
+        created_at:
+          type: integer
+          description: Unix timestamp of upload.
+          example: 1741000000
+
+    FileList:
+      type: object
+      required: [object, data]
+      properties:
+        object:
+          type: string
+          enum: [list]
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/FileObject'
+
+    # ── Vector Stores API ─────────────────────────────────────────────────────
+
+    VectorStore:
+      type: object
+      required: [id, object, name, file_count, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          description: Unique vector store identifier (prefixed `vs-`).
+          example: "vs-d4e5f6"
+        object:
+          type: string
+          enum: [vector_store]
+          example: vector_store
+        name:
+          type: string
+          description: Human-readable name for this knowledge collection.
+          example: "Q4 Financials"
+        file_count:
+          type: integer
+          description: Number of files currently attached to this store.
+          example: 3
+          minimum: 0
+        created_at:
+          type: integer
+          description: Unix timestamp of creation.
+          example: 1741000100
+        updated_at:
+          type: integer
+          description: Unix timestamp of last modification.
+          example: 1741000500
+
+    CreateVectorStoreRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          description: Human-readable name for the new knowledge collection.
+          minLength: 1
+          example: "Q4 Financials"
+
+    VectorStoreFile:
+      type: object
+      required: [vector_store_id, file_id, status, created_at, updated_at]
+      properties:
+        vector_store_id:
+          type: string
+          description: The vector store this entry belongs to.
+          example: "vs-d4e5f6"
+        file_id:
+          type: string
+          description: The file being ingested.
+          example: "file-a1b2c3"
+        status:
+          type: string
+          description: |
+            Current ingestion status:
+            - `queued` — pending or actively running
+            - `completed` — chunks indexed, `chunk_count` is populated
+            - `failed` — `error_message` describes the failure
+          enum: [queued, completed, failed]
+          example: completed
+        chunk_count:
+          type: integer
+          nullable: true
+          description: Number of chunks indexed. Populated only when `status = completed`.
+          example: 12
+        error_message:
+          type: string
+          nullable: true
+          description: |
+            Human-readable failure description. Populated only when `status = failed`.
+          example: "PDF parse error: encrypted document"
+        created_at:
+          type: integer
+          description: Unix timestamp when the file was attached.
+          example: 1741000200
+        updated_at:
+          type: integer
+          description: Unix timestamp of the last status update.
+          example: 1741000210
+
+    AttachFileRequest:
+      type: object
+      required: [file_id]
+      properties:
+        file_id:
+          type: string
+          description: The file to attach and ingest.
+          example: "file-a1b2c3"
+
+    SearchRequest:
+      type: object
+      required: [query]
+      properties:
+        query:
+          type: string
+          description: The search query text.
+          minLength: 1
+          example: "quarterly revenue growth projections"
+        alpha:
+          type: number
+          description: |
+            Hybrid search blend factor.
+            `1.0` = pure dense (pgvector cosine), `0.0` = pure keyword (FTS ts_rank).
+            Defaults to `SHERLOCK_HYBRID_ALPHA` (0.7) when omitted.
+          minimum: 0.0
+          maximum: 1.0
+          example: 0.7
+        top_k:
+          type: integer
+          description: Maximum number of results to return after reranking.
+          minimum: 1
+          maximum: 100
+          default: 5
+          example: 5
+
+    SearchResult:
+      type: object
+      required: [content, score, file_id, chunk_index]
+      properties:
+        content:
+          type: string
+          description: The chunk text content.
+          example: "Q4 revenue grew 12% YoY driven by enterprise deals..."
+        score:
+          type: number
+          description: Reranker score — higher is more relevant.
+          example: 0.87
+        file_id:
+          type: string
+          description: The source file this chunk came from.
+          example: "file-a1b2c3"
+        chunk_index:
+          type: integer
+          description: Zero-based position of this chunk within the source file.
+          example: 3
+          minimum: 0
+
+    SearchResponse:
+      type: object
+      required: [object, data]
+      properties:
+        object:
+          type: string
+          enum: [list]
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchResult'
+
+    # ── Embeddings API ─────────────────────────────────────────────────────────
+
+    EmbeddingRequest:
+      type: object
+      required: [model, input]
+      properties:
+        model:
+          type: string
+          description: Encoder model identifier. Must match the configured encoder.
+          example: "sentence-transformers/all-MiniLM-L6-v2"
+        input:
+          oneOf:
+            - type: string
+              description: Single text string to encode.
+              example: "Hello world"
+            - type: array
+              description: Batch of text strings to encode.
+              items:
+                type: string
+              example: ["Hello world", "The quick brown fox"]
+          description: One string or a list of strings to embed.
+
+    EmbeddingObject:
+      type: object
+      required: [object, index, embedding]
+      properties:
+        object:
+          type: string
+          enum: [embedding]
+          example: embedding
+        index:
+          type: integer
+          description: Zero-based index of this embedding within the batch.
+          example: 0
+          minimum: 0
+        embedding:
+          type: array
+          description: 384-dimensional dense float vector.
+          items:
+            type: number
+          minItems: 384
+          maxItems: 384
+          example: [0.012, -0.034, 0.091]
+
+    EmbeddingUsage:
+      type: object
+      required: [prompt_tokens, total_tokens]
+      properties:
+        prompt_tokens:
+          type: integer
+          description: Tokens in the input text(s) counted via tiktoken.
+          example: 2
+        total_tokens:
+          type: integer
+          description: Same as `prompt_tokens` for embeddings (no completion tokens).
+          example: 2
+
+    EmbeddingResponse:
+      type: object
+      required: [object, model, data, usage]
+      properties:
+        object:
+          type: string
+          enum: [list]
+        model:
+          type: string
+          description: The encoder model used.
+          example: "sentence-transformers/all-MiniLM-L6-v2"
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/EmbeddingObject'
+        usage:
+          $ref: '#/components/schemas/EmbeddingUsage'
