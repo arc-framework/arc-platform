@@ -5475,6 +5475,261 @@ graph LR
 ---
 
 ---
+url: /arc-platform/specs-site/012-sherlock-chat-api/spec.md
+---
+# Feature: Sherlock Chat API — Provider-Agnostic Layer
+
+> **Spec**: 012-sherlock-chat-api
+> **Date**: 2026-03-03
+> **Status**: Draft
+> **Informed by**: `specs/012-sherlock-chat-api/.work-docs/system-design.md`
+
+## Target Modules
+
+| Module | Path | Impact |
+|--------|------|--------|
+| Services | `services/reasoner/` | Modify — add v1 API layer, provider abstraction, NATS v1 channels |
+
+No CLI, SDK, or Docs changes in v1.
+
+## Overview
+
+Sherlock's existing `POST /chat` endpoint uses a custom `{user_id, text}` schema, requiring every client to build a Sherlock-specific integration. This feature adds a **provider-agnostic, industry-standard chat API** (`/v1/*`) on top of the existing reasoning kernel. Clients use the OpenAI wire format — the industry de facto standard — while the operator configures any LLM provider (OpenAI, Anthropic, Google, or any OpenAI-compatible endpoint) via a single env var at startup. All existing endpoints remain unchanged.
+
+## Architecture
+
+```mermaid
+graph TB
+    subgraph Clients
+        HTTP[OpenAI SDK / HTTP client]
+        NC[NATS caller]
+    end
+
+    subgraph "arc-sherlock :8000"
+        direction TB
+        M["GET /v1/models"]
+        CC["POST /v1/chat/completions\nsync + SSE stream"]
+        RR["POST /v1/responses"]
+        AD["GET /async-docs\nAsyncAPI UI"]
+        OLD["POST /chat\nexisting — unchanged"]
+
+        V1IN["sherlock.v1.chat\n(inbound)"]
+        V1OUT["sherlock.v1.result\n(outbound)"]
+        NOLD["sherlock.request\nexisting — unchanged"]
+
+        subgraph "Protocol Layer"
+            CCP[ChatCompletionPort]
+            SP[StreamingPort]
+            MRP[ModelRegistryPort]
+            RP[ResponsesPort]
+            NATP[OpenAINATSPort]
+        end
+
+        subgraph "Provider Factory"
+            OAI[OpenAI]
+            ANT[Anthropic]
+            GGL[Google]
+            COMP[OpenAI-compatible\ndefault]
+        end
+
+        subgraph "Kernel — unchanged"
+            IG[invoke_graph]
+            SG[stream_graph NEW]
+            LG[LangGraph]
+            MEM[pgvector]
+        end
+    end
+
+    HTTP --> M & CC & RR & AD
+    NC --> V1IN
+    V1OUT --> NC
+
+    CC --> CCP & SP
+    RR --> RP
+    M --> MRP
+    V1IN --> NATP
+
+    CCP & SP & RP & NATP --> IG & SG
+    IG & SG --> LG --> MEM
+
+    OAI & ANT & GGL & COMP -->|BaseChatModel| LG
+```
+
+### Provider Swap (startup config only)
+
+```mermaid
+flowchart LR
+    ENV["SHERLOCK_LLM_PROVIDER\nSHERLOCK_LLM_MODEL\nSHERLOCK_LLM_API_KEY"]
+    FAC[LLMProviderFactory]
+    OAI["OpenAIProvider\nlangchain-openai"]
+    ANT["AnthropicProvider\nlangchain-anthropic"]
+    GGL["GoogleProvider\nlangchain-google-genai"]
+    COMP["CompatibleProvider\nlangchain-openai + base_url"]
+    LLM["BaseChatModel → LangGraph"]
+
+    ENV --> FAC
+    FAC -->|openai| OAI --> LLM
+    FAC -->|anthropic| ANT --> LLM
+    FAC -->|google| GGL --> LLM
+    FAC -->|openai-compatible default| COMP --> LLM
+```
+
+## User Scenarios & Testing
+
+### P1 — Must Have
+
+**US-1**: As an API client using the OpenAI Python SDK, I want to point it at Sherlock without code changes so that I can use any configured LLM provider transparently.
+
+* **Given**: Sherlock is running with `SHERLOCK_LLM_PROVIDER=anthropic` and `SHERLOCK_LLM_MODEL=claude-opus-4-6`
+* **When**: I call `client.chat.completions.create(model="claude-opus-4-6", messages=[{"role":"user","content":"Hello"}])` with `base_url=http://localhost:8083/v1`
+* **Then**: I receive a valid `ChatCompletion` object with `choices[0].message.content` populated
+* **Test**: `curl -X POST http://localhost:8083/v1/chat/completions -d '{"model":"claude-opus-4-6","messages":[{"role":"user","content":"Hello"}]}'` returns 200 with OpenAI-format JSON
+
+**US-2**: As a client, I want to stream token-by-token responses so that I can display real-time output without waiting for the full response.
+
+* **Given**: Sherlock is running with any provider
+* **When**: I POST `/v1/chat/completions` with `"stream": true`
+* **Then**: I receive `text/event-stream` SSE events, each with `data: {"choices":[{"delta":{"content":"<token>"}}]}`, terminated by `data: [DONE]`
+* **Test**: `curl -N -X POST .../v1/chat/completions -d '{"stream":true,...}'` streams tokens, ends with `[DONE]`
+
+**US-3**: As an operator, I want to switch LLM providers by changing a single env var so that I can deploy Sherlock against any backend without code changes.
+
+* **Given**: A Sherlock deployment
+* **When**: I set `SHERLOCK_LLM_PROVIDER=google SHERLOCK_LLM_MODEL=gemini-2.0-flash` and restart
+* **Then**: All `/v1/*` endpoints use Google Gemini for inference; all other behaviour is identical
+* **Test**: `GET /v1/models` returns `{"data":[{"id":"gemini-2.0-flash"}]}`; chat completions succeed
+
+**US-4**: As a NATS-based service, I want to publish an OpenAI-format chat request asynchronously so that I can integrate without HTTP.
+
+* **Given**: NATS is running, Sherlock has `SHERLOCK_NATS_V1_ENABLED=true`
+* **When**: I publish `ChatCompletionRequest` JSON to `sherlock.v1.chat`
+* **Then**: Sherlock processes it and publishes `ChatCompletionResponse` JSON to `sherlock.v1.result`
+* **Test**: `nats pub sherlock.v1.chat '{"model":"...","messages":[...]}' && nats sub sherlock.v1.result` receives valid response
+
+### P2 — Should Have
+
+**US-5**: As a client using the newer OpenAI Responses API, I want `POST /v1/responses` so that I can use the recommended agentic interface.
+
+* **Given**: Sherlock running with any provider
+* **When**: I POST `/v1/responses` with `{"model":"...","input":"Hello","user":"u1"}`
+* **Then**: I receive a `ResponsesResponse` with `output[0].content[0].text` populated
+* **Test**: Response body matches `{"object":"response","output":[{"type":"message","content":[{"type":"output_text","text":"..."}]}]}`
+
+**US-6**: As a developer, I want `GET /async-docs` to show a live AsyncAPI UI so that I can understand the NATS event contracts without reading YAML.
+
+* **Given**: Sherlock running with `SHERLOCK_ASYNC_DOCS_ENABLED=true`
+* **When**: I navigate to `http://localhost:8083/async-docs`
+* **Then**: A browser-viewable AsyncAPI HTML UI loads, showing all channels and message schemas
+* **Test**: `curl http://localhost:8083/async-docs` returns HTML with AsyncAPI UI content
+
+### P3 — Nice to Have
+
+**US-7**: As a client, I want `GET /v1/models` so that I can discover the configured model ID programmatically.
+
+* **Given**: Sherlock running with `SHERLOCK_LLM_MODEL=gpt-4o`
+* **When**: `GET /v1/models`
+* **Then**: Returns `{"object":"list","data":[{"id":"gpt-4o","object":"model","owned_by":"arc-platform"}]}`
+* **Test**: Response matches OpenAI models list schema
+
+## Requirements
+
+### Functional
+
+* \[ ] FR-1: `POST /v1/chat/completions` accepts `model`, `messages`, `stream`, `user`, `temperature`, `max_tokens`, `top_p` and returns OpenAI-format `ChatCompletionResponse`
+* \[ ] FR-2: `POST /v1/chat/completions` with `stream: true` returns `text/event-stream` SSE with `ChatCompletionChunk` events terminated by `data: [DONE]`
+* \[ ] FR-3: `POST /v1/responses` accepts `model`, `input` (string or items), `instructions`, `user` and returns OpenAI Responses API format
+* \[ ] FR-4: `GET /v1/models` returns a model list with the single configured model
+* \[ ] FR-5: `GET /async-docs` serves the static AsyncAPI HTML UI built from `contracts/asyncapi.yaml`
+* \[ ] FR-6: NATS subject `sherlock.v1.chat` accepts `ChatCompletionRequest` JSON (fire-and-forget + request-reply); results published to `sherlock.v1.result`
+* \[ ] FR-7: Four provider classes (`OpenAIProvider`, `AnthropicProvider`, `GoogleProvider`, `CompatibleProvider`) each implement `LLMProviderPort` and return a configured `BaseChatModel`
+* \[ ] FR-8: `SHERLOCK_LLM_PROVIDER` selects the provider at startup; default is `openai-compatible` (existing behaviour preserved)
+* \[ ] FR-9: All existing endpoints (`POST /chat`, `GET /health`, `GET /health/deep`, NATS `sherlock.request`, Pulsar topics) remain unchanged and fully functional
+* \[ ] FR-10: `user` field in `/v1/chat/completions` and `/v1/responses` maps to `user_id` in `invoke_graph`; absent `user` falls back to a deterministic UUID derived from the message hash
+* \[ ] FR-11: `system` role message in `messages[]` overrides `SHERLOCK_SYSTEM_PROMPT` for that request
+
+### Non-Functional
+
+* \[ ] NFR-1: Message content (`messages`, `content`, `text`, `input`, `output`) is **never** logged or added to OTEL span attributes except via the existing `add_span_content_attributes()` gate (`SHERLOCK_CONTENT_TRACING=false` default)
+* \[ ] NFR-2: All new handlers emit only metadata in logs: `model`, `user_id`, `latency_ms`, `transport`, `stream`, `message_count` (integer)
+* \[ ] NFR-3: All new code passes `ruff` + `mypy --strict`
+* \[ ] NFR-4: New Python packages are not imported at module level — all provider imports are lazy (inside provider class constructors) to avoid import errors when optional deps are absent
+* \[ ] NFR-5: `/v1/chat/completions` and `/v1/responses` return HTTP 503 when `AppState` is not ready (same pattern as existing `/chat`)
+* \[ ] NFR-6: `/v1/chat/completions` returns HTTP 404 with OpenAI error format `{"error":{"type":"invalid_request_error","code":"model_not_found"}}` when the requested model is not the configured model
+* \[ ] NFR-7: All new OTEL metrics (`sherlock.v1.*`) use structural attributes only (`endpoint`, `transport`, `api_version`, `model`, `stream`)
+* \[ ] NFR-8: Test coverage ≥ 75% on new modules (`providers/`, `openai_router.py`, `streaming.py`, `openai_nats_handler.py`)
+
+### Key Entities
+
+| Entity | Module | Description |
+|--------|--------|-------------|
+| `LLMProviderPort` | `providers/base.py` | Protocol — factory interface for all LLM providers |
+| `OpenAIProvider` | `providers/openai_provider.py` | Wraps `ChatOpenAI` for direct OpenAI / Azure |
+| `AnthropicProvider` | `providers/anthropic_provider.py` | Wraps `ChatAnthropic` for Claude models |
+| `GoogleProvider` | `providers/google_provider.py` | Wraps `ChatGoogleGenerativeAI` for Gemini |
+| `CompatibleProvider` | `providers/compatible_provider.py` | Wraps `ChatOpenAI` with custom `base_url` — default |
+| `ChatCompletionRequest` | `models_v1.py` | Pydantic model — OpenAI `/v1/chat/completions` request |
+| `ChatCompletionResponse` | `models_v1.py` | Pydantic model — sync response |
+| `ChatCompletionChunk` | `models_v1.py` | Pydantic model — SSE stream chunk |
+| `ResponsesRequest` | `models_v1.py` | Pydantic model — OpenAI Responses API request |
+| `ResponsesResponse` | `models_v1.py` | Pydantic model — Responses API response |
+| `ModelList` | `models_v1.py` | Pydantic model — `/v1/models` response |
+| `stream_graph()` | `graph.py` | New async generator — yields tokens via `astream_events` |
+| `OpenAINATSHandler` | `openai_nats_handler.py` | NATS handler for `sherlock.v1.chat` / `sherlock.v1.result` |
+| `StaticModelRegistry` | `models_router.py` | `ModelRegistryPort` impl — reads configured model from settings |
+
+## Edge Cases
+
+| Scenario | Expected Behavior |
+|----------|-------------------|
+| `user` field absent in `/v1/chat/completions` | Derive `user_id` as `sha256(sorted message contents)[:16]` — deterministic, no PII in error logs |
+| `model` field doesn't match `SHERLOCK_LLM_MODEL` | HTTP 404 with `{"error":{"type":"invalid_request_error","code":"model_not_found","message":"The model '...' does not exist"}}` |
+| `messages` contains only `system` role (no `user`) | HTTP 422 validation error — at least one `user` message required |
+| `stream: true` but LLM does not support streaming | Fall back to `invoke_graph()`, emit single chunk + `[DONE]` |
+| Provider API key missing or invalid | HTTP 503 on first request; error logged (type only, not key value); health deep returns `degraded` |
+| `SHERLOCK_LLM_PROVIDER=anthropic` but `langchain-anthropic` not installed | Startup fails with clear error: `"langchain-anthropic is required for provider 'anthropic'. Install with: pip install langchain-anthropic"` |
+| NATS `sherlock.v1.chat` message with no `user` messages in `messages[]` | NATS error response `{"error":"no user message found","latency_ms":N}` — no crash |
+| `GET /async-docs` when `SHERLOCK_ASYNC_DOCS_ENABLED=false` | HTTP 404 |
+| `GET /async-docs` when static dir not present (local dev without Docker build) | HTTP 404 with JSON body `{"detail":"AsyncAPI docs not available in this environment"}` |
+| SSE stream interrupted by client disconnect | Generator cancelled cleanly; memory persistence still attempted via `asyncio.shield` |
+
+## Success Criteria
+
+* \[ ] SC-1: `openai.OpenAI(base_url="http://localhost:8083/v1", api_key="any").chat.completions.create(...)` succeeds against Sherlock with any configured provider
+* \[ ] SC-2: `curl -N .../v1/chat/completions -d '{"stream":true,...}'` streams token chunks and ends with `data: [DONE]`
+* \[ ] SC-3: Restarting Sherlock with `SHERLOCK_LLM_PROVIDER=anthropic` (valid key + model) routes all inference to Claude — zero code changes
+* \[ ] SC-4: `nats pub sherlock.v1.chat '...'` produces a result on `sherlock.v1.result` within 30s
+* \[ ] SC-5: `GET /async-docs` renders a browser-viewable AsyncAPI UI showing `sherlock.v1.chat` and `sherlock.v1.result` channels
+* \[ ] SC-6: `ruff check src/ && mypy src/ --strict` passes with zero errors on all new files
+* \[ ] SC-7: `pytest tests/ --cov=sherlock --cov-report=term` shows ≥ 75% coverage on new modules
+* \[ ] SC-8: No chat message content appears in SigNoz logs or traces when `SHERLOCK_CONTENT_TRACING=false` (default)
+* \[ ] SC-9: Existing `POST /chat`, `GET /health`, `GET /health/deep`, NATS `sherlock.request` — all pass existing tests unchanged
+
+## Docs & Links Update
+
+* \[ ] Update `services/reasoner/contracts/openapi.yaml` — add `/v1/models`, `/v1/chat/completions`, `/v1/responses` paths and all new schemas
+* \[ ] Update `services/reasoner/contracts/asyncapi.yaml` — add `sherlock.v1.chat` + `sherlock.v1.result` channels, operations, and message schemas
+* \[ ] Update `services/reasoner/service.yaml` — bump version to `0.2.0`, note new endpoints
+
+## Constitution Compliance
+
+| Principle | Applies | Compliant | Notes |
+|-----------|---------|-----------|-------|
+| I. Zero-Dep CLI | \[ ] | — | Not applicable — no CLI changes |
+| II. Platform-in-a-Box | \[x] | \[x] | `openai-compatible` default preserves local LM Studio / Ollama behaviour — no new required infra |
+| III. Modular Services | \[x] | \[x] | All new code is additive inside `services/reasoner/` — no new service directory needed |
+| IV. Two-Brain | \[x] | \[x] | Python only — provider abstraction lives entirely in the intelligence brain |
+| V. Polyglot Standards | \[x] | \[x] | FastAPI, Pydantic v2, ruff + mypy strict, pytest with fixtures, `# TODO:` only |
+| VI. Local-First | \[ ] | — | Not applicable — CLI only |
+| VII. Observability | \[x] | \[x] | 4 new OTEL metrics; all v1 handlers emit traces + structured logs; content gated by `SHERLOCK_CONTENT_TRACING` |
+| VIII. Security | \[x] | \[x] | API keys via env vars only, never logged; message content never in logs/traces by default; no secrets in code |
+| IX. Declarative | \[ ] | — | Not applicable — CLI only |
+| X. Stateful Ops | \[ ] | — | Not applicable — CLI only |
+| XI. Resilience | \[x] | \[x] | Provider init failure → startup error (fail-fast); HTTP 503 when not ready; NATS error response on exception |
+| XII. Interactive | \[ ] | — | Not applicable — CLI only |
+
+---
+
+---
 url: /arc-platform/specs-site/009-sherlock-reasoning/spec.md
 ---
 # Feature: Sherlock Reasoning Service
@@ -9003,6 +9258,353 @@ gantt
 ---
 
 ---
+url: /arc-platform/specs-site/012-sherlock-chat-api/plan.md
+---
+# Implementation Plan: Sherlock Chat API — Provider-Agnostic Layer
+
+> **Spec**: 012-sherlock-chat-api
+> **Date**: 2026-03-03
+
+## Summary
+
+Add a provider-agnostic `/v1/*` chat API to Sherlock by introducing a `providers/` package (4 LangChain-backed implementations behind `LLMProviderPort`), OpenAI-compatible Pydantic models, SSE streaming via `graph.astream_events`, two new FastAPI routers, a NATS v1 handler, and a static AsyncAPI HTML UI. All existing endpoints remain unchanged. `llm_factory.py` is refactored to delegate to the new factory while preserving its call signature for backward compatibility.
+
+## Target Modules
+
+| Module | Language | Changes |
+|--------|----------|---------|
+| `services/reasoner/` | Python 3.13 | New files: providers package, models\_v1, interfaces, streaming, two routers, NATS v1 handler. Modified: main, config, llm\_factory, observability, contracts, pyproject, Dockerfile |
+
+## Technical Context
+
+| Aspect | Value |
+|--------|-------|
+| Language | Python 3.13 |
+| Framework | FastAPI 0.115+, LangGraph 1.0+, Pydantic v2 |
+| LLM providers | `langchain-openai` (existing), `langchain-anthropic` (new), `langchain-google-genai` (new) |
+| Async messaging | nats-py 2.9+ (existing) |
+| SSE streaming | sse-starlette 2.1+ (new) |
+| Token counting | tiktoken 0.7+ (new) |
+| AsyncAPI UI | `@asyncapi/html-template` — Node build step in Dockerfile, static output |
+| Testing | pytest + pytest-asyncio, httpx TestClient |
+| Linting | ruff + mypy strict |
+| Key pattern | `AppState` dataclass — no module-level singletons, all deps in lifespan |
+
+## Architecture
+
+### Request Flow — HTTP sync vs stream
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant FastAPI
+    participant Router as openai_router.py
+    participant Adapter as GraphChatAdapter / GraphStreamingAdapter
+    participant Graph as LangGraph
+    participant Mem as SherlockMemory
+
+    Client->>FastAPI: POST /v1/chat/completions
+    FastAPI->>Router: validate ChatCompletionRequest
+    Router->>Router: model_registry.model_exists(req.model)?
+
+    alt stream=false
+        Router->>Adapter: ChatCompletionPort.complete(req)
+        Adapter->>Graph: invoke_graph(graph, mem, user_id, text)
+        Graph-->>Adapter: response str
+        Adapter-->>Client: 200 ChatCompletionResponse JSON
+    else stream=true
+        Router->>Adapter: StreamingPort.stream(req)
+        Adapter->>Graph: stream_graph(graph, mem, user_id, text)
+        loop on_chat_model_stream events
+            Graph-->>Adapter: token chunk
+            Adapter-->>Client: data: {ChatCompletionChunk}\n\n
+        end
+        Adapter-->>Client: data: [DONE]\n\n
+    end
+
+    Graph->>Mem: save(user_id, human, text)
+    Graph->>Mem: save(user_id, ai, response)
+```
+
+### NATS v1 Async Flow
+
+```mermaid
+sequenceDiagram
+    participant Caller
+    participant NATS as Flash (NATS)
+    participant Handler as OpenAINATSHandler
+    participant Graph as invoke_graph
+    participant Result as sherlock.v1.result
+
+    Caller->>NATS: publish(sherlock.v1.chat, ChatCompletionRequest JSON)
+    NATS->>Handler: _handle(msg) [queue: sherlock_workers]
+    Handler->>Handler: deserialize + extract user_id, text
+    Handler->>Graph: invoke_graph(...)
+    Graph-->>Handler: response str
+    Handler->>Handler: build ChatCompletionResponse
+    opt msg.reply set (request-reply mode)
+        Handler->>Caller: msg.respond(result JSON)
+    end
+    Handler->>Result: nc.publish(sherlock.v1.result, result JSON)
+```
+
+### Provider Factory
+
+```mermaid
+flowchart LR
+    S[Settings\nSHERLOCK_LLM_PROVIDER]
+    FAC[create_provider]
+    OAI[OpenAIProvider\nChatOpenAI\nopenai.com or azure]
+    ANT[AnthropicProvider\nChatAnthropic\napi.anthropic.com]
+    GGL[GoogleProvider\nChatGoogleGenerativeAI\ngenerativelanguage.googleapis.com]
+    COM[CompatibleProvider\nChatOpenAI + base_url\nOllama / vLLM / Groq / LM Studio]
+    LLM[BaseChatModel → build_graph]
+
+    S -->|openai| FAC --> OAI --> LLM
+    S -->|anthropic| FAC --> ANT --> LLM
+    S -->|google| FAC --> GGL --> LLM
+    S -->|openai-compatible default| FAC --> COM --> LLM
+```
+
+### Module Dependency Graph
+
+```mermaid
+graph TD
+    CFG[config.py]
+    MDL[models_v1.py]
+    ITF[interfaces.py]
+    GR[graph.py]
+    STR[streaming.py]
+    PRV[providers/]
+    LLM[llm_factory.py]
+    MR[models_router.py]
+    OR[openai_router.py]
+    NH[openai_nats_handler.py]
+    OBS[observability.py]
+    MAIN[main.py]
+
+    CFG --> PRV
+    CFG --> LLM
+    MDL --> ITF
+    MDL --> MR
+    MDL --> OR
+    MDL --> NH
+    ITF --> MR
+    ITF --> OR
+    ITF --> NH
+    GR --> STR
+    STR --> OR
+    GR --> OR
+    GR --> NH
+    PRV --> LLM
+    MR --> MAIN
+    OR --> MAIN
+    NH --> MAIN
+    OBS --> MAIN
+    CFG --> MAIN
+```
+
+## Constitution Check
+
+| # | Principle | Status | Evidence |
+|---|-----------|--------|----------|
+| I | Zero-Dep CLI | N/A | No CLI changes |
+| II | Platform-in-a-Box | PASS | Default provider `openai-compatible` preserves local LM Studio / Ollama — no new required infra |
+| III | Modular Services | PASS | All changes inside `services/reasoner/` — additive only, no new service dir |
+| IV | Two-Brain | PASS | Python only — LLM provider abstraction belongs in the intelligence brain |
+| V | Polyglot Standards | PASS | FastAPI, Pydantic v2, ruff + mypy strict, pytest fixtures; comments only where why isn't obvious |
+| VI | Local-First | N/A | CLI only |
+| VII | Observability | PASS | 4 new `sherlock.v1.*` OTEL metrics; all handlers emit structured logs (metadata only); content gate preserved |
+| VIII | Security | PASS | API keys via env vars + Pydantic SecretStr; never logged; content never in traces by default |
+| IX | Declarative | N/A | CLI only |
+| X | Stateful Ops | N/A | CLI only |
+| XI | Resilience | PASS | Provider init fail → startup error (fail-fast); HTTP 503 when not ready; NATS error ACK on exception |
+| XII | Interactive | N/A | CLI only |
+
+## Project Structure
+
+```
+services/reasoner/
+├── src/sherlock/
+│   ├── providers/                        ← NEW package
+│   │   ├── __init__.py                   # exports create_provider
+│   │   ├── base.py                       # LLMProviderPort Protocol
+│   │   ├── openai_provider.py            # OpenAI / Azure
+│   │   ├── anthropic_provider.py         # Anthropic Claude
+│   │   ├── google_provider.py            # Google Gemini
+│   │   ├── compatible_provider.py        # any OpenAI-compatible endpoint (default)
+│   │   └── factory.py                    # create_provider(settings) → LLMProviderPort
+│   ├── interfaces.py                     ← NEW — all 7 Protocol definitions
+│   ├── models_v1.py                      ← NEW — OpenAI-compatible Pydantic models
+│   ├── streaming.py                      ← NEW — stream_graph() + GraphStreamingAdapter
+│   ├── openai_router.py                  ← NEW — /v1/chat/completions + /v1/responses
+│   ├── models_router.py                  ← NEW — GET /v1/models + StaticModelRegistry
+│   ├── openai_nats_handler.py            ← NEW — OpenAINATSHandler
+│   ├── main.py                           ← MODIFY — routers, AppState, lifespan, async-docs
+│   ├── config.py                         ← MODIFY — 8 new settings
+│   ├── llm_factory.py                    ← MODIFY — shim to providers/factory.py
+│   ├── graph.py                          ← MODIFY — add stream_graph()
+│   └── observability.py                  ← MODIFY — 4 new v1 metrics
+├── tests/
+│   ├── test_providers.py                 ← NEW
+│   ├── test_openai_router.py             ← NEW
+│   ├── test_streaming.py                 ← NEW
+│   └── test_openai_nats_handler.py       ← NEW
+├── contracts/
+│   ├── openapi.yaml                      ← MODIFY — /v1/* paths + schemas
+│   └── asyncapi.yaml                     ← MODIFY — v1 NATS channels
+├── pyproject.toml                        ← MODIFY — new deps
+└── Dockerfile                            ← MODIFY — Node build for AsyncAPI HTML
+```
+
+## Key Technical Decisions
+
+### TD-1: `llm_factory.py` — Shim, Not Delete
+
+`llm_factory.py`'s `create_llm(settings) → (ChatOpenAI, bool)` call signature is used in `main.py`. Rather than touching `main.py` in two places, `llm_factory.py` becomes a backward-compat shim:
+
+```python
+# llm_factory.py (refactored)
+def create_llm(settings: Settings) -> tuple[BaseChatModel, bool]:
+    provider = create_provider(settings)
+    return provider.create_llm(), provider.supports_system_role()
+```
+
+`_detect_supports_system_role()` and `_NO_SYSTEM_ROLE_FAMILIES` move into `CompatibleProvider` where they belong.
+
+### TD-2: `stream_graph()` — Add to `graph.py`, Not a New File
+
+`stream_graph()` is the streaming sibling of `invoke_graph()` — same module, same file. Adding it elsewhere would split the graph's public API across two files.
+
+```python
+async def stream_graph(
+    graph: Any,
+    memory: SherlockMemory,
+    user_id: str,
+    text: str,
+) -> AsyncIterator[str]:
+    """Yield text tokens via astream_events(version="v2").
+    Filters on_chat_model_stream events only.
+    Best-effort persists both turns after stream completes.
+    """
+```
+
+### TD-3: Lazy Provider Imports
+
+Each provider file imports its LangChain dep inside the class constructor:
+
+```python
+# anthropic_provider.py
+class AnthropicProvider:
+    def create_llm(self) -> BaseChatModel:
+        from langchain_anthropic import ChatAnthropic  # lazy — avoids ImportError
+        return ChatAnthropic(model=self._model, api_key=self._api_key)
+```
+
+This prevents import-time failures when optional deps are absent.
+
+### TD-4: `user_id` Derivation
+
+`user` field absent → deterministic UUID v5 from SHA-256 of joined message contents. Keeps `user_id` stable across identical requests without requiring the caller to supply one.
+
+```python
+def _derive_user_id(messages: list[ChatMessage]) -> str:
+    content = "|".join(m.content or "" for m in messages if m.role == "user")
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, content))
+```
+
+### TD-5: `api_key` Handling
+
+`CompatibleProvider` defaults `api_key` to `"lm-studio"` (preserving existing hardcoded behaviour). All other providers require `SHERLOCK_LLM_API_KEY` to be set. Validation at startup — fail-fast before the service claims to be ready.
+
+### TD-6: AsyncAPI UI — Dev Fallback
+
+When `async_docs_enabled=True` but `/app/async-docs/` directory doesn't exist (local dev without Docker), the endpoint returns:
+
+```json
+{"detail": "AsyncAPI docs not available — run via Docker to generate UI"}
+```
+
+Not a 500 — a graceful 404 that doesn't mask real errors.
+
+## Parallel Execution Strategy
+
+```mermaid
+gantt
+    title 012-sherlock-chat-api Implementation Phases
+    dateFormat YYYY-MM-DD
+    section Phase 1 — Foundation
+    models_v1.py              :p1a, 2026-03-04, 1d
+    interfaces.py             :p1b, after p1a, 0.5d
+    config.py additions       :p1c, 2026-03-04, 0.5d
+    section Phase 2 — Parallel (all depend on Phase 1)
+    providers/ package        :p2a, after p1b, 1d
+    streaming.py              :p2b, after p1b, 1d
+    models_router.py          :p2c, after p1b, 0.5d
+    section Phase 3 — Parallel (depend on Phase 2)
+    openai_router.py          :p3a, after p2a, 1d
+    openai_nats_handler.py    :p3b, after p2a, 1d
+    section Phase 4 — Parallel (independent)
+    observability.py          :p4a, after p1c, 0.5d
+    llm_factory.py refactor   :p4b, after p2a, 0.5d
+    graph.py stream_graph     :p4c, after p1b, 1d
+    section Phase 5 — Integration
+    main.py wiring            :p5, after p3a, 1d
+    section Phase 6 — Parallel (contracts + infra)
+    openapi.yaml              :p6a, after p5, 0.5d
+    asyncapi.yaml             :p6b, after p5, 0.5d
+    Dockerfile + pyproject    :p6c, after p5, 0.5d
+    section Phase 7 — Tests
+    test_providers.py         :p7a, after p4b, 1d
+    test_openai_router.py     :p7b, after p3a, 1d
+    test_streaming.py         :p7c, after p4c, 1d
+    test_openai_nats_handler  :p7d, after p3b, 1d
+```
+
+### Agent parallelization groups
+
+| Group | Tasks | Can run together? |
+|-------|-------|-------------------|
+| A | `models_v1.py` + `config.py` additions | Yes — zero shared state |
+| B | `providers/` all 4 impls + `compatible_provider.py` | Yes — each is independent |
+| C | `streaming.py` + `models_router.py` | Yes — both only need models\_v1 + interfaces |
+| D | `openai_router.py` + `openai_nats_handler.py` | Yes — both call invoke\_graph / stream\_graph |
+| E | `openapi.yaml` + `asyncapi.yaml` + `Dockerfile` | Yes — no code deps |
+| F | All 4 test files | Yes — each covers a different module |
+
+**Sequential gates**: `interfaces.py` must exist before Group B/C/D starts. `main.py` must be last before contracts.
+
+## Reviewer Checklist
+
+* \[ ] All 11 FRs from spec.md implemented and testable
+* \[ ] NFR-1 + NFR-2 verified: no message content in logs or spans (`grep -r "messages=" src/sherlock/` returns only model definitions, not log calls)
+* \[ ] `ruff check src/ && mypy src/ --strict` pass with zero errors
+* \[ ] `pytest tests/ --cov=sherlock` shows ≥ 75% on `providers/`, `openai_router.py`, `streaming.py`, `openai_nats_handler.py`
+* \[ ] `curl http://localhost:8083/v1/models` returns valid OpenAI model list
+* \[ ] `curl -X POST .../v1/chat/completions -d '{"stream":false,...}'` returns `ChatCompletionResponse`
+* \[ ] `curl -N -X POST .../v1/chat/completions -d '{"stream":true,...}'` streams tokens + `[DONE]`
+* \[ ] `curl -X POST .../v1/responses` returns `ResponsesResponse`
+* \[ ] `curl http://localhost:8083/async-docs` returns HTML (via Docker)
+* \[ ] Switching `SHERLOCK_LLM_PROVIDER=anthropic` (with valid key/model) routes to Claude
+* \[ ] Existing tests (`pytest tests/ -k "not v1"`) still pass unchanged
+* \[ ] `service.yaml` version bumped to `0.2.0`
+* \[ ] `openapi.yaml` documents all new `/v1/*` paths
+* \[ ] `asyncapi.yaml` documents `sherlock.v1.chat` and `sherlock.v1.result`
+
+## Risks & Mitigations
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| `langchain-google-genai` API changes frequently | M | Pin to `>=2.0,<3` in pyproject.toml; lazy import means startup only fails when `google` provider selected |
+| `astream_events(version="v2")` event schema changes in LangGraph | M | Filter only `on_chat_model_stream` — most stable event type; pin `langgraph>=1.0,<2` |
+| `@asyncapi/html-template` npm install in Docker build slows CI | L | Use `--prefer-offline` in Docker layer; cache the npm layer before COPY src step |
+| Provider API key absent at startup for non-compatible providers | H | `create_provider()` validates key presence for `openai`/`anthropic`/`google` and raises `ValueError` with actionable message before service binds to port |
+| `_OTELStructlogHandler` silently forwards new log fields to SigNoz | H | NFR-2 in spec + reviewer checklist grep step enforces this at review time |
+| SSE stream connection drop before `[DONE]` leaves memory unsaved | L | `asyncio.shield(memory.save(...))` in `stream_graph` teardown — decouples storage from connection lifetime |
+
+---
+
+---
 url: /arc-platform/specs-site/009-sherlock-reasoning/plan.md
 ---
 # Implementation Plan: Sherlock Reasoning Service
@@ -12022,6 +12624,313 @@ Both workflows are independent and can be implemented concurrently.
 | Integration | 1 | 1 | 0 |
 | Polish | 2 | 2 | 0 |
 | **Total** | **14** | **14** | **9** |
+
+---
+
+---
+url: /arc-platform/specs-site/012-sherlock-chat-api/tasks.md
+---
+# Tasks: Sherlock Chat API — Provider-Agnostic Layer
+
+> **Spec**: 012-sherlock-chat-api
+> **Date**: 2026-03-03
+
+## Task Format
+
+```
+[TASK-NNN] [P?] [MODULE] [PRIORITY] Description
+  Dependencies: [TASK-XXX] or none
+  Module: services/reasoner/
+  Acceptance: Testable criteria
+  Status: [ ] pending | [~] in-progress | [x] done
+```
+
+* `[P]` = Safe for parallel agent execution
+* Priority: P1 (must), P2 (should), P3 (nice)
+
+***
+
+## Dependency Graph
+
+```mermaid
+graph TD
+    T001[TASK-001\npyproject.toml deps]
+    T002[TASK-002\nconfig.py settings]
+    T010[TASK-010\nmodels_v1.py]
+    T011[TASK-011\ninterfaces.py]
+    T020[TASK-020\nproviders/base.py]
+    T021[TASK-021\ncompatible_provider]
+    T022[TASK-022\nopenai_provider]
+    T023[TASK-023\nanthropicprovider]
+    T024[TASK-024\ngoogle_provider]
+    T025[TASK-025\nproviders/factory.py]
+    T026[TASK-026\nstream_graph]
+    T030[TASK-030\nllm_factory shim]
+    T031[TASK-031\nstreaming.py]
+    T032[TASK-032\nmodels_router]
+    T033[TASK-033\nobservability v1]
+    T040[TASK-040\nopenai_router]
+    T041[TASK-041\nnats_v1_handler]
+    T050[TASK-050\nmain.py wiring]
+    T051[TASK-051\nopenapi.yaml]
+    T052[TASK-052\nasyncapi.yaml]
+    T053[TASK-053\nDockerfile]
+    T060[TASK-060\ntest_providers]
+    T061[TASK-061\ntest_openai_router]
+    T062[TASK-062\ntest_streaming]
+    T063[TASK-063\ntest_nats_v1]
+    T900[TASK-900\nDocs & Links]
+    T999[TASK-999\nReviewer]
+
+    T001 --> T020
+    T001 --> T021
+    T001 --> T022
+    T001 --> T023
+    T001 --> T024
+    T010 --> T011
+    T010 --> T032
+    T010 --> T040
+    T010 --> T041
+    T011 --> T020
+    T011 --> T031
+    T011 --> T032
+    T011 --> T040
+    T011 --> T041
+    T002 --> T033
+    T002 --> T050
+    T020 --> T021
+    T020 --> T022
+    T020 --> T023
+    T020 --> T024
+    T021 --> T025
+    T022 --> T025
+    T023 --> T025
+    T024 --> T025
+    T025 --> T030
+    T025 --> T060
+    T026 --> T031
+    T026 --> T041
+    T030 --> T050
+    T031 --> T040
+    T031 --> T062
+    T032 --> T040
+    T032 --> T050
+    T033 --> T050
+    T040 --> T050
+    T040 --> T061
+    T041 --> T050
+    T041 --> T063
+    T050 --> T051
+    T050 --> T052
+    T050 --> T053
+    T051 --> T900
+    T052 --> T900
+    T053 --> T900
+    T060 --> T999
+    T061 --> T999
+    T062 --> T999
+    T063 --> T999
+    T900 --> T999
+```
+
+## Quality Requirements
+
+| Module | Coverage | Lint | Notes |
+|--------|----------|------|-------|
+| `providers/` | 75% | ruff + mypy strict | Critical path — provider correctness |
+| `openai_router.py` | 75% | ruff + mypy strict | Critical path — primary API surface |
+| `streaming.py` | 75% | ruff + mypy strict | Critical path — SSE correctness |
+| `openai_nats_handler.py` | 75% | ruff + mypy strict | Critical path — async events |
+| `models_v1.py` | 60% | ruff + mypy strict | Model validation tested via router tests |
+| `models_router.py` | 60% | ruff + mypy strict | Simple, low complexity |
+
+***
+
+## Phase 1: Setup
+
+* \[x] \[TASK-001] \[services/reasoner] \[P1] Add new Python dependencies to pyproject.toml
+  * Dependencies: none
+  * Module: `services/reasoner/pyproject.toml`
+  * Acceptance: `langchain-anthropic>=0.3`, `langchain-google-genai>=2.0`, `sse-starlette>=2.1`, `tiktoken>=0.7` present in `[project.dependencies]`; `pip install -e ".[dev]"` succeeds
+
+* \[x] \[TASK-002] \[P] \[services/reasoner] \[P1] Add 8 new settings to config.py
+  * Dependencies: none
+  * Module: `services/reasoner/src/sherlock/config.py`
+  * Acceptance: `llm_provider`, `llm_api_key`, `openai_base_url`, `google_project_id`, `nats_v1_chat_subject`, `nats_v1_result_subject`, `nats_v1_enabled`, `async_docs_enabled` fields present in `Settings`; `mypy` passes; defaults match spec §10 table
+
+***
+
+## Phase 2: Foundational
+
+* \[x] \[TASK-010] \[P] \[services/reasoner] \[P1] Create models\_v1.py — all OpenAI-compatible Pydantic models
+  * Dependencies: none
+  * Module: `services/reasoner/src/sherlock/models_v1.py`
+  * Acceptance: `ChatMessage`, `ChatCompletionRequest`, `ChatCompletionResponse`, `ChatCompletionChunk`, `ChoiceDelta`, `StreamChoice`, `UsageInfo`, `ResponsesRequest`, `ResponsesResponse`, `ResponseInputItem`, `ResponseOutputItem`, `ModelObject`, `ModelList` all importable; `mypy --strict` passes; `stream: bool = False` default; `n: int = Field(1)` max 1
+
+* \[x] \[TASK-011] \[services/reasoner] \[P1] Create interfaces.py — 7 Protocol definitions
+  * Dependencies: TASK-010
+  * Module: `services/reasoner/src/sherlock/interfaces.py`
+  * Acceptance: `LLMProviderPort`, `ChatCompletionPort`, `StreamingPort`, `ModelRegistryPort`, `ResponsesPort`, `AsyncDocPort`, `OpenAINATSPort` all defined as `runtime_checkable` Protocols; `mypy --strict` passes; each Protocol has correct method signatures matching spec §8
+
+***
+
+## Phase 3: Implementation
+
+### Batch A — Providers + Core (all parallel, depends on TASK-001 + TASK-011)
+
+* \[x] \[TASK-020] \[P] \[services/reasoner] \[P1] Create providers/base.py + providers/**init**.py
+  * Dependencies: TASK-001, TASK-011
+  * Module: `services/reasoner/src/sherlock/providers/`
+  * Acceptance: `LLMProviderPort` Protocol in `base.py`; `providers/__init__.py` exports `create_provider`; `isinstance(any_provider, LLMProviderPort)` returns `True` for all 4 impls
+
+* \[x] \[TASK-021] \[P] \[services/reasoner] \[P1] Create providers/compatible\_provider.py — default OpenAI-compatible
+  * Dependencies: TASK-020
+  * Module: `services/reasoner/src/sherlock/providers/compatible_provider.py`
+  * Acceptance: Wraps `ChatOpenAI` with `base_url=settings.llm_base_url`, `api_key=settings.llm_api_key or "lm-studio"`; migrates `_detect_supports_system_role()` + `_NO_SYSTEM_ROLE_FAMILIES` from `llm_factory.py`; `provider_name()` returns `"openai-compatible"`; `create_llm()` returns `ChatOpenAI` instance; `mypy --strict` passes
+
+* \[x] \[TASK-022] \[P] \[services/reasoner] \[P1] Create providers/openai\_provider.py — OpenAI / Azure
+  * Dependencies: TASK-020
+  * Module: `services/reasoner/src/sherlock/providers/openai_provider.py`
+  * Acceptance: Lazy import `from langchain_openai import ChatOpenAI` inside `create_llm()`; `api_key` read from `settings.llm_api_key`; raises `ValueError` with actionable message if `llm_api_key` is empty; optional `settings.openai_base_url` used when set (Azure); `supports_system_role()` always `True`; `provider_name()` returns `"openai"`
+
+* \[x] \[TASK-023] \[P] \[services/reasoner] \[P1] Create providers/anthropic\_provider.py — Claude
+  * Dependencies: TASK-020
+  * Module: `services/reasoner/src/sherlock/providers/anthropic_provider.py`
+  * Acceptance: Lazy import `from langchain_anthropic import ChatAnthropic`; raises clear `ImportError` message if `langchain-anthropic` not installed; raises `ValueError` if `llm_api_key` empty; `supports_system_role()` always `True`; `provider_name()` returns `"anthropic"`
+
+* \[x] \[TASK-024] \[P] \[services/reasoner] \[P1] Create providers/google\_provider.py — Gemini
+  * Dependencies: TASK-020
+  * Module: `services/reasoner/src/sherlock/providers/google_provider.py`
+  * Acceptance: Lazy import `from langchain_google_genai import ChatGoogleGenerativeAI`; raises clear `ImportError` message if `langchain-google-genai` not installed; raises `ValueError` if `llm_api_key` empty; optional `settings.google_project_id` passed when set; `supports_system_role()` always `True`; `provider_name()` returns `"google"`
+
+* \[x] \[TASK-025] \[P] \[services/reasoner] \[P1] Create providers/factory.py — create\_provider()
+  * Dependencies: TASK-021, TASK-022, TASK-023, TASK-024
+  * Module: `services/reasoner/src/sherlock/providers/factory.py`
+  * Acceptance: `create_provider(settings) -> LLMProviderPort` uses `match settings.llm_provider` to select provider; unknown values fall back to `CompatibleProvider`; function exported from `providers/__init__.py`
+
+* \[x] \[TASK-026] \[P] \[services/reasoner] \[P1] Add stream\_graph() to graph.py
+  * Dependencies: none
+  * Module: `services/reasoner/src/sherlock/graph.py`
+  * Acceptance: `stream_graph(graph, memory, user_id, text) -> AsyncIterator[str]` filters `on_chat_model_stream` events from `astream_events(version="v2")`; yields only non-empty `chunk.content` strings; best-effort persists both turns after stream via `asyncio.shield`; does not modify `invoke_graph()` or any other existing function; `mypy --strict` passes
+
+### Batch B — Adapters + Support (all parallel, depends on Batch A)
+
+* \[x] \[TASK-030] \[P] \[services/reasoner] \[P1] Refactor llm\_factory.py as backward-compat shim
+  * Dependencies: TASK-025
+  * Module: `services/reasoner/src/sherlock/llm_factory.py`
+  * Acceptance: `create_llm(settings) -> tuple[BaseChatModel, bool]` delegates to `create_provider(settings)`; `_detect_supports_system_role()` removed (moved to `CompatibleProvider`); existing callers (`main.py`) unchanged; `mypy --strict` passes
+
+* \[x] \[TASK-031] \[P] \[services/reasoner] \[P1] Create streaming.py — GraphStreamingAdapter
+  * Dependencies: TASK-011, TASK-026
+  * Module: `services/reasoner/src/sherlock/streaming.py`
+  * Acceptance: `GraphStreamingAdapter` implements `StreamingPort`; `stream(req: ChatCompletionRequest) -> AsyncIterator[ChatCompletionChunk]` builds correct SSE chunks with `id`, `model`, `created`, `delta.content`; emits final chunk with `finish_reason="stop"`; `EventSourceResponse` not included here (that's the router's job — adapter yields chunks only); `mypy --strict` passes
+
+* \[x] \[TASK-032] \[P] \[services/reasoner] \[P2] Create models\_router.py — GET /v1/models
+  * Dependencies: TASK-010, TASK-011
+  * Module: `services/reasoner/src/sherlock/models_router.py`
+  * Acceptance: `StaticModelRegistry` implements `ModelRegistryPort`; `list_models()` returns `ModelList` with one `ModelObject` whose `id == settings.llm_model`; `model_exists(model_id)` returns `True` only for configured model; `build_models_router() -> APIRouter` returns router with `GET /models` endpoint returning `ModelList`; router prefix `/v1` applied in `main.py`
+
+* \[x] \[TASK-033] \[P] \[services/reasoner] \[P1] Extend observability.py — 4 new v1 OTEL metrics
+  * Dependencies: TASK-002
+  * Module: `services/reasoner/src/sherlock/observability.py`
+  * Acceptance: `SherlockMetrics.__init__` creates `sherlock.v1.requests.total` (Counter), `sherlock.v1.errors.total` (Counter), `sherlock.v1.latency` (Histogram, unit="ms"), `sherlock.v1.stream.chunks` (Counter); all existing instruments untouched; `mypy --strict` passes
+
+### Batch C — Routers + NATS Handler (parallel, depends on Batch B)
+
+* \[x] \[TASK-040] \[P] \[services/reasoner] \[P1] Create openai\_router.py — /v1/chat/completions + /v1/responses
+  * Dependencies: TASK-010, TASK-011, TASK-031, TASK-032
+  * Module: `services/reasoner/src/sherlock/openai_router.py`
+  * Acceptance: `build_openai_router() -> APIRouter`; `POST /chat/completions` returns `ChatCompletionResponse` (sync) or `EventSourceResponse` (SSE stream via sse-starlette); `POST /responses` returns `ResponsesResponse`; both return HTTP 503 when AppState not ready; both return HTTP 404 with `{"error":{"type":"invalid_request_error","code":"model_not_found"}}` when model unknown; `user` field absent → `_derive_user_id(messages)` using UUID v5; system role message overrides system prompt; logs only `model`, `user_id`, `message_count`, `stream`, `latency_ms` — never message content; v1 OTEL metrics emitted; `mypy --strict` passes
+
+* \[x] \[TASK-041] \[P] \[services/reasoner] \[P1] Create openai\_nats\_handler.py — OpenAINATSHandler
+  * Dependencies: TASK-010, TASK-011, TASK-002, TASK-026
+  * Module: `services/reasoner/src/sherlock/openai_nats_handler.py`
+  * Acceptance: `OpenAINATSHandler` implements `OpenAINATSPort`; mirrors `NATSHandler` structure exactly (`connect`, `subscribe`, `_handle`, `is_connected`, `close`); subscribes to `settings.nats_v1_chat_subject` in queue group `sherlock_workers`; deserializes `ChatCompletionRequest`; extracts `user_id` from `req.user` or `_derive_user_id(req.messages)`; extracts `text` from last user message; calls `invoke_graph()`; builds `ChatCompletionResponse`; responds to `msg.reply` if set; always publishes to `settings.nats_v1_result_subject`; logs `subject`, `transport`, `model` at DEBUG — never message content; handles missing user messages with error response; `mypy --strict` passes
+
+***
+
+## Phase 4: Integration
+
+* \[x] \[TASK-050] \[services/reasoner] \[P1] Wire everything in main.py
+  * Dependencies: TASK-030, TASK-031, TASK-032, TASK-033, TASK-040, TASK-041
+  * Module: `services/reasoner/src/sherlock/main.py`
+  * Acceptance: `AppState` has `openai_nats: OpenAINATSHandler | None` and `model_registry: StaticModelRegistry | None` fields; `lifespan` calls `create_provider(settings)` instead of `create_llm(settings)` (via refactored `llm_factory.py`); `StaticModelRegistry(settings)` created; `OpenAINATSHandler` started when `nats_v1_enabled and nats_enabled`; `OpenAINATSHandler.close()` in shutdown; `app.include_router(build_openai_router(), prefix="/v1")` and `app.include_router(build_models_router(), prefix="/v1")`; `StaticFiles` mounted at `/async-docs` when `async_docs_enabled` and dir exists (else endpoint returns 404 JSON); all existing tests pass unchanged
+
+* \[x] \[TASK-051] \[P] \[services/reasoner] \[P2] Update contracts/openapi.yaml — add /v1/\* paths
+  * Dependencies: TASK-050
+  * Module: `services/reasoner/contracts/openapi.yaml`
+  * Acceptance: Paths `/v1/models`, `/v1/chat/completions`, `/v1/responses` added; all request/response schemas documented; streaming response documented with `content: text/event-stream`; existing `/chat`, `/health`, `/health/deep` paths untouched; valid OpenAPI 3.1.0
+
+* \[x] \[TASK-052] \[P] \[services/reasoner] \[P2] Update contracts/asyncapi.yaml + bump service.yaml
+  * Dependencies: TASK-050
+  * Module: `services/reasoner/contracts/asyncapi.yaml`, `services/reasoner/service.yaml`
+  * Acceptance: `sherlockV1Chat` channel (address: `sherlock.v1.chat`) and `sherlockV1Result` channel (address: `sherlock.v1.result`) added; `receiveV1ChatRequest` and `publishV1ChatResult` operations added; `V1ChatRequest` and `V1ChatResult` message schemas added mirroring `ChatCompletionRequest` / `ChatCompletionResponse`; existing channels untouched; AsyncAPI 3.0.0 valid; `service.yaml` version bumped to `0.2.0`
+
+* \[x] \[TASK-053] \[services/reasoner] \[P2] Add AsyncAPI HTML generation to Dockerfile
+  * Dependencies: TASK-050
+  * Module: `services/reasoner/Dockerfile`
+  * Acceptance: Builder stage installs Node.js (slim version); runs `npx -y @asyncapi/cli generate fromFile contracts/asyncapi.yaml @asyncapi/html-template -o /async-docs-build`; runtime stage copies `/async-docs-build` to `/app/async-docs/`; multi-stage layers preserved (no regression on image size beyond Node step); `docker build` completes without error
+
+***
+
+## Phase 5: Tests
+
+* \[x] \[TASK-060] \[P] \[services/reasoner] \[P1] test\_providers.py — provider factory + all 4 impls
+  * Dependencies: TASK-025
+  * Module: `services/reasoner/tests/test_providers.py`
+  * Acceptance: `create_provider` returns correct class for each `SHERLOCK_LLM_PROVIDER` value; unknown value falls back to `CompatibleProvider`; `OpenAIProvider` raises `ValueError` when `llm_api_key` empty; `AnthropicProvider` raises `ImportError` with message when dep absent (mock import); `GoogleProvider` same; `CompatibleProvider.supports_system_role()` returns `False` for mistral/llama/gemma model names, `True` otherwise; `pytest tests/test_providers.py` passes
+
+* \[x] \[TASK-061] \[P] \[services/reasoner] \[P1] test\_openai\_router.py — /v1/chat/completions + /v1/responses
+  * Dependencies: TASK-040
+  * Module: `services/reasoner/tests/test_openai_router.py`
+  * Acceptance: `POST /v1/chat/completions` with valid body → 200 `ChatCompletionResponse`; `stream=true` → 200 `text/event-stream` with at least one `data:` line and `data: [DONE]`; missing model → 404 with `model_not_found` error; no AppState → 503; absent `user` field → response has valid `user_id`; `POST /v1/responses` with string `input` → 200 `ResponsesResponse`; no message content in any log output; `pytest tests/test_openai_router.py` passes
+
+* \[x] \[TASK-062] \[P] \[services/reasoner] \[P1] test\_streaming.py — stream\_graph + GraphStreamingAdapter
+  * Dependencies: TASK-031
+  * Module: `services/reasoner/tests/test_streaming.py`
+  * Acceptance: `stream_graph` with mocked `astream_events` yields tokens from `on_chat_model_stream` events only; non-streaming events skipped; empty `chunk.content` not yielded; memory `save()` called after stream with full accumulated response; memory failure does not raise; `GraphStreamingAdapter.stream()` yields `ChatCompletionChunk` objects with correct `object`, `id`, `model`, `delta.content`; `pytest tests/test_streaming.py` passes
+
+* \[x] \[TASK-063] \[P] \[services/reasoner] \[P1] test\_openai\_nats\_handler.py — OpenAINATSHandler
+  * Dependencies: TASK-041
+  * Module: `services/reasoner/tests/test_openai_nats_handler.py`
+  * Acceptance: Fire-and-forget (no reply): result published to result subject, no `msg.respond()`; request-reply (`msg.reply` set): responds to inbox AND publishes to result subject; missing user message in payload → error response published, no crash; `invoke_graph` exception → error response published; `ChatCompletionResponse` JSON is valid; no message content in log calls; `pytest tests/test_openai_nats_handler.py` passes
+
+***
+
+## Phase 6: Polish
+
+* \[x] \[TASK-900] \[P] \[services/reasoner] \[P2] Docs & Links Update
+  * Dependencies: TASK-051, TASK-052, TASK-053
+  * Module: `services/reasoner/contracts/`, `services/reasoner/service.yaml`
+  * Acceptance: `openapi.yaml` documents all endpoints including streaming schema; `asyncapi.yaml` documents both v1 NATS channels with message examples; `service.yaml` version is `0.2.0`; all YAML files are valid (no syntax errors)
+
+* \[x] \[TASK-999] \[REVIEW] \[P1] Reviewer Agent Verification
+  * Dependencies: ALL tasks
+  * Module: `services/reasoner/`
+  * Acceptance:
+    * `ruff check src/ && mypy src/ --strict` — zero errors
+    * `pytest tests/ --cov=sherlock --cov-report=term` — ≥ 75% on `providers/`, `openai_router.py`, `streaming.py`, `openai_nats_handler.py`
+    * `grep -rn "messages=" src/sherlock/ | grep -v "\.py:.*messages:" | grep log` — returns zero matches (no message content in log calls)
+    * All 9 success criteria from spec.md verified
+    * Existing tests (`pytest tests/test_api.py tests/test_graph.py tests/test_memory.py tests/test_nats_handler.py tests/test_pulsar_handler.py tests/test_observability.py`) still pass
+    * `service.yaml` version is `0.2.0`
+    * Both contract files valid YAML with new endpoints/channels documented
+
+***
+
+## Progress Summary
+
+| Phase | Total | Done | Parallel |
+|-------|-------|------|----------|
+| Setup | 2 | 2 | 1 |
+| Foundational | 2 | 2 | 1 |
+| Implementation (Batch A) | 7 | 7 | 7 |
+| Implementation (Batch B) | 4 | 4 | 4 |
+| Implementation (Batch C) | 2 | 2 | 2 |
+| Integration | 4 | 4 | 2 |
+| Tests | 4 | 4 | 4 |
+| Polish | 2 | 2 | 1 |
+| **Total** | **27** | **27** | **22** |
 
 ---
 

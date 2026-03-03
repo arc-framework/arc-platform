@@ -71,3 +71,9 @@
 - [Tasks: pgvector Migration + Observability Hardening](/arc-platform/specs-site/011-vector-setup/tasks.md)
 - [Analysis Report: 011 pgvector Migration + Observability Hardening](/arc-platform/specs-site/011-vector-setup/analysis-report.md)
 
+### 012 — Sherlock Chat Api
+
+- [Feature: Sherlock Chat API — Provider-Agnostic Layer](/arc-platform/specs-site/012-sherlock-chat-api/spec.md)
+- [Implementation Plan: Sherlock Chat API — Provider-Agnostic Layer](/arc-platform/specs-site/012-sherlock-chat-api/plan.md)
+- [Tasks: Sherlock Chat API — Provider-Agnostic Layer](/arc-platform/specs-site/012-sherlock-chat-api/tasks.md)
+
