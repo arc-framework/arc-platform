@@ -21,10 +21,13 @@ WORKDIR /docs
 
 COPY contracts/asyncapi.yaml ./asyncapi.yaml
 
-# Generate static HTML from AsyncAPI spec
-# --prefer-offline reduces network calls when layer is cached
-RUN npx --yes @asyncapi/cli generate fromFile asyncapi.yaml \
-    @asyncapi/html-template -o /async-docs-build
+# Generate static HTML from AsyncAPI spec (optional — served when SHERLOCK_ASYNC_DOCS_ENABLED=true)
+# Falls back to an empty directory if template install or generation fails.
+# @asyncapi/html-template@2.x requires generator >=1.15.0 <2.0.0 (matches bundled 1.17.25)
+RUN mkdir -p /async-docs-build && \
+    (npx --yes @asyncapi/cli generate fromTemplate asyncapi.yaml \
+        @asyncapi/html-template@2 -o /async-docs-build --force-write --no-interactive \
+        || echo "AsyncAPI docs generation skipped")
 
 # ── Stage 3: runtime ──────────────────────────────────────────────────────────
 FROM python:3.13-slim

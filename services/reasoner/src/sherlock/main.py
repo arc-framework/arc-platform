@@ -7,12 +7,12 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import structlog
-from faker import Faker
-from fastapi import APIRouter, FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, field_validator
 
 from sherlock.config import Settings
+from sherlock.fake_router import dev_router
 from sherlock.graph import GraphErrorResponse, build_graph, invoke_graph
 from sherlock.llm_factory import create_llm
 from sherlock.memory import SherlockMemory
@@ -92,7 +92,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     log.info("starting", version=settings.service_version)
 
     if settings.dev_mode:
-        app.include_router(_dev_router)
+        app.include_router(dev_router)
         log.warning("dev_mode enabled — /fake/* endpoints are active")
 
     memory = SherlockMemory(settings)
@@ -206,29 +206,6 @@ async def request_logger(request: Request, call_next):  # type: ignore[no-untype
         latency_ms=latency_ms,
     )
     return response
-
-
-# ─── Dev-only faker router ────────────────────────────────────────────────────
-
-_fake = Faker()
-
-_dev_router = APIRouter(prefix="/fake", tags=["dev"])
-
-
-@_dev_router.get("/chat", summary="Generate a fake /chat request body")
-async def fake_chat_body() -> dict[str, str]:
-    """Returns a randomised ChatRequest payload ready to POST to /chat."""
-    return {
-        "user_id": _fake.uuid4(),
-        "text": _fake.sentence(nb_words=10),
-    }
-
-
-@_dev_router.get("/chat/batch", summary="Generate N fake /chat request bodies")
-async def fake_chat_batch(n: int = 5) -> list[dict[str, str]]:
-    """Returns a list of N randomised ChatRequest payloads (max 20)."""
-    count = min(n, 20)
-    return [{"user_id": _fake.uuid4(), "text": _fake.sentence(nb_words=10)} for _ in range(count)]
 
 
 # ─── Dependency helper ────────────────────────────────────────────────────────
