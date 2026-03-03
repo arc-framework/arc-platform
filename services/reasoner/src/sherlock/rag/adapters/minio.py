@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import io
-from typing import cast
 
 import structlog
 from minio import Minio
@@ -76,7 +75,7 @@ class MinioFileStore:
         def _sync() -> bytes:
             response = self._client.get_object(self._bucket, key)
             try:
-                return cast(bytes, response.read())
+                return response.read()  # type: ignore[no-any-return]
             finally:
                 response.close()
 
@@ -122,5 +121,5 @@ class MinioFileStore:
         try:
             ok: bool = await asyncio.to_thread(_sync)
             return {"minio": ok}
-        except (S3Error, OSError, Exception):
+        except (S3Error, OSError):
             return {"minio": False}

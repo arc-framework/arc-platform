@@ -2,7 +2,7 @@ from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class Settings(BaseSettings):
+class Settings(BaseSettings):  # type: ignore[misc]
     model_config = SettingsConfigDict(
         env_prefix="SHERLOCK_",
         env_ignore_empty=False,
@@ -101,8 +101,8 @@ class Settings(BaseSettings):
 
     # MinIO (Tardis — object storage)
     minio_endpoint: str = Field("arc-storage:9000", alias="SHERLOCK_MINIO_ENDPOINT")
-    minio_access_key: SecretStr = Field("minioadmin", alias="SHERLOCK_MINIO_ACCESS_KEY")
-    minio_secret_key: SecretStr = Field("minioadmin", alias="SHERLOCK_MINIO_SECRET_KEY")
+    minio_access_key: SecretStr = Field(SecretStr("minioadmin"), alias="SHERLOCK_MINIO_ACCESS_KEY")
+    minio_secret_key: SecretStr = Field(SecretStr("minioadmin"), alias="SHERLOCK_MINIO_SECRET_KEY")
     minio_bucket: str = Field("sherlock-files", alias="SHERLOCK_MINIO_BUCKET")
     minio_secure: bool = Field(False, alias="SHERLOCK_MINIO_SECURE")
 
