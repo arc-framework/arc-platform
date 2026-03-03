@@ -16,6 +16,7 @@ from sherlock.config import Settings
 from sherlock.graph import GraphErrorResponse, build_graph, invoke_graph
 from sherlock.llm_factory import create_llm
 from sherlock.memory import SherlockMemory
+from sherlock.models_router import StaticModelRegistry, build_models_router
 from sherlock.nats_handler import NATSHandler
 from sherlock.observability import (
     SherlockMetrics,
@@ -23,7 +24,10 @@ from sherlock.observability import (
     init_telemetry,
     instrument_app,
 )
+from sherlock.openai_nats_handler import OpenAINATSHandler
+from sherlock.openai_router import build_openai_router
 from sherlock.pulsar_handler import PulsarHandler
+from sherlock.streaming import GraphStreamingAdapter
 
 logger = structlog.get_logger(__name__)
 
@@ -70,6 +74,8 @@ class AppState:
     nats: NATSHandler
     metrics: SherlockMetrics
     pulsar: PulsarHandler | None = field(default=None)
+    openai_nats: OpenAINATSHandler | None = field(default=None)
+    model_registry: StaticModelRegistry | None = field(default=None)
 
 
 # ─── Lifespan ─────────────────────────────────────────────────────────────────
@@ -112,12 +118,52 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         pulsar_handler = PulsarHandler(graph, memory, settings, metrics)
         await pulsar_handler.start()
 
+    # StaticModelRegistry — registered model for /v1/models
+    model_registry = StaticModelRegistry(settings)
+
+    # GraphStreamingAdapter — wraps stream_graph for SSE
+    streaming_adapter = GraphStreamingAdapter(graph, memory)
+
+    # OpenAINATSHandler — v1 NATS channel
+    openai_nats_handler: OpenAINATSHandler | None = None
+    if settings.nats_v1_enabled and settings.nats_enabled:
+        openai_nats_handler = OpenAINATSHandler(graph, memory, settings, metrics)
+        await openai_nats_handler.connect()
+        await openai_nats_handler.subscribe()
+
+    app.include_router(build_openai_router(model_registry, streaming_adapter), prefix="/v1")
+    app.include_router(build_models_router(model_registry), prefix="/v1")
+
+    if settings.async_docs_enabled:
+        import os
+
+        from fastapi.staticfiles import StaticFiles
+
+        async_docs_dir = "/app/async-docs"
+        if os.path.isdir(async_docs_dir):
+            app.mount(
+                "/async-docs",
+                StaticFiles(directory=async_docs_dir, html=True),
+                name="async-docs",
+            )
+            log.info("async_docs mounted", path=async_docs_dir)
+        else:
+
+            @app.get("/async-docs", tags=["docs"])
+            async def async_docs_not_available() -> JSONResponse:
+                return JSONResponse(
+                    {"detail": "AsyncAPI docs not available — run via Docker to generate UI"},
+                    status_code=404,
+                )
+
     app.state.app_state = AppState(
         memory=memory,
         graph=graph,
         nats=nats_handler,
         metrics=metrics,
         pulsar=pulsar_handler,
+        openai_nats=openai_nats_handler,
+        model_registry=model_registry,
     )
 
     log.info("ready", port=8000)
@@ -128,6 +174,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     await nats_handler.close()
     if pulsar_handler is not None:
         await pulsar_handler.close()
+    if openai_nats_handler is not None:
+        await openai_nats_handler.close()
 
 
 # ─── Application ──────────────────────────────────────────────────────────────

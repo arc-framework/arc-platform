@@ -1,4 +1,4 @@
-# ── Stage 1: builder ──────────────────────────────────────────────────────────
+# ── Stage 1: Python builder ────────────────────────────────────────────────────
 # python:3.13-slim (Debian): pre-built wheels available for pulsar-client,
 # sentence-transformers (torch), and asyncpg — Alpine musl toolchain is insufficient.
 FROM python:3.13-slim AS builder
@@ -14,7 +14,19 @@ COPY src/ ./src/
 RUN pip install --prefix=/install --no-cache-dir ".[dev]" \
     && pip install --prefix=/install --no-cache-dir -e . --no-deps
 
-# ── Stage 2: runtime ──────────────────────────────────────────────────────────
+# ── Stage 2: AsyncAPI HTML builder ────────────────────────────────────────────
+FROM node:20-slim AS async-docs-builder
+
+WORKDIR /docs
+
+COPY contracts/asyncapi.yaml ./asyncapi.yaml
+
+# Generate static HTML from AsyncAPI spec
+# --prefer-offline reduces network calls when layer is cached
+RUN npx --yes @asyncapi/cli generate fromFile asyncapi.yaml \
+    @asyncapi/html-template -o /async-docs-build
+
+# ── Stage 3: runtime ──────────────────────────────────────────────────────────
 FROM python:3.13-slim
 
 # Non-root user (constitution VIII — security by default)
@@ -25,6 +37,9 @@ WORKDIR /app
 
 COPY --from=builder --chown=sherlock:sherlock /install /usr/local
 COPY --from=builder --chown=sherlock:sherlock /build/src ./src
+
+# Copy AsyncAPI HTML docs (served at /async-docs when SHERLOCK_ASYNC_DOCS_ENABLED=true)
+COPY --from=async-docs-builder --chown=sherlock:sherlock /async-docs-build ./async-docs
 
 EXPOSE 8000
 

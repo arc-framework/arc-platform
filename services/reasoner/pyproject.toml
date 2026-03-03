@@ -43,6 +43,12 @@ dependencies = [
     # Resilience
     "tenacity>=9.0",
 
+    # Chat API
+    "langchain-anthropic>=0.3",
+    "langchain-google-genai>=2.0",
+    "sse-starlette>=2.1",
+    "tiktoken>=0.7",
+
     # Dev helpers (mounted only when SHERLOCK_DEV_MODE=true)
     "faker>=28.0",
 ]

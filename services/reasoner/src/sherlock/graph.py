@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+from collections.abc import AsyncIterator
 from typing import Annotated, Any
 
 import structlog
@@ -231,3 +233,48 @@ async def invoke_graph(
         raise GraphErrorResponse(response)
 
     return response
+
+
+# ─── Public Stream Helper ─────────────────────────────────────────────────────
+
+async def stream_graph(
+    graph: Any,
+    memory: SherlockMemory,
+    user_id: str,
+    text: str,
+) -> AsyncIterator[str]:
+    """Yield text tokens from the LLM via astream_events(version="v2").
+
+    Filters on_chat_model_stream events only — all other LangGraph events
+    (node start/end, graph lifecycle) are skipped. After the stream ends,
+    both turns are persisted best-effort (same pattern as invoke_graph).
+    """
+    initial_state: AgentState = {
+        "messages": [HumanMessage(content=text)],
+        "user_id": user_id,
+        "context": None,
+        "final_response": None,
+        "error_count": 0,
+        "is_error": False,
+    }
+    accumulated: list[str] = []
+
+    async for event in graph.astream_events(initial_state, version="v2"):
+        if event["event"] == "on_chat_model_stream":
+            chunk = event["data"]["chunk"]
+            if chunk.content:
+                accumulated.append(chunk.content)
+                yield chunk.content
+
+    full_response = "".join(accumulated) or "No response generated."
+
+    try:
+        await asyncio.shield(memory.save(user_id, "human", text))
+        await asyncio.shield(memory.save(user_id, "ai", full_response))
+    except Exception as exc:
+        _log.warning(
+            f"stream memory save failed: {type(exc).__name__}",
+            event_type="exception",
+            error=str(exc),
+            handler="stream_graph",
+        )

@@ -41,6 +41,9 @@ channels:
     address: sherlock.request
     servers:
       - $ref: '#/servers/nats'
+    tags:
+      - name: sherlock-core
+        description: Legacy reasoning channels
     description: |
       Inbound NATS subject for real-time reasoning requests.
 
@@ -62,6 +65,9 @@ channels:
     address: persistent://public/default/sherlock-requests
     servers:
       - $ref: '#/servers/pulsar'
+    tags:
+      - name: sherlock-core
+        description: Legacy reasoning channels
     description: |
       Inbound Pulsar topic for durable reasoning tasks.
       Sherlock subscribes with subscription name `sherlock-workers`
@@ -79,6 +85,9 @@ channels:
     address: persistent://public/default/sherlock-results
     servers:
       - $ref: '#/servers/pulsar'
+    tags:
+      - name: sherlock-core
+        description: Legacy reasoning channels
     description: |
       Outbound Pulsar topic where Sherlock publishes results for durable requests.
       Callers correlate responses using the `request_id` echoed from the original request.
@@ -90,11 +99,52 @@ channels:
       ReasoningResult:
         $ref: '#/components/messages/ReasoningResult'
 
+  sherlockV1Chat:
+    address: sherlock.v1.chat
+    servers:
+      - $ref: '#/servers/nats'
+    tags:
+      - name: sherlock-v1
+        description: Sherlock Chat API v1 (OpenAI wire format)
+    description: |
+      Inbound NATS subject for v1 Chat API requests in OpenAI wire format.
+
+      Callers publish a `ChatCompletionRequest` JSON payload.
+      Queue group `sherlock_workers` distributes messages across replicas.
+
+      **Request-reply** (blocking): caller uses `nc.request()` — Sherlock responds
+      to the ephemeral `_INBOX` subject AND publishes to `sherlock.v1.result`.
+      **Fire-and-forget**: caller uses `nc.publish()` — Sherlock only publishes
+      to `sherlock.v1.result`, skipping `msg.respond()`.
+    messages:
+      V1ChatRequest:
+        $ref: '#/components/messages/V1ChatRequest'
+
+  sherlockV1Result:
+    address: sherlock.v1.result
+    servers:
+      - $ref: '#/servers/nats'
+    tags:
+      - name: sherlock-v1
+        description: Sherlock Chat API v1 (OpenAI wire format)
+    description: |
+      Outbound NATS subject where Sherlock publishes `ChatCompletionResponse`
+      for every processed `sherlock.v1.chat` message.
+
+      Callers subscribe here to receive async results.
+      The `id` field in the response can be used for correlation.
+    messages:
+      V1ChatResult:
+        $ref: '#/components/messages/V1ChatResult'
+
 operations:
   receiveNatsRequest:
     action: receive
     channel:
       $ref: '#/channels/sherlockRequest'
+    tags:
+      - name: sherlock-core
+        description: Legacy reasoning channels
     title: Receive NATS reasoning request
     summary: Real-time reasoning request via NATS
     description: |
@@ -114,6 +164,9 @@ operations:
     action: receive
     channel:
       $ref: '#/channels/sherlockRequests'
+    tags:
+      - name: sherlock-core
+        description: Legacy reasoning channels
     title: Consume Pulsar durable reasoning task
     summary: At-least-once durable reasoning via Pulsar
     description: |
@@ -135,6 +188,9 @@ operations:
     action: send
     channel:
       $ref: '#/channels/sherlockResults'
+    tags:
+      - name: sherlock-core
+        description: Legacy reasoning channels
     title: Publish reasoning result to Pulsar
     summary: Publish completed result for caller correlation
     description: |
@@ -145,6 +201,47 @@ operations:
       Not published if graph raises an exception (caller receives nack + redelivery).
     messages:
       - $ref: '#/channels/sherlockResults/messages/ReasoningResult'
+
+  receiveV1ChatRequest:
+    action: receive
+    channel:
+      $ref: '#/channels/sherlockV1Chat'
+    tags:
+      - name: sherlock-v1
+        description: Sherlock Chat API v1 (OpenAI wire format)
+    title: Receive v1 Chat request via NATS
+    summary: OpenAI-compatible chat request via NATS
+    description: |
+      `OpenAINATSHandler` subscribes to `sherlock.v1.chat` in queue group `sherlock_workers`.
+
+      Processing flow:
+      1. Deserialize `ChatCompletionRequest` JSON
+      2. Derive `user_id` from `request.user` or UUID v5 of user message content
+      3. Extract `text` from last user message in `messages[]`
+      4. Call `invoke_graph(graph, memory, user_id, text)`
+      5. Build `ChatCompletionResponse` with the response
+      6. If `msg.reply` set: respond to inbox AND publish to `sherlock.v1.result`
+      7. If fire-and-forget: publish to `sherlock.v1.result` only
+
+      On exception: publish error `ChatCompletionResponse` (never crashes).
+    messages:
+      - $ref: '#/channels/sherlockV1Chat/messages/V1ChatRequest'
+
+  publishV1ChatResult:
+    action: send
+    channel:
+      $ref: '#/channels/sherlockV1Result'
+    tags:
+      - name: sherlock-v1
+        description: Sherlock Chat API v1 (OpenAI wire format)
+    title: Publish v1 Chat result via NATS
+    summary: ChatCompletionResponse published for every processed v1 chat request
+    description: |
+      Published to `sherlock.v1.result` after every `sherlock.v1.chat` message,
+      regardless of success or error. Error responses include the error in
+      `choices[0].message.content` prefixed with "Error: ".
+    messages:
+      - $ref: '#/channels/sherlockV1Result/messages/V1ChatResult'
 
 components:
   messages:
@@ -210,6 +307,75 @@ components:
             user_id: "agent-analyst-2"
             error: "LLM unavailable after 3 retries"
             latency_ms: 9100
+
+    V1ChatRequest:
+      name: V1ChatRequest
+      title: v1 Chat Completion Request
+      summary: OpenAI-compatible chat request via NATS
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/V1ChatRequestPayload'
+      examples:
+        - name: basic_chat
+          summary: Simple question
+          payload:
+            model: "mistralai/mistral-7b-instruct-v0.3"
+            messages:
+              - role: user
+                content: "What is the capital of France?"
+            stream: false
+            user: "user-123"
+        - name: no_user
+          summary: Request without user field (user_id derived automatically)
+          payload:
+            model: "mistralai/mistral-7b-instruct-v0.3"
+            messages:
+              - role: user
+                content: "Hello!"
+            stream: false
+
+    V1ChatResult:
+      name: V1ChatResult
+      title: v1 Chat Completion Result
+      summary: OpenAI-compatible completion response
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/V1ChatResultPayload'
+      examples:
+        - name: success
+          summary: Successful completion
+          payload:
+            id: "chatcmpl-abc123"
+            object: chat.completion
+            created: 1741000000
+            model: "mistralai/mistral-7b-instruct-v0.3"
+            choices:
+              - index: 0
+                message:
+                  role: assistant
+                  content: "The capital of France is Paris."
+                finish_reason: stop
+            usage:
+              prompt_tokens: 0
+              completion_tokens: 0
+              total_tokens: 0
+        - name: error
+          summary: Error response
+          payload:
+            id: "chatcmpl-err456"
+            object: chat.completion
+            created: 1741000001
+            model: "unknown"
+            choices:
+              - index: 0
+                message:
+                  role: assistant
+                  content: "Error: No user message found"
+                finish_reason: null
+            usage:
+              prompt_tokens: 0
+              completion_tokens: 0
+              total_tokens: 0
 
   schemas:
     ReasoningRequestPayload:
@@ -291,3 +457,82 @@ components:
           description: Total end-to-end processing time in milliseconds.
           example: 3750
           minimum: 0
+
+    V1ChatRequestPayload:
+      type: object
+      required: [model, messages]
+      properties:
+        model:
+          type: string
+          description: The model ID to use. Must match SHERLOCK_LLM_MODEL.
+          example: "mistralai/mistral-7b-instruct-v0.3"
+        messages:
+          type: array
+          description: Conversation history in role/content format.
+          items:
+            type: object
+            required: [role]
+            properties:
+              role:
+                type: string
+                enum: [system, user, assistant, tool]
+              content:
+                type: string
+                nullable: true
+        stream:
+          type: boolean
+          default: false
+          description: Ignored over NATS — streaming is HTTP-only.
+        user:
+          type: string
+          nullable: true
+          description: |
+            Optional caller-assigned user identifier. When absent, a deterministic
+            UUID v5 is derived from the joined user message content.
+
+    V1ChatResultPayload:
+      type: object
+      required: [id, object, created, model, choices, usage]
+      properties:
+        id:
+          type: string
+          example: "chatcmpl-abc123"
+        object:
+          type: string
+          enum: [chat.completion]
+        created:
+          type: integer
+          description: Unix timestamp of response creation.
+        model:
+          type: string
+          example: "mistralai/mistral-7b-instruct-v0.3"
+        choices:
+          type: array
+          items:
+            type: object
+            required: [index, message]
+            properties:
+              index:
+                type: integer
+              message:
+                type: object
+                required: [role, content]
+                properties:
+                  role:
+                    type: string
+                    enum: [assistant]
+                  content:
+                    type: string
+              finish_reason:
+                type: string
+                nullable: true
+        usage:
+          type: object
+          required: [prompt_tokens, completion_tokens, total_tokens]
+          properties:
+            prompt_tokens:
+              type: integer
+            completion_tokens:
+              type: integer
+            total_tokens:
+              type: integer
