@@ -13,8 +13,7 @@ from typing import Any
 import structlog
 from pgvector.asyncpg import register_vector
 from sqlalchemy import event, text
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from sherlock.rag.domain.models import SearchResult
 
@@ -84,14 +83,15 @@ class PgVectorStore:
 
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
-        self._session_factory: Any = sessionmaker(
+        self._session_factory = async_sessionmaker(
             engine, class_=AsyncSession, expire_on_commit=False
         )
 
         # asyncpg requires the vector codec registered per connection.
-        @event.listens_for(engine.sync_engine, "connect")  # type: ignore[untyped-decorator]
         def _on_connect(dbapi_conn: Any, _: Any) -> None:
             dbapi_conn.run_async(register_vector)
+
+        event.listen(engine.sync_engine, "connect", _on_connect)
 
     # ─── VectorStorePort interface ─────────────────────────────────────────────
 
@@ -125,7 +125,7 @@ class PgVectorStore:
 
         rows = [
             {
-                "id": str(uuid.uuid4()),
+                "id": str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{vs_id}:{file_id}:{i}")),
                 "vector_store_id": vs_id,
                 "file_id": file_id,
                 "chunk_index": i,
