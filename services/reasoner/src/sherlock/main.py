@@ -151,6 +151,7 @@ async def request_logger(request: Request, call_next):  # type: ignore[no-untype
     latency_ms = int((time.monotonic() - start) * 1000)
     _request_log.info(
         f"{request.method} {request.url.path} {response.status_code} {latency_ms}ms",
+        event_type="http_request",
         method=request.method,
         path=str(request.url.path),
         status=response.status_code,
