@@ -150,7 +150,7 @@ def build_graph(
     system_prompt: str = "",
 ) -> Any:
     """Build and compile the LangGraph 1.0.x state machine."""
-    workflow: StateGraph = StateGraph(AgentState)
+    workflow: StateGraph[AgentState] = StateGraph(AgentState)
 
     workflow.add_node("retrieve_context", _make_retrieve_context(memory))
     workflow.add_node(

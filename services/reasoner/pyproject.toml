@@ -85,3 +85,10 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 python_version = "3.13"
 strict = true
 ignore_missing_imports = true
+plugins = ["pydantic.mypy"]
+
+# pulsar-client has no type stubs — union-attr errors on self._consumer / self._producer
+# are false positives that can't be resolved without a typed wrapper around the C extension.
+[[tool.mypy.overrides]]
+module = ["sherlock.pulsar_handler"]
+disable_error_code = ["union-attr"]

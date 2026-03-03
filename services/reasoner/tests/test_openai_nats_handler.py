@@ -221,7 +221,7 @@ async def test_invoke_graph_exception_publishes_error() -> None:
     handler._nc.publish.assert_awaited_once()
     raw = handler._nc.publish.call_args.args[1]
     parsed = ChatCompletionResponse.model_validate_json(raw)
-    assert "graph exploded" in parsed.choices[0].message.content
+    assert parsed.choices[0].message.content == "Error: internal server error"
     handler._metrics.v1_errors_total.add.assert_called_once()
 
 
@@ -240,7 +240,7 @@ async def test_invoke_graph_exception_with_reply_responds() -> None:
     msg.respond.assert_awaited_once()
     raw = msg.respond.call_args.args[0]
     parsed = ChatCompletionResponse.model_validate_json(raw)
-    assert "bad value" in parsed.choices[0].message.content
+    assert parsed.choices[0].message.content == "Error: internal server error"
 
 
 # ─── Valid ChatCompletionResponse JSON ────────────────────────────────────────

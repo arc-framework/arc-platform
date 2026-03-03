@@ -38,7 +38,7 @@ class Conversation(Base):
     user_id: Mapped[str] = mapped_column(index=True)
     role: Mapped[str]       # "human" | "ai"
     content: Mapped[str]
-    embedding: Mapped[list] = mapped_column(Vector(384), nullable=True)
+    embedding: Mapped[list] = mapped_column(Vector(384), nullable=True)  # type: ignore[type-arg]
     created_at: Mapped[datetime | None] = mapped_column(
         server_default=text("now()"), nullable=True
     )
@@ -55,7 +55,7 @@ class SherlockMemory:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._engine: AsyncEngine = create_async_engine(settings.postgres_url)
-        self._session_factory: Any = sessionmaker(
+        self._session_factory: Any = sessionmaker(  # type: ignore[call-overload]
             self._engine, class_=AsyncSession, expire_on_commit=False
         )
         self._encoder: SentenceTransformer = SentenceTransformer(

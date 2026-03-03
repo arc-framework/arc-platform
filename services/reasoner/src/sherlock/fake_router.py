@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+from typing import Any
 
 from faker import Faker
 from fastapi import APIRouter
@@ -35,7 +36,7 @@ async def fake_chat_batch(n: int = 5) -> list[dict[str, str]]:
 
 
 @dev_router.get("/v1/chat/completions", summary="Generate a fake POST /v1/chat/completions body")
-async def fake_v1_chat_completions() -> dict:
+async def fake_v1_chat_completions() -> dict[str, Any]:
     """Returns a randomised ChatCompletionRequest payload (stream: false)."""
     return _chat_completion_payload(stream=False)
 
@@ -44,13 +45,13 @@ async def fake_v1_chat_completions() -> dict:
     "/v1/chat/completions/stream",
     summary="Generate a fake POST /v1/chat/completions body (streaming)",
 )
-async def fake_v1_chat_completions_stream() -> dict:
+async def fake_v1_chat_completions_stream() -> dict[str, Any]:
     """Returns a randomised ChatCompletionRequest payload with stream: true."""
     return _chat_completion_payload(stream=True)
 
 
 @dev_router.get("/v1/responses", summary="Generate a fake POST /v1/responses body")
-async def fake_v1_responses() -> dict:
+async def fake_v1_responses() -> dict[str, Any]:
     """Returns a randomised ResponsesRequest payload ready to POST to /v1/responses."""
     return {
         "model": random.choice(_MODELS),
@@ -64,7 +65,7 @@ async def fake_v1_responses() -> dict:
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 
-def _chat_completion_payload(*, stream: bool) -> dict:
+def _chat_completion_payload(*, stream: bool) -> dict[str, Any]:
     include_system = random.random() > 0.5
     messages = []
     if include_system:

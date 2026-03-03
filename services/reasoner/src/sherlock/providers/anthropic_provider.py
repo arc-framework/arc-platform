@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import cast
 
 from langchain_core.language_models import BaseChatModel
+from pydantic import SecretStr
 
 from sherlock.config import Settings
 from sherlock.providers.base import LLMProviderPort
@@ -31,8 +32,8 @@ class AnthropicProvider:
         return cast(
             BaseChatModel,
             ChatAnthropic(
-                model=self._settings.llm_model,
-                api_key=self._settings.llm_api_key,
+                model_name=self._settings.llm_model,  # type: ignore[call-arg]
+                api_key=SecretStr(self._settings.llm_api_key),
             ),
         )
 
