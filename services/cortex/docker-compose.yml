@@ -19,10 +19,29 @@ services:
       dockerfile: Dockerfile
     image: ghcr.io/arc-framework/arc-cortex:latest
     container_name: arc-cortex
+    command: ["server", "--log-level", "debug"]
     ports:
       - "127.0.0.1:8081:8081"   # HTTP API — localhost only
     environment:
       CORTEX_BOOTSTRAP_POSTGRES_PASSWORD: arc
+      OTEL_SERVICE_NAME: "arc-cortex"
+      OTEL_SERVICE_VERSION: "0.1.0"
+      OTEL_DEPLOYMENT_ENVIRONMENT: "development"
+      OTEL_RESOURCE_ATTRIBUTES: "service.namespace=arc-platform,service.instance.id=arc-cortex-1"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://arc-friday-collector:4317"
+      # For local binary runs override with: OTEL_EXPORTER_OTLP_ENDPOINT=127.0.0.1:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
+      OTEL_TRACES_SAMPLER: "always_on"
+      OTEL_PROPAGATORS: "tracecontext,baggage"
+      OTEL_LOG_LEVEL: "warn"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=arc_platform_net"
+      - "traefik.http.routers.cortex.rule=PathPrefix(`/api/cortex`)"
+      - "traefik.http.routers.cortex.entrypoints=web"
+      - "traefik.http.middlewares.strip-cortex.stripprefix.prefixes=/api/cortex"
+      - "traefik.http.routers.cortex.middlewares=strip-cortex"
+      - "traefik.http.services.cortex.loadbalancer.server.port=8081"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8081/health || exit 1"]
       interval: 15s

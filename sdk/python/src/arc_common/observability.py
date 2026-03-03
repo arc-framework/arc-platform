@@ -1,3 +1,32 @@
+"""Shared OTEL + structlog setup for A.R.C. Platform Python services.
+
+Usage in a new service:
+
+    from arc_common.observability import configure_logging, init_telemetry
+
+    configure_logging()   # call before any logging
+    init_telemetry(
+        endpoint="http://arc-friday-collector:4317",
+        service_name="arc-myservice",
+        service_version="0.1.0",
+    )
+
+Log call convention — human-readable message as first arg (→ body in SigNoz),
+event_type= kwarg for the semantic category (→ "event" attribute in OTEL):
+
+    _log.info("GET /health 200 0ms", event_type="http_request",    status=200, latency_ms=12)
+    _log.debug("nats recv: topic",   event_type="message_received", subject="topic")
+    _log.debug("graph done: user=x", event_type="service_call",    handler="invoke_graph")
+    _log.warning("save failed: Err", event_type="exception",       error="...")
+    _log.error("panic: nil pointer", event_type="exception",       error="...")
+
+In SigNoz, filter `event = "http_request"` to see HTTP logs from both Python
+(event_type= kwarg normalized to "event" by _OTELStructlogHandler) and Go
+(slog "event" kv pair passed directly) uniformly.
+"""
+
+from __future__ import annotations
+
 import json as _json
 import logging
 import os
@@ -5,14 +34,11 @@ import time as _time
 from typing import Any
 
 import structlog
-from fastapi import FastAPI
 from opentelemetry import metrics, trace
-from opentelemetry._logs import LogRecord as OTELLogRecord
-from opentelemetry._logs import SeverityNumber, set_logger_provider
+from opentelemetry._logs import LogRecord as OTELLogRecord, SeverityNumber, set_logger_provider
 from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.sdk._logs import LoggerProvider
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.metrics import MeterProvider
@@ -20,8 +46,6 @@ from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import SERVICE_NAME, SERVICE_VERSION, Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
-
-from sherlock.config import Settings
 
 # ─── Severity mapping ─────────────────────────────────────────────────────────
 
@@ -48,9 +72,8 @@ def _inject_trace_context(
 ) -> dict[str, Any]:
     """Structlog processor: inject trace_id / span_id from the active OTEL span.
 
-    When a span is active (e.g. inside a FastAPI request), every log line
-    emitted through structlog gains trace_id and span_id fields.  In SigNoz
-    you can click any log line and jump directly to the correlated trace.
+    When a span is active every log line gains trace_id and span_id fields.
+    In SigNoz you can click any log line and jump directly to the correlated trace.
     """
     span = trace.get_current_span()
     ctx = span.get_span_context()
@@ -122,15 +145,18 @@ class _OTELStructlogHandler(logging.Handler):
 
 # ─── Logging setup ────────────────────────────────────────────────────────────
 
-def configure_logging() -> None:
-    """Configure structured logging: JSON to stdout with trace-context injection.
+def configure_logging(*, quiet: list[str] | None = None) -> None:
+    """Configure structured JSON logging to stdout with trace-context injection.
 
-    Uses structlog.stdlib.LoggerFactory so every log record flows through
-    Python's stdlib logging.  init_telemetry() later attaches an
-    OTLPLogExporter handler to the same root logger — mirroring Cortex's
-    TeeHandler pattern (stdout + Friday/SigNoz).
+    Reads LOG_LEVEL from the environment (default: info).
+    Mirrors Cortex's TeeHandler pattern — init_telemetry() can later attach an
+    OTLP handler to the same root logger (stdout + SigNoz).
+
+    Args:
+        quiet: extra logger names to silence to WARNING (e.g. heavy libraries).
     """
-    # Processors that run on *all* records (structlog-native and foreign stdlib).
+    _level = getattr(logging, os.environ.get("LOG_LEVEL", "info").upper(), logging.INFO)
+
     shared_pre_chain: list[Any] = [
         structlog.contextvars.merge_contextvars,
         _inject_trace_context,
@@ -140,7 +166,6 @@ def configure_logging() -> None:
         structlog.processors.StackInfoRenderer(),
     ]
 
-    # Stdout handler: JSON renderer via ProcessorFormatter.
     stdout_handler = logging.StreamHandler()
     stdout_handler.setFormatter(
         structlog.stdlib.ProcessorFormatter(
@@ -154,13 +179,10 @@ def configure_logging() -> None:
 
     root = logging.getLogger()
     root.handlers = [stdout_handler]
-    _level = getattr(logging, os.environ.get("LOG_LEVEL", "info").upper(), logging.INFO)
     root.setLevel(_level)
 
-    # Quiet noisy library loggers that add no signal.
-    logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    for name in (quiet or []):
+        logging.getLogger(name).setLevel(logging.WARNING)
 
     structlog.configure(
         processors=[
@@ -175,98 +197,40 @@ def configure_logging() -> None:
 
 # ─── Telemetry (traces + metrics + logs) ─────────────────────────────────────
 
-def init_telemetry(settings: Settings) -> None:
-    """Initialize OTEL providers.  Non-fatal: an unreachable collector does not
-    block startup — exporters reconnect automatically.
-
-    Signals shipped to arc-friday-collector:
-      • Traces  — when otel_traces_enabled
-      • Metrics — when otel_metrics_enabled
-      • Logs    — when otel_logs_enabled (root stdlib handler → OTLP gRPC)
-    """
-    resource = Resource.create(
-        {
-            SERVICE_NAME: settings.service_name,
-            SERVICE_VERSION: settings.service_version,
-        }
-    )
-
-    if settings.otel_traces_enabled:
-        tracer_provider = TracerProvider(resource=resource)
-        tracer_provider.add_span_processor(
-            BatchSpanProcessor(OTLPSpanExporter(endpoint=settings.otel_endpoint))
-        )
-        trace.set_tracer_provider(tracer_provider)
-
-    if settings.otel_metrics_enabled:
-        reader = PeriodicExportingMetricReader(
-            OTLPMetricExporter(endpoint=settings.otel_endpoint)
-        )
-        meter_provider = MeterProvider(resource=resource, metric_readers=[reader])
-        metrics.set_meter_provider(meter_provider)
-
-    if settings.otel_logs_enabled:
-        log_provider = LoggerProvider(resource=resource)
-        log_provider.add_log_record_processor(
-            BatchLogRecordProcessor(OTLPLogExporter(endpoint=settings.otel_endpoint))
-        )
-        set_logger_provider(log_provider)
-
-        # Bridge: structlog-aware handler that parses the JSON body structlog
-        # emits and ships body=event_string + attributes=kv_pairs to OTEL.
-        # Replaces the SDK's LoggingHandler which receives the pre-rendered JSON
-        # blob and can't extract structured attributes from it.
-        logging.root.addHandler(_OTELStructlogHandler(log_provider, level=logging.INFO))
-
-
-# ─── FastAPI instrumentation ──────────────────────────────────────────────────
-
-def instrument_app(app: FastAPI) -> None:
-    """Apply OTEL FastAPI auto-instrumentation (creates a span per request)."""
-    FastAPIInstrumentor().instrument_app(app)
-
-
-# ─── Content-tracing gate ─────────────────────────────────────────────────────
-
-def add_span_content_attributes(
-    span: Any,
+def init_telemetry(
     *,
-    user_message: str,
-    assistant_message: str,
-    content_tracing: bool,
+    endpoint: str,
+    service_name: str,
+    service_version: str,
+    traces_enabled: bool = True,
+    metrics_enabled: bool = True,
+    logs_enabled: bool = True,
 ) -> None:
-    """Conditionally add message content to a span (SHERLOCK_CONTENT_TRACING gate).
+    """Initialise OTEL providers. Non-fatal: unreachable collector doesn't block startup.
 
-    When content_tracing is False (default), no PII is emitted to traces.
+    Signals shipped to the collector endpoint:
+      • Traces  — when traces_enabled (default True)
+      • Metrics — when metrics_enabled (default True)
+      • Logs    — when logs_enabled (default True) — root stdlib handler → OTLP gRPC
     """
-    if not content_tracing:
-        return
-    span.set_attribute("user_message", user_message)
-    span.set_attribute("assistant_message", assistant_message)
+    resource = Resource.create({SERVICE_NAME: service_name, SERVICE_VERSION: service_version})
 
+    if traces_enabled:
+        tp = TracerProvider(resource=resource)
+        tp.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint=endpoint)))
+        trace.set_tracer_provider(tp)
 
-# ─── Metrics instruments ──────────────────────────────────────────────────────
-
-class SherlockMetrics:
-    """OTEL metrics instruments for the Sherlock service."""
-
-    def __init__(self) -> None:
-        meter = metrics.get_meter("arc-sherlock")
-
-        self.requests_total = meter.create_counter(
-            "sherlock.requests.total",
-            description="Total number of reasoning requests",
+    if metrics_enabled:
+        mp = MeterProvider(
+            resource=resource,
+            metric_readers=[PeriodicExportingMetricReader(OTLPMetricExporter(endpoint=endpoint))],
         )
-        self.errors_total = meter.create_counter(
-            "sherlock.errors.total",
-            description="Total number of failed reasoning requests",
-        )
-        self.latency = meter.create_histogram(
-            "sherlock.latency",
-            description="Reasoning request latency in milliseconds",
-            unit="ms",
-        )
-        self.context_size = meter.create_histogram(
-            "sherlock.context.size",
-            description="Number of context chunks retrieved per request",
-        )
+        metrics.set_meter_provider(mp)
+
+    if logs_enabled:
+        lp = LoggerProvider(resource=resource)
+        lp.add_log_record_processor(BatchLogRecordProcessor(OTLPLogExporter(endpoint=endpoint)))
+        set_logger_provider(lp)
+        # Structlog-aware bridge: parses the JSON body structlog emits so that
+        # body=event_string and attributes=kv_pairs reach SigNoz correctly.
+        logging.root.addHandler(_OTELStructlogHandler(logger_provider=lp, level=logging.INFO))

@@ -12,16 +12,38 @@ think:
     - streaming
     - cortex
     - sql-db
-    - vector-db
     - gateway
     - friday-collector
     - reasoner
 
-# ─── reason ─────────────────────────────────────────────────────
-# Full reasoning stack — observability, identity, bootstrap
-reason:
-  description: 'Development stack — think profile + observability'
+# ─── observe ────────────────────────────────────────────────────
+# think + SigNoz UI — full OTEL traces/metrics/logs in the browser at :3301
+observe:
+  description: 'think profile + SigNoz observability UI (arc-friday :3301)'
   services:
+    - messaging
+    - cache
+    - streaming
+    - cortex
+    - sql-db
+    - gateway
+    - friday-collector
+    - reasoner
+    - otel
+
+# ─── reason ─────────────────────────────────────────────────────
+# Full dev stack — think + observability + identity + storage + realtime
+reason:
+  description: 'Full development stack — think + observability + secrets/flags/storage/realtime'
+  services:
+    - messaging
+    - cache
+    - streaming
+    - cortex
+    - sql-db
+    - gateway
+    - friday-collector
+    - reasoner
     - otel
     - storage
     - vault

@@ -3,12 +3,15 @@ import time
 from typing import Any
 
 import nats
+import structlog
 from nats.aio.client import Client as NATSClient
 from nats.aio.msg import Msg
 
 from sherlock.config import Settings
 from sherlock.graph import invoke_graph
 from sherlock.observability import SherlockMetrics
+
+_log = structlog.get_logger(__name__)
 
 
 class NATSHandler:
@@ -50,6 +53,12 @@ class NATSHandler:
         """Process an incoming NATS message. Responds only if reply subject is set."""
         start = time.monotonic()
         self._metrics.requests_total.add(1, {"transport": "nats"})
+        _log.debug(
+            f"nats recv: {msg.subject}",
+            event_type="message_received",
+            subject=msg.subject,
+            transport="nats",
+        )
 
         try:
             payload = json.loads(msg.data.decode())
@@ -70,6 +79,12 @@ class NATSHandler:
         except Exception as exc:
             self._metrics.errors_total.add(1, {"transport": "nats"})
             latency_ms = int((time.monotonic() - start) * 1000)
+            _log.error(
+                f"nats error: {type(exc).__name__}",
+                event_type="exception",
+                error=str(exc),
+                transport="nats",
+            )
 
             if msg.reply:
                 error_payload = json.dumps(

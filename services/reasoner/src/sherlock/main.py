@@ -134,12 +134,30 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
 app = FastAPI(
     title="arc-sherlock",
-    description="LangGraph reasoning engine — Qdrant memory, NATS/Pulsar transports",
+    description="LangGraph reasoning engine — pgvector memory, NATS/Pulsar transports",
     version="0.1.0",
     lifespan=lifespan,
 )
 
 instrument_app(app)
+
+_request_log = structlog.get_logger("sherlock.http")
+
+
+@app.middleware("http")
+async def request_logger(request: Request, call_next):  # type: ignore[no-untyped-def]
+    start = time.monotonic()
+    response = await call_next(request)
+    latency_ms = int((time.monotonic() - start) * 1000)
+    _request_log.info(
+        f"{request.method} {request.url.path} {response.status_code} {latency_ms}ms",
+        event_type="http_request",
+        method=request.method,
+        path=str(request.url.path),
+        status=response.status_code,
+        latency_ms=latency_ms,
+    )
+    return response
 
 
 # ─── Dev-only faker router ────────────────────────────────────────────────────
@@ -247,13 +265,12 @@ async def health_deep(request: Request) -> DeepHealthResponse:
             content={
                 "status": "not_ready",
                 "version": "0.1.0",
-                "components": {"qdrant": False, "postgres": False, "nats": False},
+                "components": {"postgres": False, "nats": False},
             },
         )
 
     dep_health = await state.memory.health_check()
     components = {
-        "qdrant": dep_health.get("qdrant", False),
         "postgres": dep_health.get("postgres", False),
         "nats": state.nats.is_connected(),
     }

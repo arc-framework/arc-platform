@@ -3,14 +3,19 @@ role: reasoner
 codename: sherlock
 image: ghcr.io/arc-framework/arc-sherlock:latest
 version: "0.1.0"
-description: "LangGraph reasoning engine with Qdrant memory and NATS integration"
+description: "LangGraph reasoning engine with pgvector memory and NATS integration"
 language: python
 port: 8083
 health: http://localhost:8083/health
 timeout: 180        # sentence-transformers model download on first cold start
+healthcheck:
+  test: "wget -qO- http://localhost:8000/health || exit 1"
+  interval: 15s
+  timeout: 5s
+  retries: 5
+  start_period: 60s
 depends_on:
   - sql-db           # arc-sql-db (PostgreSQL — conversation history)
-  - vector-db        # arc-vector-db (Qdrant — semantic search)
   - messaging        # arc-messaging (NATS — real-time request-reply)
   - streaming        # arc-streaming (Pulsar — durable async, optional)
   - friday-collector # arc-friday-collector (OTEL)

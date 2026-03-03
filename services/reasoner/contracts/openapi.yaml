@@ -4,7 +4,7 @@ info:
   title: Sherlock Reasoning Service
   version: 0.1.0
   description: |
-    LangGraph reasoning engine with dual-store memory (Qdrant + PostgreSQL).
+    LangGraph reasoning engine with pgvector memory (PostgreSQL + pgvector).
     Accepts reasoning requests over HTTP (sync). For inter-service messaging
     see `asyncapi.yaml` — NATS request-reply and Pulsar durable async.
   contact:
@@ -28,9 +28,9 @@ paths:
       tags: [reasoning]
       summary: Submit a reasoning request
       description: |
-        Synchronous reasoning request. Sherlock retrieves semantic context from Qdrant,
+        Synchronous reasoning request. Sherlock retrieves semantic context from pgvector,
         generates a response via Ollama (LangGraph graph), and persists both turns to
-        Qdrant and PostgreSQL before returning.
+        pgvector and PostgreSQL before returning.
 
         Latency is bounded by LLM inference time (default model: `mistral:7b`).
         For long-running tasks prefer NATS request-reply or Pulsar durable async.
@@ -105,7 +105,7 @@ paths:
       summary: Shallow liveness check
       description: |
         Always returns 200 if the process is alive and the NATS connection
-        was established during startup. Does NOT probe Qdrant or PostgreSQL.
+        was established during startup. Does NOT probe PostgreSQL.
         Use `/health/deep` for readiness checks.
       responses:
         '200':
@@ -126,7 +126,7 @@ paths:
       tags: [health]
       summary: Deep readiness check
       description: |
-        Probes all dependencies — Qdrant, PostgreSQL, and NATS — and returns
+        Probes all dependencies — PostgreSQL and NATS — and returns
         per-component status. Returns 503 if any dependency is degraded.
         Used by Docker healthcheck and the CLI `make dev-health` target.
       responses:
@@ -142,7 +142,6 @@ paths:
                     status: "ok"
                     version: "0.1.0"
                     components:
-                      qdrant: true
                       postgres: true
                       nats: true
         '503':
@@ -152,13 +151,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/DeepHealthResponse'
               examples:
-                qdrant_down:
+                postgres_down:
                   value:
                     status: "degraded"
                     version: "0.1.0"
                     components:
-                      qdrant: false
-                      postgres: true
+                      postgres: false
                       nats: true
 
 components:
@@ -233,14 +231,9 @@ components:
         components:
           type: object
           required:
-            - qdrant
             - postgres
             - nats
           properties:
-            qdrant:
-              type: boolean
-              description: Qdrant (Cerebro) reachable and collection exists.
-              example: true
             postgres:
               type: boolean
               description: PostgreSQL (Oracle) reachable and schema initialized.

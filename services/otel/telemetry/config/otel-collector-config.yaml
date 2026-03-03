@@ -6,6 +6,20 @@ receivers:
       http:
         endpoint: 0.0.0.0:4318
 
+  # Native OTEL receivers — no sidecar containers needed
+  redis:
+    endpoint: arc-cache:6379
+    collection_interval: 15s
+
+  postgresql:
+    endpoint: arc-sql-db:5432
+    username: arc
+    password: arc
+    databases: [arc]
+    collection_interval: 15s
+    tls:
+      insecure: true
+
   prometheus:
     config:
       scrape_configs:
@@ -19,8 +33,17 @@ receivers:
           scrape_interval: 15s
           static_configs:
             - targets: ['arc-streaming:8080']
-        # arc-cache (Redis) metrics deferred — see tech debt TD-001
-        # TD-001: add oliver006/redis_exporter sidecar when dashboard is needed
+        # arc-gateway: Traefik Prometheus endpoint (traefik entrypoint = container:8081)
+        - job_name: arc-gateway
+          scrape_interval: 15s
+          static_configs:
+            - targets: ['arc-gateway:8081']
+        # arc-storage: MinIO native Prometheus endpoint (unauthenticated via MINIO_PROMETHEUS_AUTH_TYPE=public)
+        - job_name: arc-storage
+          scrape_interval: 15s
+          static_configs:
+            - targets: ['arc-storage:9000']
+          metrics_path: /minio/v2/metrics/cluster
 
 processors:
   batch:
@@ -51,7 +74,7 @@ service:
       processors: [batch]
       exporters: [clickhousetraces]
     metrics:
-      receivers: [otlp, prometheus]
+      receivers: [otlp, prometheus, redis, postgresql]
       processors: [batch]
       exporters: [signozclickhousemetrics]
     logs:

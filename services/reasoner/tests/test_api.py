@@ -76,17 +76,17 @@ async def test_health_deep_all_healthy(test_client: Any) -> None:
     assert response.status_code == 200
     body = response.json()
     components = body["components"]
-    assert components["qdrant"] is True
     assert components["postgres"] is True
     assert components["nats"] is True
+    assert "qdrant" not in components
 
 
-async def test_health_deep_qdrant_down(
+async def test_health_deep_postgres_down(
     test_client: Any, app_state: Any
 ) -> None:
-    # Override memory.health_check to report qdrant as down
+    # Override memory.health_check to report postgres as down
     app_state.memory.health_check = AsyncMock(
-        return_value={"qdrant": False, "postgres": True}
+        return_value={"postgres": False}
     )
 
     response = await test_client.get("/health/deep")

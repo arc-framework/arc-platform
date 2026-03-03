@@ -17,7 +17,7 @@ def mock_memory() -> AsyncMock:
     m = AsyncMock(spec=SherlockMemory)
     m.search.return_value = ["ctx1", "ctx2"]
     m.save.return_value = None
-    m.health_check.return_value = {"qdrant": True, "postgres": True}
+    m.health_check.return_value = {"postgres": True}
     m.init.return_value = None
     return m
 
