@@ -109,12 +109,13 @@ class OpenAINATSHandler:
                 error=str(exc),
                 transport="nats",
                 model=model,
+                latency_ms=latency_ms,
             )
             result = ChatCompletionResponse(
                 model=model,
                 choices=[
                     Choice(
-                        message=ChatMessage(role="assistant", content=f"Error: {exc}"),
+                        message=ChatMessage(role="assistant", content="Error: internal server error"),
                         finish_reason=None,
                     )
                 ],

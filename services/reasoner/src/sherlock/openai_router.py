@@ -111,15 +111,16 @@ def build_openai_router(
                 usage=UsageInfo(prompt_tokens=0, completion_tokens=0, total_tokens=0),
             )
         except Exception as exc:
+            exc_type = type(exc).__name__
             metrics.v1_errors_total.add(1, {"transport": "http"})
             _log.error(
                 "v1 chat error",
                 event_type="exception",
-                error_type=type(exc).__name__,
+                error_type=exc_type,
                 model=req.model,
             )
             return JSONResponse(
-                {"error": {"type": "server_error", "message": str(exc)}},
+                {"error": {"type": "server_error", "message": "Internal server error"}},
                 status_code=500,
             )
 
@@ -171,15 +172,16 @@ def build_openai_router(
                 instructions=req.instructions,
             )
         except Exception as exc:
+            exc_type = type(exc).__name__
             metrics.v1_errors_total.add(1, {"transport": "http"})
             _log.error(
                 "v1 responses error",
                 event_type="exception",
-                error_type=type(exc).__name__,
+                error_type=exc_type,
                 model=req.model,
             )
             return JSONResponse(
-                {"error": {"type": "server_error", "message": str(exc)}},
+                {"error": {"type": "server_error", "message": "Internal server error"}},
                 status_code=500,
             )
 
