@@ -98,6 +98,7 @@ plugins = ["pydantic.mypy"]
 module = ["sherlock.pulsar_handler"]
 disable_error_code = ["union-attr"]
 
+# minio SDK ships no type stubs — intentional suppression, same pattern as pulsar_handler above.
 [[tool.mypy.overrides]]
 module = ["sherlock.rag.adapters.minio"]
 ignore_missing_imports = true
