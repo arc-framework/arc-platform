@@ -8,8 +8,12 @@ name: Realtime Stack Image Pipeline
 #   build-realtime, build-realtime-ingress, build-realtime-egress run concurrently.
 #   security-* each runs after its respective build.
 #
-# Change detection:
-#   All three services share services/realtime/** — any change triggers all three builds.
+# Change detection (per-image skipping):
+#   Dockerfile          → arc-realtime only
+#   Dockerfile.ingress  → arc-realtime-ingress only
+#   Dockerfile.egress   → arc-realtime-egress only
+#   Runtime config YAMLs (livekit.yaml, ingress.yaml, egress.yaml) are mounted
+#   at runtime — they don't affect image builds and are excluded from triggers.
 #
 # Triggers:
 #   push (main, dev)   — detect changes, run jobs, push image on main
@@ -45,8 +49,10 @@ jobs:
     name: Detect Changes
     runs-on: ubuntu-latest
     outputs:
-      realtime:   ${{ steps.filter.outputs.realtime == 'true' || github.event_name == 'workflow_dispatch' }}
-      push-image: ${{ steps.mode.outputs.push-image }}
+      realtime-server:  ${{ steps.filter.outputs.realtime-server == 'true'  || github.event_name == 'workflow_dispatch' }}
+      realtime-ingress: ${{ steps.filter.outputs.realtime-ingress == 'true' || github.event_name == 'workflow_dispatch' }}
+      realtime-egress:  ${{ steps.filter.outputs.realtime-egress == 'true'  || github.event_name == 'workflow_dispatch' }}
+      push-image:       ${{ steps.mode.outputs.push-image }}
     steps:
       - uses: actions/checkout@v4
 
@@ -55,8 +61,12 @@ jobs:
         uses: dorny/paths-filter@v3
         with:
           filters: |
-            realtime:
-              - 'services/realtime/**'
+            realtime-server:
+              - 'services/realtime/Dockerfile'
+            realtime-ingress:
+              - 'services/realtime/Dockerfile.ingress'
+            realtime-egress:
+              - 'services/realtime/Dockerfile.egress'
 
       - name: Resolve push mode
         id: mode
@@ -75,7 +85,7 @@ jobs:
   build-realtime:
     name: Build arc-realtime
     needs: changes
-    if: needs.changes.outputs.realtime == 'true'
+    if: needs.changes.outputs.realtime-server == 'true'
     uses: ./.github/workflows/_reusable-build.yml
     with:
       service-name: arc-realtime
@@ -91,7 +101,7 @@ jobs:
   build-realtime-ingress:
     name: Build arc-realtime-ingress
     needs: changes
-    if: needs.changes.outputs.realtime == 'true'
+    if: needs.changes.outputs.realtime-ingress == 'true'
     uses: ./.github/workflows/_reusable-build.yml
     with:
       service-name: arc-realtime-ingress
@@ -107,7 +117,7 @@ jobs:
   build-realtime-egress:
     name: Build arc-realtime-egress
     needs: changes
-    if: needs.changes.outputs.realtime == 'true'
+    if: needs.changes.outputs.realtime-egress == 'true'
     uses: ./.github/workflows/_reusable-build.yml
     with:
       service-name: arc-realtime-egress

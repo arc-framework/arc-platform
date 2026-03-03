@@ -1,0 +1,164 @@
+name: Reasoner Image Pipeline
+
+# CI/push orchestrator for the arc-sherlock image.
+# Builds on every reasoner-related push; pushes to GHCR on main branch merges.
+# For a full versioned release, push a tag: git tag reasoner/v1.2.3 && git push --tags
+#
+# Parallelism:
+#   lint, typecheck, test, build all run concurrently — build doesn't wait for quality jobs.
+#   security → build.
+#
+# Change detection (per-job skipping):
+#   python (*.py, pyproject.toml, uv.lock) → lint + typecheck + test
+#   any    (services/reasoner/**)          → build
+#
+# Triggers:
+#   push (main, dev)   — detect changes, run relevant jobs, push image on main
+#   pull_request       — detect changes, run relevant jobs, build only (no push)
+#   workflow_dispatch  — always runs all jobs; mode=release forces push
+
+on:
+  push:
+    branches: [main, dev]
+    paths:
+      - 'services/reasoner/**'
+      - '.github/workflows/reasoner-images.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'services/reasoner/**'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'ci = build only, release = build + push'
+        required: false
+        type: choice
+        options: [ci, release]
+        default: ci
+
+env:
+  IMAGE_PREFIX: ghcr.io/arc-framework
+
+jobs:
+
+  # ── Detect file-level changes and resolve push mode ───────────────────────
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      python:     ${{ steps.filter.outputs.python == 'true'  || github.event_name == 'workflow_dispatch' }}
+      any:        ${{ steps.filter.outputs.any == 'true'     || github.event_name == 'workflow_dispatch' }}
+      push-image: ${{ steps.mode.outputs.push-image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect changed paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            python:
+              - 'services/reasoner/**/*.py'
+              - 'services/reasoner/pyproject.toml'
+              - 'services/reasoner/uv.lock'
+            any:
+              - 'services/reasoner/**'
+
+      - name: Resolve push mode
+        id: mode
+        run: |
+          EVENT="${{ github.event_name }}"
+          REF="${{ github.ref }}"
+          MODE="${{ github.event.inputs.mode || 'ci' }}"
+
+          if [ "$MODE" = "release" ] || ([ "$EVENT" = "push" ] && [ "$REF" = "refs/heads/main" ]); then
+            echo "push-image=true" >> $GITHUB_OUTPUT
+          else
+            echo "push-image=false" >> $GITHUB_OUTPUT
+          fi
+
+  # ── Lint (parallel) — only when Python source changed ────────────────────
+  lint:
+    name: Lint
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install ruff
+        run: pip install "ruff>=0.6"
+      - name: Run ruff
+        run: cd services/reasoner && ruff check src/
+
+  # ── Type-check (parallel) — only when Python source changed ──────────────
+  typecheck:
+    name: Type Check
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install dependencies
+        run: cd services/reasoner && pip install ".[dev]"
+      - name: Run mypy
+        run: cd services/reasoner && mypy src/sherlock/
+
+  # ── Test (parallel) — only when Python source changed ────────────────────
+  test:
+    name: Test
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install dependencies
+        run: cd services/reasoner && pip install ".[dev]"
+      - name: Run tests
+        run: |
+          cd services/reasoner
+          if [[ "${{ github.ref }}" == "refs/heads/main" || "${{ github.ref }}" == "refs/heads/dev" ]]; then
+            pytest tests/ -x --tb=short -q
+          else
+            pytest tests/ -x --tb=short -q
+          fi
+
+  # ── Build (parallel) — any reasoner file change ───────────────────────────
+  build:
+    name: Build arc-sherlock
+    needs: changes
+    if: needs.changes.outputs.any == 'true'
+    uses: ./.github/workflows/_reusable-build.yml
+    with:
+      service-name: arc-sherlock
+      service-path: services/reasoner
+      dockerfile: Dockerfile
+      platforms: linux/amd64
+      push-image: ${{ needs.changes.outputs.push-image == 'true' }}
+      generate-sbom: ${{ needs.changes.outputs.push-image == 'true' }}
+      image-prefix: ghcr.io/arc-framework
+    secrets: inherit
+
+  # ── Security (after build, non-blocking in CI) ────────────────────────────
+  security:
+    name: Security Scan
+    needs: [build]
+    if: always() && !cancelled() && needs.build.result == 'success'
+    uses: ./.github/workflows/_reusable-security.yml
+    with:
+      scan-type: fs
+      scan-target: services/reasoner
+      severity: CRITICAL,HIGH,MEDIUM
+      fail-on-severity: CRITICAL
+      block-on-failure: false
+      service-name: arc-sherlock
+      create-issues: false
+    secrets: inherit

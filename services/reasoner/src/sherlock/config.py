@@ -79,3 +79,19 @@ class Settings(BaseSettings):
 
     # Dev mode: mounts /fake/* endpoints for rapid local testing (default off)
     dev_mode: bool = Field(True, alias="SHERLOCK_DEV_MODE")
+
+    # LLM provider selection
+    llm_provider: str = Field("openai-compatible", alias="SHERLOCK_LLM_PROVIDER")
+    llm_api_key: str = Field("", alias="SHERLOCK_LLM_API_KEY")
+    openai_base_url: str | None = Field(None, alias="SHERLOCK_OPENAI_BASE_URL")
+    google_project_id: str | None = Field(None, alias="SHERLOCK_GOOGLE_PROJECT_ID")
+
+    # NATS v1 chat channels
+    nats_v1_chat_subject: str = Field("sherlock.v1.chat", alias="SHERLOCK_NATS_V1_CHAT_SUBJECT")
+    nats_v1_result_subject: str = Field(
+        "sherlock.v1.result", alias="SHERLOCK_NATS_V1_RESULT_SUBJECT"
+    )
+    nats_v1_enabled: bool = Field(True, alias="SHERLOCK_NATS_V1_ENABLED")
+
+    # AsyncAPI UI
+    async_docs_enabled: bool = Field(True, alias="SHERLOCK_ASYNC_DOCS_ENABLED")

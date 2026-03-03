@@ -40,6 +40,9 @@ scripts:
   - changed-files:
     - any-glob-to-any-file: ['scripts/**']
 
+maintenance:
+  - head-branch: ['^refactor/.*', '^cleanup/.*']
+
 # ── Technology labels ────────────────────────────────────────────────────────
 
 docker:
@@ -61,3 +64,15 @@ go:
 python:
   - changed-files:
     - any-glob-to-any-file: ['**/*.py', '**/requirements*.txt', '**/pyproject.toml']
+
+dependencies:
+  - changed-files:
+    - any-glob-to-any-file: ['go.mod', 'go.sum', '**/requirements*.txt', '**/pyproject.toml']
+
+reasoner:
+  - changed-files:
+    - any-glob-to-any-file: ['services/reasoner/**']
+
+specs:
+  - changed-files:
+    - any-glob-to-any-file: ['specs/**', '.specify/**']

@@ -270,3 +270,22 @@ class SherlockMetrics:
             "sherlock.context.size",
             description="Number of context chunks retrieved per request",
         )
+
+        # v1 Chat API instruments
+        self.v1_requests_total = meter.create_counter(
+            "sherlock.v1.requests.total",
+            description="Total number of v1 Chat API requests",
+        )
+        self.v1_errors_total = meter.create_counter(
+            "sherlock.v1.errors.total",
+            description="Total number of failed v1 Chat API requests",
+        )
+        self.v1_latency = meter.create_histogram(
+            "sherlock.v1.latency",
+            description="v1 Chat API request latency in milliseconds",
+            unit="ms",
+        )
+        self.v1_stream_chunks = meter.create_counter(
+            "sherlock.v1.stream.chunks",
+            description="Total number of SSE chunks streamed via v1 API",
+        )
