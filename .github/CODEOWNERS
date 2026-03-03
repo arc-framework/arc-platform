@@ -1,0 +1,16 @@
+# Default — all PRs require review
+*                           @dgtalbug
+
+# Reasoning engine and SDK — high-attention AI/ML code
+services/reasoner/**        @dgtalbug
+sdk/python/**               @dgtalbug
+
+# Cortex bootstrap — Go infrastructure
+services/cortex/**          @dgtalbug
+
+# Gateway and secrets — platform security boundary
+services/gateway/**         @dgtalbug
+services/secrets/**         @dgtalbug
+
+# CI/CD and release config — always review
+.github/**                  @dgtalbug
