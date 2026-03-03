@@ -2,7 +2,7 @@ from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class Settings(BaseSettings):  # type: ignore[misc]
+class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="SHERLOCK_",
         env_ignore_empty=False,

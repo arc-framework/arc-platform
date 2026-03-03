@@ -75,7 +75,7 @@ class MinioFileStore:
         def _sync() -> bytes:
             response = self._client.get_object(self._bucket, key)
             try:
-                return response.read()  # type: ignore[no-any-return]
+                return response.read()
             finally:
                 response.close()
 
