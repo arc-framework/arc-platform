@@ -101,14 +101,14 @@ class Settings(BaseSettings):
 
     # MinIO (Tardis — object storage)
     minio_endpoint: str = Field("arc-storage:9000", alias="SHERLOCK_MINIO_ENDPOINT")
-    minio_access_key: SecretStr = Field(SecretStr("minioadmin"), alias="SHERLOCK_MINIO_ACCESS_KEY")
-    minio_secret_key: SecretStr = Field(SecretStr("minioadmin"), alias="SHERLOCK_MINIO_SECRET_KEY")
+    minio_access_key: SecretStr = Field("minioadmin", alias="SHERLOCK_MINIO_ACCESS_KEY")
+    minio_secret_key: SecretStr = Field("minioadmin", alias="SHERLOCK_MINIO_SECRET_KEY")
     minio_bucket: str = Field("sherlock-files", alias="SHERLOCK_MINIO_BUCKET")
     minio_secure: bool = Field(False, alias="SHERLOCK_MINIO_SECURE")
 
     # RAG tunables
     max_file_bytes: int = Field(50 * 1024 * 1024, alias="SHERLOCK_MAX_FILE_BYTES")  # 50 MB
-    hybrid_alpha: float = Field(0.7, alias="SHERLOCK_HYBRID_ALPHA")
+    hybrid_alpha: float = Field(0.7, alias="SHERLOCK_HYBRID_ALPHA")  # 0=FTS only, 1=dense only
     chunk_size_tokens: int = Field(512, alias="SHERLOCK_CHUNK_SIZE_TOKENS")
     chunk_overlap_tokens: int = Field(50, alias="SHERLOCK_CHUNK_OVERLAP_TOKENS")
     retrieval_candidate_k: int = Field(50, alias="SHERLOCK_RETRIEVAL_CANDIDATE_K")
