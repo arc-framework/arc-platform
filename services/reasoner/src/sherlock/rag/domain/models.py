@@ -7,7 +7,7 @@ DB schema: services/persistence/initdb/004_sherlock_rag_schema.sql
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -21,8 +21,9 @@ class VectorStore(BaseModel):
     id: str = Field(default_factory=lambda: f"vs-{uuid.uuid4()}")
     name: str
     file_count: int = 0
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    # Not persisted to DB — present for OpenAI API parity only.
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -40,12 +41,12 @@ class KnowledgeFile(BaseModel):
     bytes: int = 0
     minio_key: str
     status: KnowledgeFileStatus = "uploaded"
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 # ─── VectorStoreFile ──────────────────────────────────────────────────────────
 
-VectorStoreFileStatus = Literal["pending", "processing", "completed", "failed"]
+VectorStoreFileStatus = Literal["queued", "pending", "processing", "completed", "failed"]
 
 
 class VectorStoreFile(BaseModel):
@@ -53,11 +54,11 @@ class VectorStoreFile(BaseModel):
 
     vector_store_id: str
     file_id: str
-    status: VectorStoreFileStatus = "pending"
+    status: VectorStoreFileStatus = "queued"
     chunk_count: int | None = None
     error_message: str | None = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 # ─── KnowledgeChunk ───────────────────────────────────────────────────────────
@@ -68,6 +69,9 @@ class KnowledgeChunk(BaseModel):
 
     ``embedding`` is 384-dimensional (all-MiniLM-L6-v2 default).
     ``fts_vector`` is DB-generated (GENERATED ALWAYS) and not represented here.
+
+    ``id`` is str (uuid as string); the pgvector adapter must cast uuid → str on
+    read and str → uuid.UUID on INSERT.
     """
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -76,7 +80,7 @@ class KnowledgeChunk(BaseModel):
     chunk_index: int
     content: str
     embedding: list[float] = Field(default_factory=list)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 # ─── SearchResult ─────────────────────────────────────────────────────────────
