@@ -8,11 +8,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
-COPY pyproject.toml .
-COPY src/ ./src/
 
-RUN pip install --prefix=/install --no-cache-dir ".[dev]" \
-    && pip install --prefix=/install --no-cache-dir -e . --no-deps
+# Copy only the manifest first — deps are only re-installed when pyproject.toml changes.
+# Stub package init allows setuptools to resolve the package name during dep resolution.
+COPY pyproject.toml .
+RUN mkdir -p src/sherlock && touch src/sherlock/__init__.py
+RUN pip install --prefix=/install --no-cache-dir ".[dev]"
+
+# Copy actual source after deps are cached — source changes hit only the fast install below.
+COPY src/ ./src/
+RUN pip install --prefix=/install --no-cache-dir "." --no-deps
 
 # ── Stage 2: runtime ──────────────────────────────────────────────────────────
 # AsyncAPI HTML docs are NOT generated at build time — the npx download adds 10+ minutes
