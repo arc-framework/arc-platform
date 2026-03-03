@@ -13,6 +13,10 @@ WORKDIR /build
 # Stub package init allows setuptools to resolve the package name during dep resolution.
 COPY pyproject.toml .
 RUN mkdir -p src/sherlock && touch src/sherlock/__init__.py
+# Install CPU-only PyTorch first — prevents pip from pulling the CUDA variant (~2.5 GB).
+# This single line reduces cold build time from ~20 min to ~2 min.
+RUN pip install --prefix=/install --no-cache-dir \
+    torch --index-url https://download.pytorch.org/whl/cpu
 RUN pip install --prefix=/install --no-cache-dir ".[dev]"
 
 # Copy actual source after deps are cached — source changes hit only the fast install below.
