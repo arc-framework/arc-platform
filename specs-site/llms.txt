@@ -64,3 +64,10 @@
 - [Tasks: Sherlock Reasoning Service](/arc-platform/specs-site/009-sherlock-reasoning/tasks.md)
 - [Analysis Report: Sherlock Reasoning Service (Re-Audit Post-Fixes)](/arc-platform/specs-site/009-sherlock-reasoning/analysis-report.md)
 
+### 011 — Vector Setup
+
+- [Feature: pgvector Migration + Observability Hardening](/arc-platform/specs-site/011-vector-setup/spec.md)
+- [Implementation Plan: pgvector Migration + Observability Hardening](/arc-platform/specs-site/011-vector-setup/plan.md)
+- [Tasks: pgvector Migration + Observability Hardening](/arc-platform/specs-site/011-vector-setup/tasks.md)
+- [Analysis Report: 011 pgvector Migration + Observability Hardening](/arc-platform/specs-site/011-vector-setup/analysis-report.md)
+

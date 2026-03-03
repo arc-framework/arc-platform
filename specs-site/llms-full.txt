@@ -2776,6 +2776,259 @@ These could be parallelized if needed, but for a single build step, serializatio
 ---
 
 ---
+url: /arc-platform/specs-site/011-vector-setup/analysis-report.md
+---
+# Analysis Report: 011 pgvector Migration + Observability Hardening
+
+**Date**: 2026-03-02
+**Stage**: Pre-implementation
+**Auditor**: Claude Code (read-only analysis)
+
+***
+
+## Coverage Matrix: Requirements → Plan → Tasks
+
+| Req ID | Title | Plan Section | Task IDs | Status |
+|--------|-------|--------------|----------|--------|
+| R1 | pgvector Extension | Target Modules + Technical Context | TASK-010 | COVERED |
+| R2 | Sherlock Memory Rewrite | Technical Context + Architecture | TASK-020 | COVERED |
+| R3 | Config Cleanup | Target Modules | TASK-021 | COVERED |
+| R4 | Health Checks | Risks & Mitigations | TASK-023, TASK-040, TASK-050 | COVERED |
+| R5 | SigNoz/OTEL Configuration | Key Implementation Decisions | TASK-022, TASK-023 | COVERED |
+| R6 | Tests | Project Structure | TASK-030 | COVERED |
+| R7 | Contracts + Docs | Project Structure | TASK-031, TASK-050, TASK-900 | COVERED |
+
+**Coverage Status**: All 7 requirements have corresponding tasks. No orphaned requirements.
+
+***
+
+## Gap Analysis
+
+### 1. BLOCKER: Memory Protocol Pattern Not Explicitly Tested
+
+**Location**: \[spec.md] R2, \[plan.md] "Memory Protocol (patterns.md §Repository)", \[tasks.md] TASK-001
+
+**Issue**: TASK-001 defines `MemoryBackend` Protocol extraction, but:
+
+* No explicit test is specified for the protocol itself
+* TASK-030 (test\_memory.py rewrite) doesn't mention protocol compliance testing
+* patterns.md §2 (Repository Pattern) states interfaces must be domain-specific — unclear if "memory backend interface" is explicit enough for type safety verification
+
+**Risk**: Protocol extraction may not be validated, leaving future backends (Redis, Weaviate) without type safety guarantees.
+
+**Recommendation**: Add acceptance criterion to TASK-030: "Protocol conformance verified via `mypy --strict` on `SherlockMemory` class — all methods match signature"
+
+***
+
+### 2. BLOCKER: asyncpg Vector Codec Event Hook — No Coverage in Dev Startup
+
+**Location**: \[plan.md] "asyncpg + pgvector type registration" (lines 120–134)
+
+**Issue**: The plan correctly identifies that `register_vector` must be called via a SQLAlchemy `connect` event. However:
+
+* TASK-020 acceptance criteria state the hook must be "tested in test\_memory.py"
+* But **no guidance on testing the event hook itself** — SQLAlchemy event registration is async/connection-scoped and notoriously hard to mock
+* TASK-040 integration test doesn't explicitly verify the hook works end-to-end (e.g., actual vector round-trip)
+* If the event hook fails silently, the UpsertTypeError only appears at runtime in `make dev`, not in `make reasoner-test`
+
+**Recommendation**:
+
+* TASK-020: Add acceptance criterion: "Integration test with real async engine + pgvector connection confirms vector codec loads (insert & retrieve vector column)"
+* TASK-040: Add explicit vector round-trip test in end-to-end acceptance: "Search returns context with embedding distance ordering verified"
+
+***
+
+### 3. BLOCKER: OTEL Environment Variables — Conflicting Endpoint URLs
+
+**Location**: \[plan.md] line 173, \[tasks.md] TASK-022 and TASK-023
+
+**Issue**: Plan states:
+
+* "Use `127.0.0.1:4317` for local binary runs (not `localhost` — IPv6 resolution issue on macOS with Docker Desktop)"
+* "Docker Compose uses service DNS so `arc-friday-collector:4317` is correct inside containers"
+
+But \[tasks.md] acceptance criteria for TASK-022 and TASK-023 do **not** specify which endpoint to use:
+
+* Line 69 (TASK-022): "All 9 OTEL\_\* env vars present" — doesn't specify endpoint value
+* Line 74 (TASK-023): Same — no guidance on endpoint choice for Sherlock's compose
+
+**Risk**: Developers may hardcode `localhost:4317` in docker-compose.yml, breaking OTEL collection in containers; or use `127.0.0.1:4317` in compose, breaking local binary runs.
+
+**Recommendation**: Update acceptance criteria:
+
+* TASK-022: `OTEL_EXPORTER_OTLP_ENDPOINT` MUST be `http://arc-friday-collector:4317` (service DNS name, not localhost/127.0.0.1)
+* TASK-023: Same as TASK-022
+* Add comment in docker-compose.yml: `# Use service DNS name inside containers; for local binary runs, override with OTEL_EXPORTER_OTLP_ENDPOINT=127.0.0.1:4317`
+
+***
+
+### 4. WARNING: Missing Verify-No-Qdrant-Imports Task
+
+**Location**: \[tasks.md] TASK-020 acceptance criteria
+
+**Issue**: TASK-020 acceptance states "All `qdrant_client` imports removed" and `ruff check` + `mypy` pass. However:
+
+* No explicit acceptance criterion for "grep/rg confirms zero `qdrant` mentions in source tree"
+* TASK-999 (Reviewer) does mention "zero Qdrant imports in source" — but this should be verified during implementation, not just review
+
+**Recommendation**: Add to TASK-020 acceptance: "Verify no stray `qdrant` imports: `rg 'qdrant' services/reasoner/src/ --type py` returns zero matches"
+
+***
+
+### 5. WARNING: Sentence-Transformer Model Download Not Addressed in Health Check
+
+**Location**: \[plan.md] Risks § "Sentence-transformer model download on cold start" (L222)
+
+**Issue**: Risk mitigation states "start\_period: 60s in healthcheck gives model time to load". However:
+
+* \[spec.md] R4 specifies only `/health/deep` with no mention of retry logic or lazy initialization
+* If model download takes >60s, healthcheck fails and `depends_on` sees failed status before LangGraph initializes
+* No acceptance criterion in TASK-023 or TASK-040 validates model pre-loading or healthcheck behavior under slow network
+
+**Recommendation**: Add to TASK-023 acceptance: "Healthcheck `start_period: 60s` confirmed; test with simulated slow model download shows service enters healthy state without timeout"
+
+***
+
+### 6. WARNING: HNSW Index Idempotency Not Explicitly Tested
+
+**Location**: \[plan.md] Risks § "HNSW index creation fails on empty table" (L219)
+
+**Issue**: Risk states "CREATE INDEX IF NOT EXISTS is idempotent; HNSW works on 0 rows". However:
+
+* TASK-020 acceptance states "creates HNSW index" but doesn't specify idempotency testing
+* TASK-030 (test\_memory.py) doesn't mention verifying `init()` can be called twice without error
+* TASK-040 runs `make dev` once; no re-initialization test
+
+**Recommendation**: Add to TASK-030 acceptance: "Test `SherlockMemory.init()` called twice on same schema — no `CREATE INDEX ... ALREADY EXISTS` error (idempotency verified)"
+
+***
+
+### 7. WARNING: Missing Cortex Service Verification in Integration Test
+
+**Location**: \[tasks.md] TASK-040 acceptance criteria
+
+**Issue**: Integration test verifies Sherlock (`curl localhost:8083/chat`) but does **not** verify Cortex health or OTEL visibility:
+
+* No `curl localhost:CORTEX_PORT/health` check
+* No verification that SigNoz UI shows Cortex service metadata
+* TASK-999 (Reviewer) mentions "Cortex visible with service.namespace=arc-platform" — but this is a review checklist, not a dev acceptance criterion
+
+**Recommendation**: Add to TASK-040 acceptance: "Cortex health endpoint returns 200 OK; SigNoz UI (if `reason` profile) shows Cortex with `service.namespace=arc-platform` tag"
+
+***
+
+### 8. INFO: Profiles.yaml Still References `vector-db`
+
+**Location**: \[services/profiles.yaml] line 15, \[tasks.md] TASK-040
+
+**Issue**: Current profiles.yaml shows `vector-db` in `think` profile (VERIFIED DURING AUDIT). TASK-040 acceptance correctly removes it, but:
+
+* No task explicitly removes `vector-db` from the `reason` or `ultra-instinct` profiles (if present)
+* \[plan.md] only mentions removal from `think`
+* \[spec.md] R1 only states "removed from the `think` profile"
+
+**Status**: Compliant with spec — removal from `think` is sufficient. Noted for completeness.
+
+***
+
+## Risks Assessment
+
+| Risk ID | Risk | Severity | Mitigation | Status |
+|---------|------|----------|-----------|--------|
+| R1 | asyncpg vector codec not registered | HIGH | Event hook in `__init__` + integration test | MITIGATED (see Gap #2) |
+| R2 | OTEL endpoint misconfigured in compose | HIGH | Clear endpoint value in acceptance criteria | MITIGATED (see Gap #3) |
+| R3 | Qdrant imports not fully removed | MEDIUM | Grep verification in acceptance | MITIGATED (see Gap #4) |
+| R4 | Model download exceeds healthcheck timeout | MEDIUM | `start_period: 60s` confirmed | MITIGATED (see Gap #5) |
+| R5 | HNSW index creation not idempotent | LOW | `CREATE INDEX IF NOT EXISTS` + test twice | MITIGATED (see Gap #6) |
+| R6 | Existing Qdrant data not migrated | LOW | Dev env only; fresh start acceptable | DOCUMENTED (plan.md L220) |
+| R7 | pgvector image not in cache | MEDIUM | CI pre-pull; first run pulls from Docker Hub | DOCUMENTED (plan.md L221) |
+
+***
+
+## Parallel Execution Analysis
+
+**Current Task DAG Review**:
+
+Marked as `[P]` (parallel-safe):
+
+* TASK-001 (MemoryBackend Protocol) — SAFE
+* TASK-010 (Persistence image) — SAFE (no overlap with reasoner)
+* TASK-022 (Cortex OTEL) — SAFE (isolated compose)
+* TASK-023 (Sherlock OTEL + healthcheck) — **UNSAFE** — depends on TASK-001 not specified but required for proper memory protocol testing; recommend explicit dependency
+
+Marked as dependent but could parallelize:
+
+* TASK-020 (memory.py rewrite) depends on TASK-001 — CORRECT (Protocol must exist first)
+* TASK-021 (Config cleanup) depends on TASK-001 — COULD BE PARALLEL to TASK-020 (independent cleanup); dependency is implicit but reasonable
+* TASK-030 (test rewrite) depends on TASK-020 — CORRECT
+* TASK-031 (health key cleanup) depends on TASK-020 — CORRECT
+
+**Recommendation**: Verify that TASK-023 can truly start independently; if Docker healthcheck block needs to be aware of memory protocol, add explicit `TASK-001 → TASK-023` dependency.
+
+***
+
+## Constitution Compliance
+
+| Principle | Applies | Status | Evidence |
+|-----------|---------|--------|----------|
+| I. Zero-Dependency CLI | N/A | N/A | No CLI changes |
+| II. Platform-in-a-Box | REQUIRED | PASS | Single `docker compose up` still works; `think` profile simplified |
+| III. Modular Services | REQUIRED | PASS | Each service (persistence, reasoner) self-contained; profiles.yaml updated cleanly |
+| IV. Two-Brain Separation | REQUIRED | PASS | All changes Python (intelligence) + SQL (infra); no Go logic in Python code |
+| V. Polyglot Standards | REQUIRED | PASS | Python: ruff + mypy enforced; 12-Factor config; async/await patterns correct; OTEL env vars standard |
+| VI. Local-First | N/A | N/A | No CLI changes |
+| VII. Observability by Default | REQUIRED | PASS | Full OTEL instrumentation wired for Sherlock + Cortex; SigNoz pre-configured; health checks added |
+| VIII. Security by Default | REQUIRED | PASS | Non-root containers unchanged; no secrets in config; pgvector adds no new attack surface |
+| IX. Declarative Reconciliation | N/A | N/A | No CLI changes |
+| X. Stateful Operations | N/A | N/A | No CLI changes |
+| XI. Resilience Testing | REQUIRED | PASS | Single-store eliminates dual-write failure mode; health checks added; HNSW index resilient to empty table |
+| XII. Interactive Experience | N/A | N/A | No CLI changes |
+
+**Overall Constitution Status**: 6 PASS, 6 N/A. No violations detected.
+
+***
+
+## Patterns.md Compliance
+
+| Pattern | Applies | Status | Evidence |
+|---------|---------|--------|----------|
+| Factory/DI | REQUIRED (Python) | PASS | `SherlockMemory` accepts engine + logger via **init**; no globals |
+| Repository | REQUIRED (Python) | PASS | `MemoryBackend` Protocol defined; `SherlockMemory` implements domain-specific methods (search, save, health\_check) |
+| Config Precedence | REQUIRED (Python) | PASS | Config cleanup removes hard-coded qdrant\_\* settings; OTEL via 12-Factor env vars |
+| Error Handling | REQUIRED | PASS | Async errors from pgvector wrapped; no silent failures |
+| Testing Standards | REQUIRED | PASS | pytest async tests; mocks at SQLAlchemy boundary only; coverage targets 75% critical |
+| XDG Base Directory | N/A | N/A | Applies to CLI only |
+| Observability Pattern (Go) | N/A | N/A | No Go service logic changes |
+
+**Overall Patterns Status**: 5 PASS, 2 N/A. No violations.
+
+***
+
+## Summary
+
+**Blockers**: 3 (memory protocol testing, OTEL endpoint clarity, asyncpg codec coverage)
+**Warnings**: 5 (no-qdrant-imports verification, model download health check, HNSW idempotency, Cortex verification, parallel safety of TASK-023)
+**Observations**: 1 (vector-db removal already compliant with spec intent)
+
+### Recommendation
+
+**PAUSE TO FIX BLOCKERS**
+
+The spec and plan are well-structured, but three critical issues must be resolved before implementation begins:
+
+1. **Clarify TASK-020 acceptance** to explicitly verify asyncpg vector codec works end-to-end (not just code presence)
+2. **Specify exact OTEL endpoint values** in TASK-022 and TASK-023 acceptance criteria (`arc-friday-collector:4317` inside compose; document override for local binary)
+3. **Add integration test to TASK-040** verifying actual vector round-trip through pgvector (save + search + verify ordering by distance)
+
+Once these are addressed, all 7 requirements map cleanly to 12 tasks with safe parallelism. No constitution violations detected. Ready for implementation after blockers resolved.
+
+***
+
+**Audit Complete**: 2026-03-02 16:00 UTC
+
+---
+
+---
 url: /arc-platform/specs-site/009-sherlock-reasoning/analysis-report.md
 ---
 # Analysis Report: Sherlock Reasoning Service (Re-Audit Post-Fixes)
@@ -4531,6 +4784,172 @@ graph LR
 | X. Stateful Ops | \[ ] | n/a | CLI-only principle |
 | XI. Resilience | \[x] | \[x] | Health checks with appropriate start\_periods; data volumes survive restart |
 | XII. Interactive | \[ ] | n/a | CLI-only principle |
+
+---
+
+---
+url: /arc-platform/specs-site/011-vector-setup/spec.md
+---
+# Feature: pgvector Migration + Observability Hardening
+
+> **Spec**: 011-vector-setup
+> **Date**: 2026-03-02
+> **Status**: Implemented
+> **Branch**: 011-vector-setup
+
+## Overview
+
+Replace Qdrant (Cerebro / `arc-vector-db`) with pgvector — a PostgreSQL extension — so Sherlock stores conversation embeddings and history in a single Oracle (PostgreSQL) instance. The same feature hardens SigNoz/OTEL configuration for both Sherlock and Cortex, and adds proper Docker health checks throughout.
+
+**pgvector is not a new service.** It is a PostgreSQL extension installed into Oracle by switching the base image from `postgres:17-alpine` to `pgvector/pgvector:17-alpine`. The connection string, host, port, and credentials are unchanged.
+
+## Motivation
+
+| Problem | Impact |
+|---------|--------|
+| Dual-store complexity (Qdrant + PostgreSQL) | Two services to operate, two health checks, two failure modes |
+| Qdrant adds ~400 MB to the `think` profile | Heavier dev startup with no benefit over pgvector for our scale |
+| OTEL instrumentation is minimal in Sherlock and absent in Cortex | SigNoz shows no service data; distributed traces are incomplete |
+| No Docker `healthcheck:` blocks on reasoner or persistence | Compose `depends_on` with no readiness signal is unreliable |
+
+## Target Modules
+
+| Service | Path | Impact |
+|---------|------|--------|
+| Persistence (Oracle) | `services/persistence/` | Image upgrade + init SQL |
+| Reasoner (Sherlock) | `services/reasoner/` | pgvector migration + OTEL hardening |
+| Cortex | `services/cortex/` | OTEL env vars only — no code changes |
+| Platform profiles | `services/profiles.yaml` | Remove `vector-db` from `think` |
+
+## Architecture
+
+```mermaid
+graph TB
+    subgraph Before
+        SH1[Sherlock] -->|vector search| QD[(Qdrant\narc-vector-db\n:6333)]
+        SH1 -->|history| PG1[(PostgreSQL\narc-sql-db\n:5432)]
+    end
+
+    subgraph After
+        SH2[Sherlock] -->|vector search\n+ history| PG2[(PostgreSQL + pgvector\narc-sql-db\n:5432)]
+    end
+```
+
+### Connection Model
+
+```
+# Unchanged connection string
+postgresql+asyncpg://arc:arc@arc-sql-db:5432/arc
+
+# New column on sherlock.conversations
+ALTER TABLE sherlock.conversations ADD COLUMN embedding vector(384);
+
+# HNSW index for fast cosine search
+CREATE INDEX ON sherlock.conversations USING hnsw (embedding vector_cosine_ops);
+```
+
+## Requirements
+
+### R1 — pgvector Extension
+
+* The Oracle (`arc-sql-db`) image MUST use `pgvector/pgvector:17-alpine` as base
+* `CREATE EXTENSION IF NOT EXISTS vector;` MUST run on first boot via `initdb/`
+* The `vector-db` service MUST be removed from the `think` profile
+
+### R2 — Sherlock Memory Rewrite
+
+* `SherlockMemory` MUST remove all Qdrant client code
+* `SherlockMemory.save()` MUST write embedding + content to a single PostgreSQL row
+* `SherlockMemory.search()` MUST query by cosine distance (`<=>` operator) with `user_id` filter
+* The `sherlock.conversations` table MUST gain an `embedding vector(384)` column
+* A HNSW index on the `embedding` column MUST be created on `init()`
+* `SherlockMemory.health_check()` MUST return `{"postgres": bool}` (Qdrant key removed)
+
+### R3 — Config Cleanup
+
+* Settings `qdrant_host`, `qdrant_port`, `qdrant_collection` MUST be removed from `config.py`
+* `qdrant-client>=1.9` MUST be removed from `pyproject.toml`
+* `pgvector>=0.3.0` MUST be added to `pyproject.toml`
+* All `SHERLOCK_QDRANT_*` env vars MUST be removed from `docker-compose.yml`
+
+### R4 — Health Checks
+
+**Docker `healthcheck:` blocks** (currently absent on both services):
+
+| Service | Test command | Interval | Retries | Start period |
+|---------|-------------|----------|---------|--------------|
+| `arc-sherlock` | `wget -qO- http://localhost:8000/health` | 15s | 5 | 60s |
+| `arc-sql-db` | `pg_isready -U arc` | 10s | 5 | 30s |
+
+**API** — `/health/deep` response MUST no longer include `qdrant` key:
+
+```json
+{
+  "status": "ok",
+  "version": "0.1.0",
+  "components": {
+    "postgres": true,
+    "nats": true
+  }
+}
+```
+
+### R5 — SigNoz / OTEL Configuration
+
+All standard OTEL env vars MUST be set in `docker-compose.yml` for Sherlock and Cortex so SigNoz auto-populates service metadata, environment, and namespace filters.
+
+| Env Var | Value | Purpose |
+|---------|-------|---------|
+| `OTEL_SERVICE_NAME` | `arc-sherlock` / `arc-cortex` | Service identity in SigNoz |
+| `OTEL_SERVICE_VERSION` | `0.1.0` | Version tag on spans |
+| `OTEL_DEPLOYMENT_ENVIRONMENT` | `development` | SigNoz environment filter |
+| `OTEL_RESOURCE_ATTRIBUTES` | `service.namespace=arc-platform,...` | Namespace grouping |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://arc-friday-collector:4317` | Collector endpoint |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | `grpc` | Transport protocol |
+| `OTEL_TRACES_SAMPLER` | `always_on` | 100% sampling in dev |
+| `OTEL_PROPAGATORS` | `tracecontext,baggage` | W3C trace propagation |
+| `OTEL_LOG_LEVEL` | `warn` | Suppress SDK noise |
+
+For Cortex (Go): these env vars are consumed by the Go OTEL SDK directly — no code changes.
+For Sherlock (Python): `OTEL_EXPORTER_OTLP_ENDPOINT` already mapped in `config.py`; remaining vars are standard and auto-consumed by the OTEL Python SDK.
+
+### R6 — Tests
+
+* All Qdrant mocks in `test_memory.py` MUST be replaced with SQLAlchemy async mocks
+* `health_check()` tests MUST verify `{"postgres": bool}` shape (no `qdrant` key)
+* Existing 40-test suite MUST remain green
+
+### R7 — Contracts + Docs
+
+* `contracts/openapi.yaml`: `/health/deep` response schema updated (remove `qdrant` property)
+* `services/reasoner/service.yaml`: remove `vector-db` from `depends_on`, update description
+* `services/reasoner/service.yaml`: add `healthcheck` block
+
+## What Breaks — Full Inventory
+
+| Location | Break | Fix |
+|----------|-------|-----|
+| `memory.py` | `qdrant_client` import | Remove — replace with pgvector |
+| `memory.py` | `_init_qdrant()` | Remove — replaced by SQL DDL in `init()` |
+| `memory.py` | `AsyncQdrantClient.search()` | Replace with SQL cosine distance query |
+| `memory.py` | `AsyncQdrantClient.upsert()` | Replace with SQLAlchemy `session.add()` |
+| `memory.py` | `health_check()` qdrant branch | Remove — single postgres check |
+| `config.py` | `qdrant_host/port/collection` fields | Delete all three |
+| `pyproject.toml` | `qdrant-client>=1.9` | Remove |
+| `docker-compose.yml` | `SHERLOCK_QDRANT_HOST`, `SHERLOCK_QDRANT_PORT` | Remove |
+| `main.py` | `"qdrant": dep_health.get("qdrant", False)` | Remove line |
+| `main.py` | `DeepHealthResponse` components | Now only `postgres` + `nats` |
+| `service.yaml` | `depends_on: vector-db` | Remove entry |
+| `service.yaml` | description mentions Qdrant | Update text |
+| `profiles.yaml` | `vector-db` in `think` | Remove entry |
+| `test_memory.py` | All `AsyncQdrantClient` mocks | Replace with SQLAlchemy mocks |
+| `contracts/openapi.yaml` | `qdrant` in health deep schema | Remove property |
+
+## Out of Scope
+
+* `services/vector/` — Cerebro/Qdrant service files remain untouched (other features may use it)
+* Cortex source code — no Go changes needed (OTEL via env vars only)
+* API v2 (`/v1/chat/completions`, streaming, history endpoints) — separate spec
 
 ---
 
@@ -7479,6 +7898,235 @@ gantt
 | Collector prometheus receiver syntax differs between SigNoz collector versions | M | Test with `docker compose config` after edit; collector version is pinned at v0.142.0 |
 | Port 8082 (Pulsar admin) conflict with other local services | L | Document in service.yaml; `strange-health` gives a clear error if bind fails |
 | NATS JetStream stream auto-creation | L | NATS JetStream does not auto-create named streams — a post-start `nats stream add` step is needed if FR-4 is in scope; otherwise defer US-9 to a future task |
+
+---
+
+---
+url: /arc-platform/specs-site/011-vector-setup/plan.md
+---
+# Implementation Plan: pgvector Migration + Observability Hardening
+
+> **Spec**: 011-vector-setup
+> **Date**: 2026-03-02
+
+## Summary
+
+Replace Qdrant (Cerebro) with pgvector by upgrading Oracle's base image to `pgvector/pgvector:17-alpine`, rewriting `SherlockMemory` to store and query 384-dim embeddings via SQL cosine distance, and wiring full SigNoz OTEL configuration into both Sherlock and Cortex docker-compose files. The connection string is unchanged — pgvector is a PostgreSQL extension, not a new service.
+
+## Target Modules
+
+| Module | Language | Changes |
+|--------|----------|---------|
+| `services/persistence/` | SQL / Dockerfile | Image upgrade + `CREATE EXTENSION vector` init |
+| `services/reasoner/` | Python | `memory.py` rewrite, config cleanup, health check, OTEL vars, tests |
+| `services/cortex/` | Go / Compose | OTEL env vars only — no Go source changes |
+| `services/profiles.yaml` | YAML | Remove `vector-db` from `think` profile |
+
+## Technical Context
+
+| Aspect | Value |
+|--------|-------|
+| Language(s) | Python 3.13 (reasoner), SQL (persistence) |
+| Framework(s) | FastAPI, LangGraph, SQLAlchemy 2.0 async |
+| Storage | PostgreSQL 17 + pgvector (HNSW index, cosine distance) |
+| New dependency | `pgvector>=0.3.0` |
+| Removed dependency | `qdrant-client>=1.9` |
+| Embeddings | `sentence-transformers/all-MiniLM-L6-v2` — 384 dims, unchanged |
+| Testing | pytest, SQLAlchemy async session mocks |
+| OTEL | OTLP gRPC → `arc-friday-collector:4317` |
+
+## Architecture
+
+```mermaid
+graph LR
+    subgraph Sherlock
+        G[LangGraph\ngraph.py] --> M[SherlockMemory\nmemory.py]
+    end
+
+    subgraph Oracle arc-sql-db :5432
+        M -->|search\nSELECT ... ORDER BY embedding <=> $v LIMIT 5| T[(sherlock.conversations\nid · user_id · role\ncontent · embedding vector_384_\ncreated_at)]
+        M -->|save\nINSERT with embedding| T
+    end
+
+    subgraph Removed
+        style Removed fill:#fee,stroke:#f88
+        QD[(arc-vector-db\nQdrant :6333)]
+    end
+```
+
+```mermaid
+sequenceDiagram
+    participant C as Caller HTTP/NATS
+    participant G as graph.py
+    participant M as SherlockMemory
+    participant PG as PostgreSQL+pgvector
+
+    C->>G: invoke_graph(user_id, text)
+    G->>M: search(user_id, text)
+    M->>M: encode(text) → vector[384]
+    M->>PG: SELECT content WHERE user_id=$1\nORDER BY embedding <=> $2 LIMIT 5
+    PG-->>M: [context strings]
+    M-->>G: context list
+    G->>G: LLM generate_response
+    G->>M: save(user_id, "human", text)
+    G->>M: save(user_id, "ai", response)
+    M->>M: encode(content) → vector[384]
+    M->>PG: INSERT INTO sherlock.conversations
+    G-->>C: ChatResponse
+```
+
+## Constitution Check
+
+| # | Principle | Status | Evidence |
+|---|-----------|--------|----------|
+| I | Zero-Dep CLI | N/A | No CLI changes |
+| II | Platform-in-a-Box | PASS | Removing Cerebro simplifies `think` profile; single `docker compose up` still works |
+| III | Modular Services | PASS | persistence and reasoner each self-contained; profiles.yaml updated |
+| IV | Two-Brain | PASS | All changes are Python (intelligence) + SQL (infra config) — no Go logic added to Python |
+| V | Polyglot Standards | PASS | Python: ruff+mypy, pytest, structured logging; OTEL env vars follow 12-Factor |
+| VI | Local-First | N/A | No CLI changes |
+| VII | Observability | PASS | Full OTEL vars wired; SigNoz sees all 3 signals for Sherlock; Cortex gets env vars |
+| VIII | Security | PASS | Non-root containers unchanged; no secrets in config; pgvector adds no new attack surface |
+| IX | Declarative | N/A | No CLI changes |
+| X | Stateful Ops | N/A | No CLI changes |
+| XI | Resilience | PASS | Single-store eliminates dual-write failure mode; health check covers pgvector connectivity |
+| XII | Interactive | N/A | No CLI changes |
+
+## Project Structure
+
+```
+services/
+├── persistence/
+│   ├── Dockerfile                          # MODIFY — pgvector/pgvector:17-alpine
+│   ├── service.yaml                        # MODIFY — upstream field
+│   └── initdb/
+│       └── 003_enable_pgvector.sql         # NEW — CREATE EXTENSION IF NOT EXISTS vector
+│
+├── reasoner/
+│   ├── src/sherlock/
+│   │   ├── memory.py                       # REWRITE — pgvector replaces Qdrant
+│   │   ├── config.py                       # MODIFY — remove qdrant_* settings
+│   │   └── main.py                         # MODIFY — remove qdrant health key
+│   ├── tests/
+│   │   └── test_memory.py                  # REWRITE — SQLAlchemy mocks replace Qdrant
+│   ├── contracts/
+│   │   └── openapi.yaml                    # MODIFY — /health/deep removes qdrant
+│   ├── docker-compose.yml                  # MODIFY — OTEL vars + healthcheck + remove QDRANT_*
+│   ├── service.yaml                        # MODIFY — depends_on, description, healthcheck
+│   └── pyproject.toml                      # MODIFY — swap qdrant-client for pgvector
+│
+├── cortex/
+│   └── docker-compose.yml                  # MODIFY — add full OTEL env vars
+│
+└── profiles.yaml                           # MODIFY — remove vector-db from think
+```
+
+## Key Implementation Decisions
+
+### asyncpg + pgvector type registration
+
+asyncpg requires the vector codec registered per connection. Use SQLAlchemy's `connect` event:
+
+```python
+from pgvector.asyncpg import register_vector
+from sqlalchemy import event
+
+# Inside SherlockMemory.__init__, after engine creation:
+@event.listens_for(self._engine.sync_engine, "connect")
+def _on_connect(dbapi_conn, _):
+    dbapi_conn.run_async(register_vector)
+```
+
+This is the only non-obvious wiring required. Without it asyncpg raises `UnsupportedTypeError` on vector columns.
+
+### HNSW vs IVFFlat
+
+Using HNSW (`USING hnsw (embedding vector_cosine_ops)`):
+
+* No training phase required — works with 0 rows, unlike IVFFlat
+* Approximate nearest neighbour in O(log n)
+* \~95% recall at our scale (thousands of vectors per user)
+
+### Memory Protocol (patterns.md §Repository)
+
+Extract `MemoryBackend` Protocol per patterns.md requirement:
+
+```python
+class MemoryBackend(Protocol):
+    async def search(self, user_id: str, query: str) -> list[str]: ...
+    async def save(self, user_id: str, role: str, content: str) -> None: ...
+    async def health_check(self) -> dict[str, bool]: ...
+```
+
+`SherlockMemory` implements this protocol. Type-safe; future backends (Redis, Weaviate) drop in without touching the graph.
+
+### OTEL env vars — Cortex
+
+Cortex Go service uses the standard OTEL Go SDK which auto-reads all `OTEL_*` env vars. Adding them to `docker-compose.yml` is sufficient — no Go source change:
+
+```yaml
+environment:
+  OTEL_SERVICE_NAME: "arc-cortex"
+  OTEL_SERVICE_VERSION: "0.1.0"
+  OTEL_DEPLOYMENT_ENVIRONMENT: "development"
+  OTEL_RESOURCE_ATTRIBUTES: "service.namespace=arc-platform,service.instance.id=arc-cortex-1"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://arc-friday-collector:4317"
+  OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
+  OTEL_TRACES_SAMPLER: "always_on"
+  OTEL_PROPAGATORS: "tracecontext,baggage"
+  OTEL_LOG_LEVEL: "warn"
+```
+
+> **Note**: Use `127.0.0.1:4317` for local binary runs (not `localhost` — IPv6 resolution issue on macOS with Docker Desktop). Docker Compose uses service DNS so `arc-friday-collector:4317` is correct inside containers.
+
+## Parallel Execution Strategy
+
+```mermaid
+gantt
+    title 011 Implementation Phases
+    dateFormat  YYYY-MM-DD
+    section Phase 1 — Independent
+    P1A Persistence image + init SQL   :p1a, 2026-03-03, 1d
+    P1B Reasoner memory.py rewrite     :p1b, 2026-03-03, 1d
+    P1C Cortex OTEL env vars           :p1c, 2026-03-03, 1d
+    section Phase 2 — Depends on P1B
+    P2A Config cleanup + pyproject     :p2a, after p1b, 1d
+    P2B Tests rewrite                  :p2b, after p1b, 1d
+    section Phase 3 — Integration
+    P3 Wire + health checks + profiles :p3, after p2a, 1d
+    section Phase 4 — Verification
+    P4 Contracts + docs + lint         :p4, after p3, 1d
+```
+
+**Phase 1 tasks are fully parallel** — persistence, reasoner memory, and cortex OTEL are independent.
+**Phase 2** requires Phase 1B complete (memory.py drives config + test shape).
+**Phase 3** requires P2A done (all code changes in to verify health checks).
+
+## Reviewer Checklist
+
+* \[ ] `make reasoner-test` — all 40 tests pass, no Qdrant imports remain
+* \[ ] `make reasoner-lint` — ruff + mypy clean
+* \[ ] `docker build -f services/persistence/Dockerfile services/persistence/` — builds cleanly
+* \[ ] `curl localhost:8083/health/deep` — response has no `qdrant` key
+* \[ ] `make dev` starts without `arc-vector-db` container
+* \[ ] `make dev-health` — all services healthy
+* \[ ] SigNoz UI at `:3301` — Sherlock and Cortex appear with service name, version, environment
+* \[ ] `pgvector` in `pyproject.toml`, `qdrant-client` absent
+* \[ ] `vector-db` absent from `think` profile in `profiles.yaml`
+* \[ ] All `SHERLOCK_QDRANT_*` env vars removed from `docker-compose.yml`
+* \[ ] `MemoryBackend` Protocol defined; `SherlockMemory` implements it
+* \[ ] `contracts/openapi.yaml` `/health/deep` schema has no `qdrant` property
+* \[ ] Constitution compliance — all 4 applicable principles PASS
+
+## Risks & Mitigations
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| asyncpg vector type not registered | H | `register_vector` event hook in `__init__` — tested in `test_memory.py` |
+| HNSW index creation fails on empty table | L | `CREATE INDEX IF NOT EXISTS` is idempotent; HNSW works on 0 rows |
+| Existing Qdrant data not migrated | M | No migration needed — dev env only; fresh `make dev` starts clean |
+| `pgvector/pgvector:17-alpine` image not in GHCR cache | M | Build step pulls from Docker Hub on first run; CI can pre-pull |
+| Sentence-transformer model download on cold start | L | `start_period: 60s` in healthcheck gives model time to load |
 
 ---
 
@@ -10468,6 +11116,195 @@ graph TD
 | Integration | 1 | 1 | 0 |
 | Polish | 2 | 2 | 1 |
 | **Total** | **16** | **16** | **9** |
+
+---
+
+---
+url: /arc-platform/specs-site/011-vector-setup/tasks.md
+---
+# Tasks: pgvector Migration + Observability Hardening
+
+> **Spec**: 011-vector-setup
+> **Date**: 2026-03-02
+
+## Task Format
+
+```
+[TASK-NNN] [P?] [MODULE] [PRIORITY] Description
+  Dependencies: [TASK-XXX] or none
+  Module: services/{role}
+  Acceptance: Testable criteria
+```
+
+* `[P]` = Safe for parallel agent execution
+* Priority: P1 (must), P2 (should), P3 (nice)
+
+## Dependency Graph
+
+```mermaid
+graph TD
+    T001[T001 MemoryBackend Protocol] --> T020
+    T001 --> T021
+    T010[T010 Persistence image + init SQL] --> T040
+    T020[T020 memory.py rewrite] --> T030
+    T020 --> T031
+    T021[T021 Config + pyproject cleanup] --> T040
+    T022[T022 Cortex OTEL env vars] --> T040
+    T023[T023 Sherlock docker-compose OTEL + healthcheck] --> T040
+    T030[T030 test_memory.py rewrite] --> T040
+    T031[T031 main.py health key + openapi.yaml] --> T040
+    T040[T040 Integration + profiles cleanup] --> T050
+    T050[T050 service.yaml updates] --> T900
+    T900[T900 Docs + links] --> T999
+    T999[T999 Reviewer]
+
+    style T001 fill:#dfd
+    style T010 fill:#dfd
+    style T022 fill:#dfd
+    style T023 fill:#dfd
+```
+
+## Quality Requirements
+
+| Module | Coverage | Lint | Notes |
+|--------|----------|------|-------|
+| Python (reasoner) | 75% critical / 60% core / 40% infra | ruff + mypy | `make reasoner-lint` |
+| SQL (persistence) | n/a | n/a | Init scripts verified by `pg_isready` + `SELECT 1` |
+
+***
+
+## Phase 1: Setup
+
+### Parallel Batch — all Phase 1 tasks are independent
+
+* \[x] **\[TASK-001]** \[P] \[REASONER] \[P1] Define `MemoryBackend` Protocol in `memory.py`
+  * Dependencies: none
+  * Module: `services/reasoner/src/sherlock/memory.py`
+  * Acceptance: `MemoryBackend(Protocol)` defined with `search`, `save`, `health_check` method signatures; `SherlockMemory` annotated as implementing it; mypy passes
+
+* \[x] **\[TASK-010]** \[P] \[PERSISTENCE] \[P1] Upgrade Oracle base image to pgvector
+  * Dependencies: none
+  * Module: `services/persistence/Dockerfile`, `services/persistence/service.yaml`, `services/persistence/initdb/003_enable_pgvector.sql`
+  * Acceptance: Dockerfile uses `FROM pgvector/pgvector:17-alpine`; `003_enable_pgvector.sql` contains `CREATE EXTENSION IF NOT EXISTS vector;`; `service.yaml` upstream updated; `docker build services/persistence/` succeeds
+
+* \[x] **\[TASK-022]** \[P] \[CORTEX] \[P1] Add full OTEL env vars to Cortex docker-compose
+  * Dependencies: none
+  * Module: `services/cortex/docker-compose.yml`
+  * Acceptance: All 9 `OTEL_*` env vars present (`SERVICE_NAME`, `SERVICE_VERSION`, `DEPLOYMENT_ENVIRONMENT`, `RESOURCE_ATTRIBUTES`, `EXPORTER_OTLP_ENDPOINT`, `EXPORTER_OTLP_PROTOCOL`, `TRACES_SAMPLER`, `PROPAGATORS`, `LOG_LEVEL`); `OTEL_EXPORTER_OTLP_ENDPOINT` value is `http://arc-friday-collector:4317` (service DNS — not `localhost`); comment added: `# For local binary runs override with: OTEL_EXPORTER_OTLP_ENDPOINT=127.0.0.1:4317`; no Go source changes
+
+* \[x] **\[TASK-023]** \[P] \[REASONER] \[P1] Add full OTEL env vars + Docker healthcheck to Sherlock docker-compose
+  * Dependencies: none
+  * Module: `services/reasoner/docker-compose.yml`
+  * Acceptance: All 9 `OTEL_*` env vars present; `OTEL_EXPORTER_OTLP_ENDPOINT` value is `http://arc-friday-collector:4317` (service DNS); `healthcheck:` block added (`wget -qO- http://localhost:8000/health`, interval=15s, retries=5, start\_period=60s); `SHERLOCK_QDRANT_HOST` and `SHERLOCK_QDRANT_PORT` removed
+
+***
+
+## Phase 2: Foundational
+
+* \[x] **\[TASK-020]** \[REASONER] \[P1] Rewrite `SherlockMemory` for pgvector
+  * Dependencies: TASK-001
+  * Module: `services/reasoner/src/sherlock/memory.py`
+  * Acceptance:
+    * All `qdrant_client` imports removed
+    * `Conversation` model has `embedding: Mapped[list] = mapped_column(Vector(384), nullable=True)`
+    * `_on_connect` event hook registers pgvector type with asyncpg
+    * `init()` creates schema, runs `create_all`, creates HNSW index (`USING hnsw (embedding vector_cosine_ops)`)
+    * `search()` uses `order_by(Conversation.embedding.cosine_distance(vector)).limit(top_k)` with `user_id` filter
+    * `save()` encodes content, inserts single row with embedding
+    * `health_check()` returns `{"postgres": bool}` — no `qdrant` key
+    * `ruff check src/` and `mypy src/` pass
+    * `rg 'qdrant' services/reasoner/src/ --type py` returns zero matches
+    * `SherlockMemory` satisfies `MemoryBackend` protocol — verified by `mypy --strict`
+
+* \[x] **\[TASK-021]** \[P] \[REASONER] \[P1] Remove Qdrant config settings and dependency
+  * Dependencies: TASK-001
+  * Module: `services/reasoner/src/sherlock/config.py`, `services/reasoner/pyproject.toml`
+  * Acceptance: `qdrant_host`, `qdrant_port`, `qdrant_collection` fields deleted from `Settings`; `qdrant-client>=1.9` removed from `pyproject.toml`; `pgvector>=0.3.0` added; `pip install` resolves cleanly
+
+***
+
+## Phase 3: Implementation
+
+### Parallel Batch A — depends on TASK-020
+
+* \[x] **\[TASK-030]** \[P] \[REASONER] \[P1] Rewrite `test_memory.py` for pgvector
+  * Dependencies: TASK-020
+  * Module: `services/reasoner/tests/test_memory.py`
+  * Acceptance:
+    * All `AsyncQdrantClient`, `PointStruct`, `FieldCondition`, `MatchValue` mocks removed
+    * Tests use `AsyncMock` on `AsyncSession` or `AsyncEngine`
+    * Test coverage: `init()` idempotent (called twice — no error), `search()` returns list of strings with user\_id filter, `save()` inserts embedding, `health_check()` returns `{"postgres": bool}`
+    * Integration test with real async engine confirms vector codec loads: insert a row with embedding, retrieve it, verify cosine distance ordering
+    * `make reasoner-test` passes (all 40 tests green)
+
+* \[x] **\[TASK-031]** \[P] \[REASONER] \[P1] Remove `qdrant` from health check response in `main.py` and `openapi.yaml`
+  * Dependencies: TASK-020
+  * Module: `services/reasoner/src/sherlock/main.py`, `services/reasoner/contracts/openapi.yaml`
+  * Acceptance:
+    * `components` dict in `health_deep` has only `postgres` and `nats` keys
+    * `DeepHealthResponse` still uses `dict[str, bool]` — no schema change needed
+    * `openapi.yaml` `/health/deep` response schema `components` object removes `qdrant` property
+    * `curl localhost:8083/health/deep` returns `{"status":"ok","components":{"postgres":true,"nats":true}}`
+
+***
+
+## Phase 4: Integration
+
+* \[x] **\[TASK-040]** \[PLATFORM] \[P1] Wire profiles + add persistence healthcheck + verify end-to-end
+  * Dependencies: TASK-010, TASK-020, TASK-021, TASK-022, TASK-023, TASK-030, TASK-031
+  * Module: `services/profiles.yaml`, `services/persistence/docker-compose.yml`
+  * Acceptance:
+    * `vector-db` removed from `think` profile in `profiles.yaml`
+    * `services/persistence/docker-compose.yml` has `healthcheck:` block (`pg_isready -U arc`, interval=10s, retries=5, start\_period=30s)
+    * `make dev` starts without `arc-vector-db` container
+    * `make dev-health` reports all services healthy
+    * `curl -X POST localhost:8083/chat -d '{"user_id":"test","text":"hello"}' -H 'Content-Type: application/json'` returns `ChatResponse` with non-empty `text`
+    * Second call returns response with context from pgvector search (vector round-trip verified: save → encode → search → cosine-ordered results)
+    * Cortex health endpoint returns 200 OK
+
+***
+
+## Phase 5: Polish
+
+* \[x] **\[TASK-050]** \[P] \[REASONER] \[P2] Update `service.yaml` for Sherlock
+  * Dependencies: TASK-040
+  * Module: `services/reasoner/service.yaml`
+  * Acceptance: `vector-db` removed from `depends_on`; description updated (no mention of Qdrant); `healthcheck:` block added matching docker-compose values
+
+* \[x] **\[TASK-900]** \[P] \[DOCS] \[P2] Update docs and links
+  * Dependencies: TASK-040
+  * Module: `specs/011-vector-setup/spec.md`, `specs/index.md`, `services/reasoner/service.yaml`
+  * Acceptance:
+    * `specs/index.md` shows `011 | Vector Setup | Implemented`
+    * `spec.md` status updated from `Draft` → `Implemented`
+    * No broken links in specs site (`make specs-dev` renders without 404s)
+
+* \[ ] **\[TASK-999]** \[REVIEW] \[P1] Reviewer agent verification
+  * Dependencies: ALL
+  * Module: all affected modules
+  * Acceptance:
+    * `make reasoner-test` — all tests pass, zero Qdrant imports in source
+    * `make reasoner-lint` — ruff + mypy clean
+    * `docker build -f services/persistence/Dockerfile services/persistence/` — succeeds
+    * `curl localhost:8083/health/deep` — no `qdrant` key in response
+    * `make dev` — `arc-vector-db` container absent; all others healthy
+    * SigNoz UI (`:3301`) — Sherlock and Cortex visible with `service.namespace=arc-platform`
+    * `pgvector>=0.3.0` in `pyproject.toml`; `qdrant-client` absent
+    * `vector-db` absent from `think` profile
+    * Constitution II, III, V, VII, VIII all PASS
+
+***
+
+## Progress Summary
+
+| Phase | Total | Done | Parallel |
+|-------|-------|------|----------|
+| Setup | 4 | 0 | 4 |
+| Foundational | 2 | 0 | 1 |
+| Implementation | 2 | 0 | 2 |
+| Integration | 1 | 0 | 0 |
+| Polish | 3 | 0 | 2 |
+| **Total** | **12** | **0** | **9** |
 
 ---
 
