@@ -112,6 +112,7 @@ def build_openai_router(
             )
         except Exception as exc:
             exc_type = type(exc).__name__
+            del exc
             metrics.v1_errors_total.add(1, {"transport": "http"})
             _log.error(
                 "v1 chat error",
@@ -173,6 +174,7 @@ def build_openai_router(
             )
         except Exception as exc:
             exc_type = type(exc).__name__
+            del exc
             metrics.v1_errors_total.add(1, {"transport": "http"})
             _log.error(
                 "v1 responses error",
