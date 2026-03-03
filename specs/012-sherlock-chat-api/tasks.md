@@ -121,7 +121,7 @@ graph TD
   - Module: `services/reasoner/pyproject.toml`
   - Acceptance: `langchain-anthropic>=0.3`, `langchain-google-genai>=2.0`, `sse-starlette>=2.1`, `tiktoken>=0.7` present in `[project.dependencies]`; `pip install -e ".[dev]"` succeeds
 
-- [ ] [TASK-002] [P] [services/reasoner] [P1] Add 8 new settings to config.py
+- [x] [TASK-002] [P] [services/reasoner] [P1] Add 8 new settings to config.py
   - Dependencies: none
   - Module: `services/reasoner/src/sherlock/config.py`
   - Acceptance: `llm_provider`, `llm_api_key`, `openai_base_url`, `google_project_id`, `nats_v1_chat_subject`, `nats_v1_result_subject`, `nats_v1_enabled`, `async_docs_enabled` fields present in `Settings`; `mypy` passes; defaults match spec §10 table
@@ -130,7 +130,7 @@ graph TD
 
 ## Phase 2: Foundational
 
-- [ ] [TASK-010] [P] [services/reasoner] [P1] Create models_v1.py — all OpenAI-compatible Pydantic models
+- [x] [TASK-010] [P] [services/reasoner] [P1] Create models_v1.py — all OpenAI-compatible Pydantic models
   - Dependencies: none
   - Module: `services/reasoner/src/sherlock/models_v1.py`
   - Acceptance: `ChatMessage`, `ChatCompletionRequest`, `ChatCompletionResponse`, `ChatCompletionChunk`, `ChoiceDelta`, `StreamChoice`, `UsageInfo`, `ResponsesRequest`, `ResponsesResponse`, `ResponseInputItem`, `ResponseOutputItem`, `ModelObject`, `ModelList` all importable; `mypy --strict` passes; `stream: bool = False` default; `n: int = Field(1)` max 1
@@ -176,7 +176,7 @@ graph TD
   - Module: `services/reasoner/src/sherlock/providers/factory.py`
   - Acceptance: `create_provider(settings) -> LLMProviderPort` uses `match settings.llm_provider` to select provider; unknown values fall back to `CompatibleProvider`; function exported from `providers/__init__.py`
 
-- [ ] [TASK-026] [P] [services/reasoner] [P1] Add stream_graph() to graph.py
+- [x] [TASK-026] [P] [services/reasoner] [P1] Add stream_graph() to graph.py
   - Dependencies: none
   - Module: `services/reasoner/src/sherlock/graph.py`
   - Acceptance: `stream_graph(graph, memory, user_id, text) -> AsyncIterator[str]` filters `on_chat_model_stream` events from `astream_events(version="v2")`; yields only non-empty `chunk.content` strings; best-effort persists both turns after stream via `asyncio.shield`; does not modify `invoke_graph()` or any other existing function; `mypy --strict` passes
