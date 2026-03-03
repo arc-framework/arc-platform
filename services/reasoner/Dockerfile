@@ -14,22 +14,12 @@ COPY src/ ./src/
 RUN pip install --prefix=/install --no-cache-dir ".[dev]" \
     && pip install --prefix=/install --no-cache-dir -e . --no-deps
 
-# ── Stage 2: AsyncAPI HTML builder ────────────────────────────────────────────
-FROM node:20-slim AS async-docs-builder
-
-WORKDIR /docs
-
-COPY contracts/asyncapi.yaml ./asyncapi.yaml
-
-# Generate static HTML from AsyncAPI spec (optional — served when SHERLOCK_ASYNC_DOCS_ENABLED=true)
-# Falls back to an empty directory if template install or generation fails.
-# @asyncapi/html-template@2.x requires generator >=1.15.0 <2.0.0 (matches bundled 1.17.25)
-RUN mkdir -p /async-docs-build && \
-    (npx --yes @asyncapi/cli generate fromTemplate asyncapi.yaml \
-        @asyncapi/html-template@2 -o /async-docs-build --force-write --no-interactive \
-        || echo "AsyncAPI docs generation skipped")
-
-# ── Stage 3: runtime ──────────────────────────────────────────────────────────
+# ── Stage 2: runtime ──────────────────────────────────────────────────────────
+# AsyncAPI HTML docs are NOT generated at build time — the npx download adds 10+ minutes
+# to every CI build for an optional feature. The service falls back to a 404 JSON when
+# /app/async-docs does not exist (see main.py lifespan). To serve the docs locally,
+# run: npx @asyncapi/cli generate fromTemplate contracts/asyncapi.yaml
+#          @asyncapi/html-template@2 -o async-docs --force-write --no-interactive
 FROM python:3.13-slim
 
 # Non-root user (constitution VIII — security by default)
@@ -40,9 +30,6 @@ WORKDIR /app
 
 COPY --from=builder --chown=sherlock:sherlock /install /usr/local
 COPY --from=builder --chown=sherlock:sherlock /build/src ./src
-
-# Copy AsyncAPI HTML docs (served at /async-docs when SHERLOCK_ASYNC_DOCS_ENABLED=true)
-COPY --from=async-docs-builder --chown=sherlock:sherlock /async-docs-build ./async-docs
 
 EXPOSE 8000
 
