@@ -49,6 +49,11 @@ dependencies = [
     "sse-starlette>=2.1",
     "tiktoken>=0.7",
 
+    # RAG
+    "minio>=7.2",
+    "pypdf>=4.0",
+    "python-docx>=1.1",
+
     # Dev helpers (mounted only when SHERLOCK_DEV_MODE=true)
     "faker>=28.0",
 ]
@@ -92,3 +97,7 @@ plugins = ["pydantic.mypy"]
 [[tool.mypy.overrides]]
 module = ["sherlock.pulsar_handler"]
 disable_error_code = ["union-attr"]
+
+[[tool.mypy.overrides]]
+module = ["sherlock.rag.adapters.minio"]
+ignore_missing_imports = true
