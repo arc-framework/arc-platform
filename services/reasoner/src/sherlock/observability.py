@@ -160,6 +160,7 @@ def configure_logging() -> None:
     # Quiet noisy library loggers that add no signal.
     logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
 
     structlog.configure(
         processors=[
