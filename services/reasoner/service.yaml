@@ -2,8 +2,8 @@ name: arc-sherlock
 role: reasoner
 codename: sherlock
 image: ghcr.io/arc-framework/arc-sherlock:latest
-version: "0.2.0"
-description: "LangGraph reasoning engine with pgvector memory and NATS integration"
+version: "0.3.0"
+description: "LangGraph reasoning engine with pgvector memory, NATS integration, and RAG knowledge base"
 language: python
 port: 8083
 health: http://localhost:8083/health
@@ -19,3 +19,4 @@ depends_on:
   - messaging        # arc-messaging (NATS — real-time request-reply)
   - streaming        # arc-streaming (Pulsar — durable async, optional)
   - friday-collector # arc-friday-collector (OTEL)
+  - storage          # arc-storage (MinIO — RAG file storage)

@@ -104,6 +104,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+          cache: 'pip'
+          cache-dependency-path: services/reasoner/pyproject.toml
       - name: Install dependencies
         run: cd services/reasoner && pip install ".[dev]"
       - name: Run mypy
@@ -120,6 +122,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+          cache: 'pip'
+          cache-dependency-path: services/reasoner/pyproject.toml
       - name: Install dependencies
         run: cd services/reasoner && pip install ".[dev]"
       - name: Run tests
