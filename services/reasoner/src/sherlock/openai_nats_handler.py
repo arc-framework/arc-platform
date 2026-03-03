@@ -115,7 +115,9 @@ class OpenAINATSHandler:
                 model=model,
                 choices=[
                     Choice(
-                        message=ChatMessage(role="assistant", content="Error: internal server error"),
+                        message=ChatMessage(
+                            role="assistant", content="Error: internal server error"
+                        ),
                         finish_reason=None,
                     )
                 ],
