@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import time
 from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -82,6 +83,40 @@ class AppState:
     openai_nats: OpenAINATSHandler | None = field(default=None)
     model_registry: StaticModelRegistry | None = field(default=None)
     rag: RAGInfra | None = field(default=None)
+
+
+# ─── Background health probe ──────────────────────────────────────────────────
+
+async def _health_probe_loop(
+    memory: SherlockMemory,
+    nats: NATSHandler,
+    rag: RAGInfra | None,
+    interval_s: int = 30,
+) -> None:
+    """Probe all dependencies on a timer and log the result.
+
+    Mirrors Cortex's RunDeepHealth pattern — health is visible in logs even
+    when no HTTP request hits /health/deep.
+    """
+    _probe_log = structlog.get_logger("sherlock.health_probe")
+    while True:
+        await asyncio.sleep(interval_s)
+        try:
+            dep_health = await memory.health_check()
+            components: dict[str, bool] = {
+                "postgres": dep_health.get("postgres", False),
+                "nats": nats.is_connected(),
+            }
+            if rag is not None:
+                minio_health = await rag.file_store.health_check()
+                components["minio"] = minio_health.get("minio", False)
+            all_ok = all(components.values())
+            if all_ok:
+                _probe_log.info("health_probe.ok", **components)
+            else:
+                _probe_log.warning("health_probe.degraded", **components)
+        except Exception as exc:
+            _probe_log.error("health_probe.error", error=str(exc))
 
 
 # ─── Lifespan ─────────────────────────────────────────────────────────────────
@@ -190,11 +225,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         rag=rag_infra,
     )
 
+    probe_task = asyncio.create_task(
+        _health_probe_loop(memory, nats_handler, rag_infra)
+    )
+
     log.info("ready", port=8000)
     yield
 
     # ── Shutdown ──
     log.info("shutting_down")
+    probe_task.cancel()
+    with suppress(asyncio.CancelledError):
+        await probe_task
     await nats_handler.close()
     if pulsar_handler is not None:
         await pulsar_handler.close()

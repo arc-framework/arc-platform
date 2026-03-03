@@ -37,8 +37,8 @@ services:
       OTEL_LOG_LEVEL: "warn"
       # LM Studio runs on the host — host.docker.internal resolves to the Mac from inside the container
       SHERLOCK_LLM_BASE_URL: "http://host.docker.internal:1234/v1"
-      # RAG (feature 013) — disabled by default; enable in reason profile
-      SHERLOCK_RAG_ENABLED: "false"
+      # RAG (feature 013) — enabled by default; requires arc-storage (MinIO)
+      SHERLOCK_RAG_ENABLED: "true"
       SHERLOCK_MINIO_ENDPOINT: "arc-storage:9000"
       SHERLOCK_MINIO_ACCESS_KEY: "arc"
       SHERLOCK_MINIO_SECRET_KEY: "arc-minio-dev"
