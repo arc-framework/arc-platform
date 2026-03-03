@@ -3,10 +3,10 @@ name: CodeQL
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
   schedule:
     - cron: '30 1 * * 1'   # Monday 01:30 UTC
+  # pull_request trigger removed — CodeQL is slow (~5 min) and runs on schedule.
+  # Re-enable before merging a security-sensitive branch.
 
 permissions:
   contents: read
