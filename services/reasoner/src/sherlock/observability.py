@@ -34,9 +34,10 @@ _LEVEL_TO_SEVERITY: dict[int, SeverityNumber] = {
 }
 
 # Fields that are structlog/OTEL meta — not emitted as log attributes.
+# _record is injected by ProcessorFormatter.format() into record.msg in-place.
 _STRUCTLOG_META = frozenset({
     "event", "level", "timestamp", "logger",
-    "_logger", "_name", "trace_id", "span_id",
+    "_logger", "_name", "_record", "trace_id", "span_id",
 })
 
 
@@ -64,12 +65,14 @@ def _inject_trace_context(
 class _OTELStructlogHandler(logging.Handler):
     """Structlog-aware OTEL log bridge.
 
-    structlog's ProcessorFormatter serialises the event_dict to a JSON string
-    and mutates record.msg before any handler runs — so the SDK's LoggingHandler
-    would ship the whole blob as body with no structured attributes.
+    structlog stores the event_dict as a Python dict in record.msg — ProcessorFormatter
+    reads it and returns JSON, but does not replace record.msg. So record.getMessage()
+    returns str(dict) which is Python repr (single quotes), not JSON.
 
-    This handler parses that JSON back so that:
-      • body       = the event string  (e.g. "http_request", "exception")
+    This handler reads record.msg directly when it's a dict (structlog path), or
+    falls back to JSON-parsing record.getMessage() for pre-formatted records.
+
+      • body       = the "event" string (human-readable message)
       • attributes = remaining kv pairs (method, path, status, latency_ms, …)
 
     Falls back gracefully for non-structlog records (uvicorn, sqlalchemy, …).
@@ -83,7 +86,9 @@ class _OTELStructlogHandler(logging.Handler):
         try:
             raw = record.getMessage()
             try:
-                event_dict = _json.loads(raw)
+                # Structlog stores event_dict as a dict in record.msg; getMessage()
+                # returns str(dict) — Python repr with single quotes, not JSON.
+                event_dict = record.msg if isinstance(record.msg, dict) else _json.loads(raw)
                 body = str(event_dict.get("event", raw))
                 attrs: dict[str, Any] = {}
                 for k, v in event_dict.items():
