@@ -9,7 +9,7 @@ port: 8083
 health: http://localhost:8083/health
 timeout: 180        # sentence-transformers model download on first cold start
 healthcheck:
-  test: "wget -qO- http://localhost:8000/health || exit 1"
+  test: "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""
   interval: 15s
   timeout: 5s
   retries: 5

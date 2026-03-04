@@ -119,10 +119,11 @@ _parse_one() {
     next
   }
 
-  # timeout: <value>
-  /^[[:space:]]*timeout:[[:space:]]/ {
+  # timeout: <value>  — top-level only (no leading whitespace) so that
+  # indented healthcheck.timeout fields are not mistakenly captured.
+  /^timeout:[[:space:]]/ {
     val = $0
-    sub(/^[[:space:]]*timeout:[[:space:]]*/, "", val)
+    sub(/^timeout:[[:space:]]*/, "", val)
     sub(/#.*$/, "", val)
     timeout = trim(val)
     in_deps = 0

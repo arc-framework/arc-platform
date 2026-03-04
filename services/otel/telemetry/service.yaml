@@ -5,6 +5,6 @@ upstream: signoz/signoz-otel-collector
 ports:
   - 4317   # OTLP gRPC
   - 4318   # OTLP HTTP
-health: http://localhost:13133/
+health: docker inspect --format={{.State.Health.Status}} arc-friday-collector | grep -q healthy
 depends_on: []
-timeout: 60
+timeout: 120

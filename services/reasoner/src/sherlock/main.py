@@ -199,7 +199,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     app.include_router(build_openai_router(model_registry, streaming_adapter), prefix="/v1")
     app.include_router(build_models_router(model_registry), prefix="/v1")
-    if rag_infra is not None:
+    if settings.rag_enabled:
         app.include_router(build_files_router(), prefix="/v1")
         app.include_router(build_vector_stores_router(), prefix="/v1")
         app.include_router(embeddings_router, prefix="/v1")

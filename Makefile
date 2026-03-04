@@ -134,13 +134,20 @@ dev-up: .make/profiles.mk .make/registry.mk
 	 done
 
 dev-wait: .make/profiles.mk .make/registry.mk
-	@for svc in $$(scripts/lib/profile-services.sh $(PROFILE)); do \
+	@pids=""; \
+	 for svc in $$(scripts/lib/profile-services.sh $(PROFILE)); do \
 	   varname="$$(echo $$svc | tr '-' '_')"; \
 	   health="$$(grep "^SERVICE_$${varname}_HEALTH" .make/registry.mk | sed 's/.*:=[[:space:]]*//')"; \
 	   timeout="$$(grep "^SERVICE_$${varname}_TIMEOUT" .make/registry.mk | sed 's/.*:=[[:space:]]*//')"; \
 	   [ -z "$$timeout" ] && timeout=120; \
-	   scripts/lib/wait-for-health.sh "$$svc" "$$health" "$$timeout"; \
-	 done
+	   scripts/lib/wait-for-health.sh "$$svc" "$$health" "$$timeout" & \
+	   pids="$$pids $$!"; \
+	 done; \
+	 failed=0; \
+	 for pid in $$pids; do \
+	   wait $$pid || failed=$$((failed+1)); \
+	 done; \
+	 [ "$$failed" -eq 0 ] || exit 1
 
 ## dev-down: Stop all services in $(PROFILE) profile
 dev-down: .make/profiles.mk .make/registry.mk
