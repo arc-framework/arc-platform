@@ -163,14 +163,26 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     rag_infra: RAGInfra | None = None
     rag_nats_handler: RAGNATSHandler | None = None
     if settings.rag_enabled:
-        rag_infra = await build_rag_infra(settings, memory._engine, memory._encoder)
-        log.info("rag_enabled", bucket=settings.minio_bucket)
-        if settings.nats_enabled:
-            rag_nats_handler = RAGNATSHandler(rag_infra, graph, memory, settings)
-            await rag_nats_handler.connect()
-            await rag_nats_handler.subscribe()
+        try:
+            rag_infra = await build_rag_infra(settings, memory._engine, memory._encoder)
+        except Exception:
+            log.warning(
+                "rag.startup.failed",
+                reason="Unexpected error during RAG initialisation — running without RAG",
+                exc_info=True,
+            )
+        if rag_infra is not None:
+            if settings.nats_enabled:
+                rag_nats_handler = RAGNATSHandler(rag_infra, graph, memory, settings)
+                await rag_nats_handler.connect()
+                await rag_nats_handler.subscribe()
+        else:
+            log.warning(
+                "rag.disabled",
+                reason="RAG was requested (SHERLOCK_RAG_ENABLED=true) but dependencies are unavailable — all /v1/files, /v1/vector_stores, /v1/embeddings routes will return 503",
+            )
     else:
-        log.info("rag_enabled", rag_enabled=False)
+        log.info("rag.disabled", rag_enabled=False)
 
     # StaticModelRegistry — registered model for /v1/models
     model_registry = StaticModelRegistry(settings)

@@ -11,6 +11,7 @@ import asyncio
 import io
 
 import structlog
+import urllib3
 from minio import Minio
 from minio.error import S3Error
 
@@ -28,11 +29,18 @@ class MinioFileStore:
 
     def __init__(self, settings: Settings) -> None:
         self._bucket = settings.minio_bucket
+        # Short connect timeout + no urllib3 retries so health checks fail fast
+        # when arc-storage is not in the active profile (e.g. think profile).
+        _http = urllib3.PoolManager(
+            timeout=urllib3.Timeout(connect=2.0, read=10.0),
+            retries=urllib3.Retry(total=0),
+        )
         self._client = Minio(
             settings.minio_endpoint,
             access_key=settings.minio_access_key.get_secret_value(),
             secret_key=settings.minio_secret_key.get_secret_value(),
             secure=settings.minio_secure,
+            http_client=_http,
         )
 
     # ─── Bucket helpers (sync — called inside to_thread) ──────────────────────
@@ -62,7 +70,7 @@ class MinioFileStore:
             raise MinioUnavailableError(
                 f"MinIO upload failed for key={key!r}: {exc}"
             ) from exc
-        except OSError as exc:
+        except Exception as exc:
             raise MinioUnavailableError(
                 f"MinIO unreachable during upload (key={key!r}): {exc}"
             ) from exc
@@ -85,7 +93,7 @@ class MinioFileStore:
             raise MinioUnavailableError(
                 f"MinIO download failed for key={key!r}: {exc}"
             ) from exc
-        except OSError as exc:
+        except Exception as exc:
             raise MinioUnavailableError(
                 f"MinIO unreachable during download (key={key!r}): {exc}"
             ) from exc
@@ -105,7 +113,7 @@ class MinioFileStore:
             raise MinioUnavailableError(
                 f"MinIO delete failed for key={key!r}: {exc}"
             ) from exc
-        except OSError as exc:
+        except Exception as exc:
             raise MinioUnavailableError(
                 f"MinIO unreachable during delete (key={key!r}): {exc}"
             ) from exc
@@ -121,5 +129,5 @@ class MinioFileStore:
         try:
             ok: bool = await asyncio.to_thread(_sync)
             return {"minio": ok}
-        except (S3Error, OSError):
+        except Exception:
             return {"minio": False}

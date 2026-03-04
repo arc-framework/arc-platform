@@ -5,6 +5,7 @@ All routes return 503 when RAG is not enabled (state.rag is None).
 """
 from __future__ import annotations
 
+import mimetypes
 import os
 import uuid
 from collections.abc import AsyncGenerator
@@ -28,18 +29,18 @@ _uploads_counter = _meter.create_counter(
 )
 
 _INSERT_FILE_SQL = """\
-INSERT INTO sherlock.knowledge_files (id, filename, content_type, bytes, minio_key, status)
-VALUES (:id, :filename, :content_type, :bytes, :minio_key, 'uploaded')
+INSERT INTO sherlock.knowledge_files (id, filename, purpose, bytes, minio_key, status)
+VALUES (:id, :filename, :purpose, :bytes, :minio_key, 'uploaded')
 """
 
 _SELECT_ALL_SQL = """\
-SELECT id, filename, content_type, bytes, minio_key, status, created_at
+SELECT id, filename, purpose, bytes, minio_key, status, created_at
 FROM sherlock.knowledge_files
 ORDER BY created_at DESC
 """
 
 _SELECT_ONE_SQL = """\
-SELECT id, filename, content_type, bytes, minio_key, status, created_at
+SELECT id, filename, purpose, bytes, minio_key, status, created_at
 FROM sherlock.knowledge_files
 WHERE id = :id
 """
@@ -62,7 +63,7 @@ def _file_object(row: Any) -> dict[str, Any]:
         "filename": row.filename,
         "bytes": row.bytes,
         "created_at": int(row.created_at.timestamp()),
-        "purpose": "assistants",
+        "purpose": row.purpose,
         "status": row.status,
     }
 
@@ -112,10 +113,10 @@ def build_files_router() -> APIRouter:
 
         # Generate file ID and upload to MinIO
         file_id = f"file-{uuid.uuid4()}"
-        content_type = file.content_type or "application/octet-stream"
+        mime_type = file.content_type or mimetypes.guess_type(filename)[0] or "application/octet-stream"
 
         try:
-            await rag.file_store.upload(file_id, data, content_type)
+            await rag.file_store.upload(file_id, data, mime_type)
         except MinioUnavailableError as exc:
             _log.error(
                 "files.upload.minio_error",
@@ -132,7 +133,7 @@ def build_files_router() -> APIRouter:
                 {
                     "id": file_id,
                     "filename": filename,
-                    "content_type": content_type,
+                    "purpose": "assistants",
                     "bytes": len(data),
                     "minio_key": file_id,
                 },
@@ -271,7 +272,7 @@ def build_files_router() -> APIRouter:
             )
             return JSONResponse({"error": "Storage unavailable"}, status_code=503)
 
-        content_type: str = row.content_type or "application/octet-stream"
+        content_type: str = mimetypes.guess_type(row.filename)[0] or "application/octet-stream"
 
         async def _stream() -> AsyncGenerator[bytes]:
             yield data

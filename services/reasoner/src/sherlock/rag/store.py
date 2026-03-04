@@ -35,8 +35,13 @@ async def build_rag_infra(
     settings: Settings,
     engine: AsyncEngine,
     encoder: SentenceTransformer,
-) -> RAGInfra:
-    """Wire all RAG adapters and application services."""
+) -> RAGInfra | None:
+    """Wire all RAG adapters and application services.
+
+    Returns None (and logs a warning) when MinIO is unreachable at startup so
+    the service can continue in degraded mode — all RAG routes will return 503
+    until the storage dependency becomes healthy and the service is restarted.
+    """
     file_store = MinioFileStore(settings)
     vector_store = PgVectorStore(engine)
     embedder = EmbedderAdapter(encoder)
@@ -59,11 +64,20 @@ async def build_rag_infra(
         reranker=reranker,
     )
 
-    # Verify schema and MinIO connectivity at startup
     await vector_store.init_schema()
-    health = await file_store.health_check()
-    _log.info("rag.startup", minio_healthy=health.get("minio", False))
 
+    health = await file_store.health_check()
+    minio_ok = health.get("minio", False)
+    if not minio_ok:
+        _log.warning(
+            "rag.startup.degraded",
+            reason="MinIO (arc-storage) unreachable",
+            endpoint=settings.minio_endpoint,
+            hint="Start arc-storage with 'make dev PROFILE=reason' or set SHERLOCK_RAG_ENABLED=false",
+        )
+        return None
+
+    _log.info("rag.startup.ok", bucket=settings.minio_bucket)
     return RAGInfra(
         file_store=file_store,
         vector_store=vector_store,
