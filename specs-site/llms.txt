@@ -84,3 +84,10 @@
 - [Tasks: Sherlock Universal RAG API](/arc-platform/specs-site/013-sherlock-rag-api/tasks.md)
 - [Analysis Report: 013-Sherlock-RAG-API](/arc-platform/specs-site/013-sherlock-rag-api/analysis-report.md)
 
+### 014 — Decouple Service Codenames
+
+- [Feature: decouple-service-codenames](/arc-platform/specs-site/014-decouple-service-codenames/spec.md)
+- [Implementation Plan: decouple-service-codenames](/arc-platform/specs-site/014-decouple-service-codenames/plan.md)
+- [Tasks: decouple-service-codenames](/arc-platform/specs-site/014-decouple-service-codenames/tasks.md)
+- [Analysis Report: 014-decouple-service-codenames](/arc-platform/specs-site/014-decouple-service-codenames/analysis-report.md)
+

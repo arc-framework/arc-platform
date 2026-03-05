@@ -3475,6 +3475,76 @@ Sampling verification (10 user stories):
 ---
 
 ---
+url: /arc-platform/specs-site/014-decouple-service-codenames/analysis-report.md
+---
+# Analysis Report: 014-decouple-service-codenames
+
+> **Date**: 2026-03-05
+> **Stage**: Pre-implementation
+> **Result**: CLEARED — all blockers resolved
+
+## Coverage Matrix
+
+| Req | Plan Section | Task | Acceptance |
+|-----|-------------|------|-----------|
+| FR-1 | Track A1 | TASK-010 | ✓ |
+| FR-2 | Track A2 | TASK-020 | ✓ |
+| FR-3 | Track A3 | TASK-021 | ✓ |
+| FR-4 | Track A3 | TASK-021 | ✓ |
+| FR-5 | Track C | TASK-027 | ✓ |
+| FR-6 | Track D | TASK-028 | ✓ |
+| FR-7 | Track B1 | TASK-025 | ✓ |
+| FR-8 | Track B2-B4 | TASK-026 | ✓ |
+| FR-9 | Track A4 | TASK-022 | ✓ |
+| FR-10 | Track E | TASK-023 | ✓ |
+| FR-11 | Track E | TASK-024 | ✓ |
+| FR-12 | Track F | TASK-029 | ✓ (includes profiles.yaml alias) |
+| FR-13 | Track G | TASK-031 | ✓ |
+
+## Gaps Resolved
+
+| Gap | Fix Applied |
+|-----|-------------|
+| TASK-040 referenced non-existent TASK-030 | Replaced with TASK-029 + TASK-031 |
+| SC-2 path pointed to old `src/sherlock/` | Updated to `src/reasoner/` |
+| profiles.yaml `sql-db` alias not in TASK-029 scope | Added to module list + acceptance criteria |
+| Stale migration-window mermaid diagram in spec | Removed |
+| Stale FR-11 (migration window requirement) | Removed — no external consumers confirmed |
+| Stale NFR-1 (zero-downtime NATS migration) | Removed — renaming directly |
+| Stale SC-6 (old subject integration test) | Replaced with `sql-db` profile alias check |
+| Stale edge case (old sherlock.\* NATS) | Removed |
+| Stale constitution note (XI Resilience → migration window) | Updated to reflect container rename atomicity |
+| TASK-999 reviewer checklist referenced dropped features | Cleaned up |
+
+## Risks (remaining)
+
+| Risk | Severity | Mitigation |
+|------|----------|-----------|
+| `ultra-instinct` profile uses `services: '*'` — picks up all services | Low | Confirms vector removal is safe; `'*'` will not include deleted directory |
+| SDK pinned to `arc-sherlock` package name | Low | Documented out-of-scope; SDK must bump independently |
+| Partial import rename missed in RAG sub-modules | Medium | SC-1 grep + mypy catches at TASK-040 |
+
+## Parallel Opportunities
+
+All tasks correctly marked `[P]`. No unparallelized opportunities identified.
+
+TASK-001 (audit) has no dependencies and could run in parallel with Phase 2 start, but it is correctly placed as a gate — its output affects all subsequent task scope.
+
+## Constitution Compliance
+
+| Principle | Status | Evidence |
+|-----------|--------|----------|
+| II. Platform-in-a-Box | PASS | `arc run --profile think` zero env overrides verified by SC-4 + SC-13 |
+| III. Modular Services | PASS | Rename is internal per service; no inter-service coupling introduced |
+| IV. Two-Brain | PASS | Python tracks (A-E) and Go tracks (B, F) never cross |
+| V. Polyglot Standards | PASS | ruff + mypy + golangci-lint required in TASK-040 |
+| VII. Observability | PASS | OTEL service name updated to `arc-reasoner`; metric namespace updated |
+| VIII. Security | PASS | Non-root user unchanged; no secrets involved |
+| XI. Resilience | PASS | Container rename + profile alias update applied atomically across all consumers |
+
+---
+
+---
 url: /arc-platform/specs-site/009-sherlock-reasoning/analysis-report.md
 ---
 # Analysis Report: Sherlock Reasoning Service (Re-Audit Post-Fixes)
@@ -4662,6 +4732,212 @@ graph LR
 | X. Stateful Ops | \[ ] | n/a | CLI-only principle |
 | XI. Resilience | \[x] | \[x] | Health checks with start\_periods; named volumes survive container restart |
 | XII. Interactive | \[ ] | n/a | CLI-only principle |
+
+---
+
+---
+url: /arc-platform/specs-site/014-decouple-service-codenames/spec.md
+---
+# Feature: decouple-service-codenames
+
+> **Spec**: 014-decouple-service-codenames
+> **Date**: 2026-03-05
+> **Status**: Draft
+
+## Target Modules
+
+| Module | Path | Impact |
+|--------|------|--------|
+| Services — reasoner | `services/reasoner/` | High — Python package rename + NATS subjects + Pulsar topics + DB schema + stale vector-db refs |
+| Services — cortex | `services/cortex/` | Medium — Go config hostname defaults |
+| Services — persistence | `services/persistence/` | Medium — container rename `arc-sql-db` → `arc-persistence` |
+| Services — vector | `services/vector/` | High — remove dead Qdrant service entirely (replaced by pgvector) |
+| Services — flags | `services/flags/` | Low — DATABASE\_URL hostname update |
+| Services — otel | `services/otel/` | Low — OTEL collector endpoint hostname update |
+| Services — data.mk | `services/data.mk` | Low — remove vector-db targets, update sql-db refs |
+| Contracts | `services/reasoner/contracts/asyncapi.yaml` | Medium — subject definitions updated |
+| SDK | `sdk/python/` | Low — verify no import of `sherlock` package |
+| Docs | `docs/` | Low — verify no hardcoded codenames in code samples |
+
+## Overview
+
+Codenames (Sherlock, Flash, Sonic, Oracle, etc.) are a team fun-factor — they must never be coupled into source code, wire protocols, or config defaults. Currently they leak into four coupling tiers: Python module paths, NATS/Pulsar wire subjects, Postgres schema names, and Go config hostname defaults. This spec defines a clean boundary: codenames stay in `service.yaml` metadata and CLI display; everywhere else uses the functional service role name.
+
+This spec also removes the dead Qdrant service (`services/vector/` — codename Cerebro) which was replaced by pgvector inside the existing Postgres service. The reasoner already uses pgvector exclusively; Qdrant has zero code consumers. Removing it eliminates dead infrastructure and confusion. Simultaneously, the Postgres container is renamed from the artifact name `arc-sql-db` to the functional name `arc-persistence` for consistency.
+
+## Architecture
+
+```mermaid
+graph TD
+    subgraph "Before — Coupled"
+        A1[from sherlock.xxx import] --> A2[sherlock.v1.chat NATS]
+        A2 --> A3[sherlock.vector_stores schema]
+        A3 --> A4[arc-oracle / arc-flash / arc-sonic hosts]
+    end
+
+    subgraph "After — Decoupled"
+        B1[from reasoner.xxx import] --> B2[reasoner.v1.chat NATS]
+        B2 --> B3[reasoner.vector_stores schema]
+        B3 --> B4[arc-persistence / arc-messaging / arc-cache hosts]
+    end
+
+    subgraph "Stable — codename lives here only"
+        C1[service.yaml codename: sherlock]
+        C2[CLI display: Sherlock ✓]
+    end
+```
+
+## User Scenarios & Testing
+
+### P1 — Must Have
+
+**US-1**: As a platform developer, I want all internal Python imports to use `reasoner` as the package name so that the codebase has no coupling to the codename.
+
+* **Given**: The reasoner service is running
+* **When**: I inspect any `import` or `from ... import` in `services/reasoner/src/`
+* **Then**: No statement references `sherlock` as a module path
+* **Test**: `grep -r "from sherlock" services/reasoner/src/` returns zero results
+
+**US-2**: As an agent or SDK consumer, I want NATS subjects to use the functional role name so that my subscription does not break when codenames change.
+
+* **Given**: A NATS-connected client subscribing to `reasoner.v1.chat`
+* **When**: I publish a `ChatCompletionRequest` to `reasoner.v1.chat`
+* **Then**: Reasoner processes the request and responds to the reply inbox
+* **Test**: Integration test publishes to `reasoner.v1.chat`, asserts response within 5s
+
+**US-3**: As a platform operator, I want Cortex to use functional hostnames in its defaults so that config works without overrides after docker-compose container renames.
+
+* **Given**: Default Cortex config (no env overrides)
+* **When**: Cortex performs health probes for Postgres, NATS, and Redis
+* **Then**: Probes use `arc-persistence`, `arc-messaging`, `arc-cache` as hostnames
+* **Test**: `arc run --profile think` passes all health checks with zero env overrides
+
+**US-4**: As a platform developer, I want the Postgres schema to use `reasoner` instead of `sherlock` so that DB introspection matches the service role.
+
+* **Given**: Fresh DB migration
+* **When**: I inspect `\dn` in PostgreSQL
+* **Then**: Schema is named `reasoner`, not `sherlock`
+* **Test**: Migration test creates schema, verifies `reasoner.vector_stores` exists
+
+### P2 — Should Have
+
+**US-5**: As a consumer of the existing `sherlock.*` NATS subjects, I want a migration window so that I can update my subscribers without downtime.
+
+* **Given**: Old client subscribing to `sherlock.v1.chat`
+* **When**: Reasoner has both old and new subjects active (migration release)
+* **Then**: Old subjects still work, response includes deprecation header or log warning
+* **Test**: Publish to `sherlock.v1.chat` → receives valid response + deprecation log emitted
+
+**US-6**: As a platform developer, I want OTEL metric and tracer names to use `arc-reasoner` so that dashboards reflect the service role.
+
+* **Given**: Reasoner emitting OTEL metrics
+* **When**: I query SigNoz for service `arc-reasoner`
+* **Then**: All metrics and traces appear under `arc-reasoner`
+* **Test**: Check `service_name` label in metric output
+
+### P3 — Nice to Have
+
+**US-7**: As a developer reading the codebase, I want `pyproject.toml` package metadata to reflect `arc-reasoner` so that package introspection is consistent.
+
+* **Given**: Reasoner package installed in dev container
+* **When**: `pip show arc-reasoner`
+* **Then**: Package name is `arc-reasoner`, not `arc-sherlock`
+* **Test**: `pip show` output check in CI
+
+## Requirements
+
+### Functional
+
+* \[ ] FR-1: Rename Python package directory `services/reasoner/src/sherlock/` → `services/reasoner/src/reasoner/`
+* \[ ] FR-2: Update all internal imports from `from sherlock.xxx` → `from reasoner.xxx` (all files in the package)
+* \[ ] FR-3: Update `services/reasoner/src/sherlock/config.py` NATS subjects: `sherlock.*` → `reasoner.*`
+* \[ ] FR-4: Update `services/reasoner/src/sherlock/config.py` Pulsar topics: `sherlock-*` → `reasoner-*`
+* \[ ] FR-5: Update `services/reasoner/contracts/asyncapi.yaml` channel and operation names to use `reasoner.*`
+* \[ ] FR-6: Write SQL migration: rename Postgres schema `sherlock` → `reasoner` (affecting `vector_stores` table)
+* \[ ] FR-7: Update Cortex Go config defaults: `arc-oracle` → `arc-persistence`, `nats://arc-flash:4222` → `nats://arc-messaging:4222`, `arc-sonic` → `arc-cache`
+* \[ ] FR-8: Update Cortex probe names in Go clients to match new hostnames
+* \[ ] FR-9: Update OTEL service name and meter name from `arc-sherlock` → `arc-reasoner`
+* \[ ] FR-10: Update `pyproject.toml` package name from `arc-sherlock` → `arc-reasoner`
+* \[ ] FR-12: Update `Dockerfile` entrypoints/CMD that reference the `sherlock` module name
+* \[ ] FR-13: Rename container `arc-sql-db` → `arc-persistence` in all docker-compose files, service.yaml, config files, and make targets that reference it by DNS hostname
+* \[ ] FR-14: Remove `services/vector/` (Qdrant/Cerebro) entirely — directory, docker-compose, service.yaml, make targets, and all references from other services — confirmed zero code consumers
+
+### Non-Functional
+
+* \[ ] NFR-1: All existing tests pass after rename (ruff, mypy, pytest, golangci-lint)
+* \[ ] NFR-2: No codename string shall appear in any `import`, subject definition, schema name, hostname default, or metric label after this change
+* \[ ] NFR-3: DB migration is idempotent — safe to re-run on already-migrated schema
+* \[ ] NFR-4: `arc run --profile think` health checks pass without any env variable overrides
+* \[ ] NFR-5: No running container, volume, DNS hostname, or profile alias uses `arc-sql-db`, `sql-db`, or `arc-vector-db` after this change
+* \[ ] NFR-6: Removing `services/vector/` does not break any profile — confirmed vector was not included in any profile
+
+### Key Entities
+
+| Entity | Module | Description |
+|--------|--------|-------------|
+| `reasoner` Python package | `services/reasoner/src/reasoner/` | Renamed package; all internal logic unchanged |
+| NATS subjects `reasoner.*` | wire protocol | New functional subject namespace |
+| `reasoner.vector_stores` schema | Postgres | Renamed from `sherlock.vector_stores` |
+| Cortex hostname defaults | `services/cortex/internal/config/` | Updated to functional container DNS names |
+| `arc-reasoner` OTEL identity | observability | Service name used in metrics/traces |
+| `arc-persistence` container | `services/persistence/` | Renamed from `arc-sql-db`; all consumer configs updated |
+| ~~`services/vector/`~~ | removed | Dead Qdrant service deleted; pgvector in Postgres is the vector backend |
+
+## Edge Cases
+
+| Scenario | Expected Behavior |
+|----------|-------------------|
+| DB migration run on schema that is already `reasoner` | Migration detects existing schema, exits cleanly (idempotent) |
+| Cortex starts with `POSTGRES_HOST=arc-oracle` env override | Old env override still works — env overrides config defaults |
+| Partially renamed package (some imports old, some new) | CI ruff/mypy catches unresolved imports; blocks merge |
+| `pyproject.toml` rename breaks pinned SDK dependency | SDK must bump package ref; noted as explicit dependency in plan |
+| Pulsar disabled but topic names in config are old | Config rename is safe — disabled handler never publishes |
+| `services/vector/` removal breaks a profile | Qdrant is confirmed absent from all profiles (`think`, `reason`, `ultra-instinct`) — verified in `profiles.yaml` |
+| `arc-sql-db` rename breaks a service not in scope | `data.mk`, `flags`, `otel` are all in scope; `profiles.yaml` uses role alias `sql-db` which maps to the service — must verify alias is updated too |
+
+## Success Criteria
+
+* \[ ] SC-1: `grep -r "from sherlock" services/reasoner/src/` returns zero results
+* \[ ] SC-2: `grep -r "sherlock\." services/reasoner/src/reasoner/config.py` returns zero results (NATS subjects / Pulsar topics)
+* \[ ] SC-3: `\dn` in Postgres shows `reasoner` schema, not `sherlock`
+* \[ ] SC-4: `arc run --profile think` health check passes with zero env overrides on a clean deploy
+* \[ ] SC-5: Integration test: publish to `reasoner.v1.chat` → receives valid ChatCompletionResponse
+* \[ ] SC-6: `grep "sql-db" services/profiles.yaml` returns zero results
+* \[ ] SC-7: `ruff check services/reasoner/src/` passes with zero errors
+* \[ ] SC-8: `mypy services/reasoner/src/` passes with zero errors
+* \[ ] SC-9: `golangci-lint run services/cortex/` passes with zero errors
+* \[ ] SC-10: SigNoz shows service name `arc-reasoner` in trace list (not `arc-sherlock`)
+* \[ ] SC-11: `grep -r "arc-sql-db" services/` returns zero results (excluding git history)
+* \[ ] SC-12: `services/vector/` directory does not exist
+* \[ ] SC-13: `arc run --profile think` starts successfully with `arc-persistence` as the Postgres container
+
+## Docs & Links Update
+
+* \[ ] Update `CLAUDE.md` service codename table entry for reasoner: confirm `dir: reasoner` (already correct), no source path references
+* \[ ] Update `docs/` any code samples or config snippets using `sherlock.*` subjects or `from sherlock` imports
+* \[ ] Update `.specify/config.yaml` if any `test_command` or `lint_command` references old package path
+* \[ ] Update `CODENAME-DECOUPLING.md` (root) status to "implemented" after merge
+* \[ ] Verify `services/reasoner/contracts/asyncapi.yaml` links referenced in docs are still valid after subject rename
+* \[ ] Update `CLAUDE.md` service codename table — remove Cerebro/Qdrant row, update persistence row to reflect `arc-persistence`
+* \[ ] Update `NERVOUS-SYSTEM.md` (root) — remove stale Cerebro/Qdrant references
+* \[ ] Update `services/data.mk` — remove `vector-db-*` targets, rename `sql-db-*` targets to `persistence-*`
+
+## Constitution Compliance
+
+| Principle | Applies | Compliant | Notes |
+|-----------|---------|-----------|-------|
+| I. Zero-Dep CLI | \[ ] | — | Not applicable — no CLI changes |
+| II. Platform-in-a-Box | \[x] | \[x] | `arc run --profile think` must still work with zero config after hostname default fixes |
+| III. Modular Services | \[x] | \[x] | Each service remains self-contained; rename is internal |
+| IV. Two-Brain Separation | \[x] | \[x] | Python package rename stays in Python brain; Go config fixes stay in Go brain |
+| V. Polyglot Standards | \[x] | \[x] | ruff + mypy (Python), golangci-lint (Go) must pass post-rename |
+| VI. Local-First | \[ ] | — | Not applicable |
+| VII. Observability | \[x] | \[x] | OTEL service name updated to `arc-reasoner`; no metric gaps introduced |
+| VIII. Security | \[x] | \[x] | No secrets involved; non-root containers unchanged |
+| IX. Declarative | \[ ] | — | Not applicable |
+| X. Stateful Ops | \[ ] | — | Not applicable |
+| XI. Resilience | \[x] | \[x] | Container rename and profile alias update are atomic across all consumers; no partial state possible |
+| XII. Interactive | \[ ] | — | Not applicable |
 
 ---
 
@@ -8433,6 +8709,404 @@ gantt
 | Postgres ignores env vars after data dir is initialized | M | Document in `make oracle-clean` help text; `oracle-nuke` removes the volume |
 | Cortex fails to connect to Oracle if password mismatch with Cortex config | M | Cortex default Postgres password in `cortex.mk` env vars must match `POSTGRES_PASSWORD=arc` |
 | Port 5432 conflict with a local Postgres installation | L | Document in oracle.mk help; user can override host port via compose override file |
+
+---
+
+---
+url: /arc-platform/specs-site/014-decouple-service-codenames/plan.md
+---
+# Implementation Plan: decouple-service-codenames
+
+> **Spec**: 014-decouple-service-codenames
+> **Date**: 2026-03-05
+
+## Summary
+
+Rename the `sherlock` Python package to `reasoner`, update all NATS subjects and Pulsar topics from `sherlock.*` to `reasoner.*`, rename the Postgres schema, update Cortex Go config defaults to use functional hostnames, and update OTEL metric/service names — all without breaking existing consumers by maintaining a NATS dual-subscription migration window for one release cycle.
+
+## Target Modules
+
+| Module | Language | Changes |
+|--------|----------|---------|
+| `services/reasoner/src/sherlock/` | Python | Directory rename + all import paths + config strings + OTEL names |
+| `services/reasoner/pyproject.toml` | TOML | Package name + mypy module refs + uvicorn CMD |
+| `services/reasoner/Dockerfile` | Dockerfile | CMD module path; Linux user name (optional, P3) |
+| `services/reasoner/contracts/asyncapi.yaml` | YAML | All channel/operation/server names |
+| `services/reasoner/docker-compose.yml` | YAML | Remove stale `arc-vector-db` network comment; update postgres URL hostname |
+| `services/cortex/internal/config/config.go` | Go | 3 `SetDefault` hostname values (`arc-persistence`, `arc-messaging`, `arc-cache`) |
+| `services/cortex/internal/clients/{nats,postgres,redis}.go` | Go | 3 probe name constants |
+| `services/cortex/internal/clients/*_test.go` | Go | Test assertions hardcoding old names |
+| `services/persistence/` | YAML | Container rename `arc-sql-db` → `arc-persistence` (service.yaml, docker-compose, volume) |
+| `services/flags/docker-compose.yml` | YAML | DATABASE\_URL hostname `arc-sql-db` → `arc-persistence` |
+| `services/otel/telemetry/config/otel-collector-config.yaml` | YAML | OTEL collector Postgres endpoint hostname |
+| `services/data.mk` | Makefile | Remove `vector-db-*` targets; rename `sql-db-*` → `persistence-*` |
+| `services/vector/` | — | **Delete entirely** — dead Qdrant service, zero code consumers |
+| SQL migration | SQL | Rename schema `sherlock` → `reasoner` |
+
+## Technical Context
+
+| Aspect | Value |
+|--------|-------|
+| Languages | Python 3.13, Go 1.23 |
+| Frameworks | FastAPI + pydantic-settings (Python), Viper (Go config) |
+| Storage | Postgres (schema rename), NATS (dual subjects), Pulsar (topic rename in config) |
+| Testing | pytest + ruff + mypy (Python), go test + golangci-lint (Go) |
+| Key constraint | Python package rename touches every file in `src/sherlock/` — must be atomic |
+| Key constraint | `arc-sql-db` rename touches 6 service directories — must update all consumers atomically |
+| Key constraint | `services/vector/` deletion is safe — confirmed absent from all profiles and zero code consumers |
+
+## Architecture
+
+```mermaid
+sequenceDiagram
+    participant OldClient as Old Client (sherlock.*)
+    participant NewClient as New Client (reasoner.*)
+    participant Reasoner as Reasoner Service
+    participant NATS
+
+    Note over Reasoner: Migration Release
+    NewClient->>NATS: publish reasoner.v1.chat
+    NATS->>Reasoner: deliver (new subscriber)
+    Reasoner-->>NewClient: respond via _INBOX
+
+    OldClient->>NATS: publish sherlock.v1.chat
+    NATS->>Reasoner: deliver (compat subscriber)
+    Reasoner->>Reasoner: log WARN deprecated subject
+    Reasoner-->>OldClient: respond normally
+
+    Note over Reasoner: Next Release
+    Note over NATS: sherlock.* subscribers removed
+```
+
+```mermaid
+graph LR
+    subgraph "Track A — Python (parallel)"
+        A1[rename src/sherlock → src/reasoner] --> A2[update all imports]
+        A2 --> A3[update config.py strings]
+        A3 --> A4[update observability.py metric names]
+        A4 --> A5[add dual NATS subscriber in nats_handler.py]
+    end
+
+    subgraph "Track B — Go Cortex (parallel)"
+        B1[config.go defaults] --> B2[nats.go probe name]
+        B1 --> B3[postgres.go probe name]
+        B1 --> B4[redis.go probe name]
+        B2 --> B5[update *_test.go assertions]
+        B3 --> B5
+        B4 --> B5
+    end
+
+    subgraph "Track C — Contracts (parallel)"
+        C1[asyncapi.yaml channel names]
+        C2[asyncapi.yaml operation names]
+        C1 --> C2
+    end
+
+    subgraph "Track D — SQL Migration (parallel)"
+        D1[migration: rename schema sherlock → reasoner]
+        D2[idempotency guard: IF EXISTS]
+        D1 --> D2
+    end
+
+    subgraph "Track E — Package Metadata (parallel)"
+        E1[pyproject.toml name arc-sherlock → arc-reasoner]
+        E2[pyproject.toml mypy module overrides]
+        E3[Dockerfile CMD module path]
+        E1 --> E2
+    end
+
+    subgraph "Track F — Container Rename (parallel)"
+        F1[persistence: arc-sql-db → arc-persistence in service.yaml + docker-compose]
+        F2[flags: DATABASE_URL hostname]
+        F3[otel: collector endpoint]
+        F4[cortex: service.yaml dependency alias]
+        F5[reasoner: docker-compose env + comment]
+        F6[data.mk: sql-db targets → persistence targets]
+        F1 --> F2
+        F1 --> F3
+        F1 --> F4
+        F1 --> F5
+        F1 --> F6
+    end
+
+    subgraph "Track G — Remove Dead Service (parallel)"
+        G1[delete services/vector/ directory]
+        G2[remove vector-db targets from data.mk]
+        G3[remove arc-vector-db refs from reasoner/docker-compose.yml]
+        G1 --> G2
+    end
+
+    subgraph "Phase 2 — Integration"
+        A5 & B5 & C2 & D2 & E3 & F6 & G3 --> INT[lint + test + grep checks]
+    end
+```
+
+## Constitution Check
+
+| # | Principle | Status | Evidence |
+|---|-----------|--------|----------|
+| I | Zero-Dep CLI | N/A | No CLI changes |
+| II | Platform-in-a-Box | PASS | Cortex defaults fix ensures `arc run --profile think` works with zero env overrides |
+| III | Modular Services | PASS | Each service remains self-contained; changes are internal |
+| IV | Two-Brain | PASS | Python rename stays in Python brain; Go fix stays in Go brain — no cross-brain mixing |
+| V | Polyglot Standards | PASS | ruff + mypy (Python), golangci-lint (Go) must pass; table-driven tests preserved |
+| VI | Local-First | N/A | No CLI changes |
+| VII | Observability | PASS | OTEL service name `arc-reasoner`; metric names updated; no metric gaps |
+| VIII | Security | PASS | Non-root user preserved in Dockerfile; no secrets involved |
+| IX | Declarative | N/A | No arc.yaml changes |
+| X | Stateful Ops | N/A | No CLI state changes |
+| XI | Resilience | PASS | Dual NATS subjects maintain zero-downtime for old consumers |
+| XII | Interactive | N/A | No CLI changes |
+
+## Project Structure
+
+```
+services/reasoner/
+├── src/
+│   ├── sherlock/              # DELETE after rename
+│   └── reasoner/              # RENAME from sherlock/ — all files identical, package path changed
+│       ├── __init__.py
+│       ├── config.py          # NATS subjects, Pulsar topics, service_name updated
+│       ├── main.py            # all imports: from sherlock.* → from reasoner.*
+│       ├── nats_handler.py    # + compat dual subscription for sherlock.request
+│       ├── openai_nats_handler.py  # + compat dual subscription for sherlock.v1.chat
+│       ├── observability.py   # meter → arc-reasoner, metrics → reasoner.*
+│       └── rag/
+│           └── nats_handler.py  # imports updated
+├── pyproject.toml             # name, mypy module overrides updated
+├── Dockerfile                 # CMD module path updated
+└── contracts/
+    └── asyncapi.yaml          # all channel/operation ids updated
+
+services/cortex/
+└── internal/
+    ├── config/
+    │   └── config.go          # 3 SetDefault values updated
+    └── clients/
+        ├── nats.go            # natsProbeNameConst updated
+        ├── postgres.go        # probeName updated
+        ├── redis.go           # redisProbeName updated
+        ├── nats_test.go       # test assertions updated
+        └── postgres_test.go   # test assertions updated
+
+migrations/
+└── 002_rename_schema_sherlock_to_reasoner.sql  # new idempotent migration
+```
+
+## Parallel Execution Strategy
+
+```mermaid
+gantt
+    title 014 — decouple-service-codenames
+    dateFormat  YYYY-MM-DD
+    section Phase 1 — Parallel
+    Track A: Python package rename + imports     :a1, 2026-03-05, 1d
+    Track B: Cortex Go config + probe names      :b1, 2026-03-05, 1d
+    Track C: asyncapi.yaml contracts             :c1, 2026-03-05, 0.5d
+    Track D: SQL migration script                :d1, 2026-03-05, 0.5d
+    Track E: pyproject.toml + Dockerfile CMD     :e1, 2026-03-05, 0.5d
+    section Phase 2 — Integration
+    Dual NATS subscriber (migration window)      :a2, after a1, 0.5d
+    Lint + type-check all changed files          :f1, after a2 b1 c1 d1 e1, 0.5d
+    section Phase 3 — Verification
+    grep success criteria checks                 :g1, after f1, 0.25d
+    Docs + links update                          :g2, after f1, 0.25d
+```
+
+**Tracks A–E are fully independent and can run concurrently.**
+Track A (Python rename) must complete before the dual NATS subscriber work (it modifies the renamed package).
+
+## Detailed Task Breakdown
+
+### Track A — Python Package Rename
+
+**A1 — Rename directory**
+
+```bash
+git mv services/reasoner/src/sherlock services/reasoner/src/reasoner
+```
+
+**A2 — Update all imports in renamed package**
+All `from sherlock.xxx import` → `from reasoner.xxx import` across:
+
+* `main.py` (20 import lines)
+* `observability.py`, `graph.py`, `memory.py`, `streaming.py`
+* `nats_handler.py`, `openai_nats_handler.py`, `pulsar_handler.py`
+* `openai_router.py`, `embeddings_router.py`, `files_router.py`
+* `models_router.py`, `vector_stores_router.py`, `fake_router.py`
+* `rag/nats_handler.py`, `rag/application/retrieve.py` (and any sub-modules)
+* `interfaces.py`, `llm_factory.py`
+
+**A3 — Update config.py subject strings**
+
+| Field | Before | After |
+|-------|--------|-------|
+| `service_name` | `arc-sherlock` | `arc-reasoner` |
+| `nats_subject` | `sherlock.request` | `reasoner.request` |
+| `nats_queue_group` | `sherlock_workers` | `reasoner_workers` |
+| `pulsar_request_topic` | `…/sherlock-requests` | `…/reasoner-requests` |
+| `pulsar_result_topic` | `…/sherlock-results` | `…/reasoner-results` |
+| `pulsar_subscription` | `sherlock-workers` | `reasoner-workers` |
+| `nats_v1_chat_subject` | `sherlock.v1.chat` | `reasoner.v1.chat` |
+| `nats_v1_result_subject` | `sherlock.v1.result` | `reasoner.v1.result` |
+| `minio_bucket` | `sherlock-files` | `reasoner-files` |
+
+Note: env var aliases (`SHERLOCK_NATS_SUBJECT` etc.) stay unchanged — renaming env var aliases is a deployment breaking change not in scope.
+
+**A4 — Update observability.py metric names**
+
+| Before | After |
+|--------|-------|
+| `metrics.get_meter("arc-sherlock")` | `metrics.get_meter("arc-reasoner")` |
+| `sherlock.requests.total` | `reasoner.requests.total` |
+| `sherlock.errors.total` | `reasoner.errors.total` |
+| `sherlock.latency` | `reasoner.latency` |
+| `sherlock.context.size` | `reasoner.context.size` |
+| `sherlock.v1.requests.total` | `reasoner.v1.requests.total` |
+| `sherlock.v1.errors.total` | `reasoner.v1.errors.total` |
+| `sherlock.v1.latency` | `reasoner.v1.latency` |
+| `sherlock.v1.stream.chunks` | `reasoner.v1.stream.chunks` |
+
+Also update logger names:
+
+* `structlog.get_logger("sherlock.health_probe")` → `"reasoner.health_probe"`
+* `structlog.get_logger("sherlock.startup")` → `"reasoner.startup"`
+* `structlog.get_logger("sherlock.http")` → `"reasoner.http"`
+
+**A5 — Add dual NATS subscriber (migration window)**
+
+In `nats_handler.py`: subscribe to both `reasoner.request` (primary) and `sherlock.request` (compat).
+On compat subject receipt, emit:
+
+```python
+logger.warning("deprecated NATS subject received", subject="sherlock.request",
+               migrate_to="reasoner.request")
+```
+
+Then process normally.
+
+Same pattern in `openai_nats_handler.py` for `sherlock.v1.chat` → `reasoner.v1.chat`.
+
+### Track B — Cortex Go Config
+
+**B1 — `config.go` defaults**
+
+```go
+// Line 108
+v.SetDefault("bootstrap.postgres.host", "arc-persistence")
+// Line 116
+v.SetDefault("bootstrap.nats.url", "nats://arc-messaging:4222")
+// Line 122
+v.SetDefault("bootstrap.redis.host", "arc-cache")
+```
+
+**B2–B4 — Probe name constants**
+
+```go
+// nats.go:16
+const natsProbeNameConst = "arc-messaging"
+// postgres.go:17
+const probeName = "arc-persistence"
+// redis.go:16
+const redisProbeName = "arc-cache"
+```
+
+**B5 — Test assertions**
+
+```go
+// nats_test.go:73,77
+cfg := config.NATSConfig{URL: "nats://arc-messaging:4222"}
+assert.Equal(t, "nats://arc-messaging:4222", client.url)
+// postgres_test.go:116
+assert.Equal(t, "arc-persistence", result.Name)
+```
+
+### Track C — AsyncAPI Contracts
+
+Update `services/reasoner/contracts/asyncapi.yaml`:
+
+| Before | After |
+|--------|-------|
+| `Event-driven interfaces for Sherlock (arc-sherlock)` | `Event-driven interfaces for Reasoner (arc-reasoner)` |
+| Channel id `sherlockRequest` | `reasonerRequest` |
+| `address: sherlock.request` | `address: reasoner.request` |
+| Channel id `sherlockRequests` (Pulsar) | `reasonerRequests` |
+| `address: …/sherlock-requests` | `address: …/reasoner-requests` |
+| Channel id `sherlockResults` | `reasonerResults` |
+| `address: sherlock.v1.chat` | `address: reasoner.v1.chat` |
+| All server tags `sherlock-core`, `sherlock-v1` | `reasoner-core`, `reasoner-v1` |
+| Queue group refs `sherlock_workers` | `reasoner_workers` |
+
+Add a `x-deprecated-addresses` extension block documenting old subjects for the migration window.
+
+### Track D — SQL Migration
+
+Create `migrations/002_rename_schema_sherlock_to_reasoner.sql`:
+
+```sql
+-- Idempotent: rename schema sherlock → reasoner
+-- Safe to re-run on already-migrated schemas.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'sherlock') THEN
+        ALTER SCHEMA sherlock RENAME TO reasoner;
+        RAISE NOTICE 'Schema renamed: sherlock → reasoner';
+    ELSIF EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'reasoner') THEN
+        RAISE NOTICE 'Schema already named reasoner — no-op';
+    ELSE
+        CREATE SCHEMA reasoner;
+        RAISE NOTICE 'Schema reasoner created (sherlock did not exist)';
+    END IF;
+END;
+$$;
+```
+
+Also update any `CREATE SCHEMA sherlock` or `search_path` references in existing migration files.
+
+### Track E — Package Metadata
+
+**pyproject.toml**:
+
+* `name = "arc-sherlock"` → `name = "arc-reasoner"`
+* mypy `[[tool.mypy.overrides]]` module refs: `sherlock.pulsar_handler` → `reasoner.pulsar_handler`, etc.
+* uvicorn entry in `[tool.mypy]` ignore list if any
+
+**Dockerfile**:
+
+* `RUN mkdir -p src/sherlock && touch src/sherlock/__init__.py` → `src/reasoner/`
+* `CMD ["uvicorn", "sherlock.main:app", ...]` → `CMD ["uvicorn", "reasoner.main:app", ...]`
+* Linux user `sherlock` and group: **keep as-is** (P3/optional — OS user is not a wire protocol or import, changing it requires Dockerfile layer rebuild with no functional benefit in this scope)
+
+## Reviewer Checklist
+
+After implementation, the reviewer agent must verify:
+
+* \[ ] `grep -r "from sherlock" services/reasoner/src/` returns zero results
+* \[ ] `grep -r '"sherlock\.' services/reasoner/src/reasoner/config.py` returns zero results
+* \[ ] `grep -r '"sherlock\.' services/reasoner/src/reasoner/observability.py` returns zero results
+* \[ ] `ruff check services/reasoner/src/` passes with zero errors
+* \[ ] `mypy services/reasoner/src/` passes with zero errors
+* \[ ] `golangci-lint run ./...` in `services/cortex/` passes
+* \[ ] `go test ./...` in `services/cortex/` passes
+* \[ ] Dual NATS subscription exists for `sherlock.request` and `sherlock.v1.chat` in migration handlers
+* \[ ] Deprecation WARNING is logged (not ERROR) on old subject receipt
+* \[ ] SQL migration is idempotent — `DO $$ BEGIN IF EXISTS...` guard present
+* \[ ] `asyncapi.yaml` has zero remaining `sherlock` channel/operation IDs
+* \[ ] Dockerfile CMD references `reasoner.main:app`
+* \[ ] pyproject.toml `name` is `arc-reasoner`
+* \[ ] No `FIXME` or `TODO` left without a tracking note
+* \[ ] `CODENAME-DECOUPLING.md` docs & links section updated
+
+## Risks & Mitigations
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| Missed import in a nested RAG sub-module | H | SC-1 grep check catches it; mypy will also fail on unresolved imports |
+| Old NATS subject not covered by compat subscriber | H | Integration test (SC-6) explicitly verifies old subject still responds |
+| SQL migration on live DB with active connections | M | Migration runs in a DO block with advisory lock if needed; idempotent so safe to re-run |
+| SDK/external code pinned to `arc-sherlock` package | M | Noted in edge cases — SDK must bump; documented in this plan |
+| Env var aliases (`SHERLOCK_*`) not renamed | L | Out of scope; env aliases are deployment-level; config defaults are updated |
+| Cortex hostname defaults changed but container names in compose not matching | H | Verify `services/*/service.yaml` container names match new defaults before merge |
 
 ---
 
@@ -12528,6 +13202,201 @@ Both workflows are independent and can be implemented concurrently.
 | **Total** | **13** | **13** | **0** |
 
 All tasks complete. Re-verified 2026-02-28.
+
+---
+
+---
+url: /arc-platform/specs-site/014-decouple-service-codenames/tasks.md
+---
+# Tasks: decouple-service-codenames
+
+> **Spec**: 014-decouple-service-codenames
+> **Date**: 2026-03-05
+
+## Dependency Graph
+
+```mermaid
+graph TD
+    T001 --> T010
+
+    T010 --> T020
+    T010 --> T021
+    T010 --> T022
+    T010 --> T023
+    T010 --> T024
+
+    T001 --> T025
+    T001 --> T026
+    T001 --> T027
+    T001 --> T028
+    T001 --> T029
+    T001 --> T031
+
+    T020 --> T040
+    T021 --> T040
+    T022 --> T040
+    T023 --> T040
+    T024 --> T040
+    T025 --> T040
+    T026 --> T040
+    T027 --> T040
+    T028 --> T040
+    T029 --> T040
+    T031 --> T040
+
+    T040 --> T041
+
+    T041 --> T900
+    T041 --> T999
+    T900 --> T999
+```
+
+## Quality Requirements
+
+| Module              | Coverage                | Lint                            |
+| ------------------- | ----------------------- | ------------------------------- |
+| `services/reasoner` | 60% core / 40% infra    | `ruff check src/` + `mypy src/` |
+| `services/cortex`   | 75% critical / 60% core | `golangci-lint run ./...`       |
+
+***
+
+## Phase 1: Setup
+
+* \[x] \[TASK-001] \[REASONER+CORTEX] \[P1] Audit container DNS names — verify `service.yaml` files use functional names that match the new Cortex hostname defaults
+  * Dependencies: none
+  * Module: `services/reasoner/service.yaml`, `services/messaging/service.yaml`, `services/cache/service.yaml`, `services/persistence/service.yaml`
+  * Acceptance: Confirm container hostnames are `arc-persistence`, `arc-messaging`, `arc-cache` (or document any divergence before changing defaults); grep `arc-oracle`, `arc-flash`, `arc-sonic` in all `service.yaml` files returns zero or known-safe results
+
+***
+
+## Phase 2: Foundational
+
+* \[ ] \[TASK-010] \[REASONER] \[P1] Rename Python package directory `src/sherlock/` → `src/reasoner/` via `git mv`
+  * Dependencies: TASK-001
+  * Module: `services/reasoner/src/`
+  * Acceptance: `ls services/reasoner/src/` shows `reasoner/` and no `sherlock/`; `git status` shows rename tracked; `src/reasoner/__init__.py` exists
+
+***
+
+## Phase 3: Implementation
+
+### Parallel Batch A — Python internals (all depend on TASK-010, all independent of each other)
+
+* \[x] \[TASK-020] \[P] \[REASONER] \[P1] US-1: Update all Python imports in renamed package — `from sherlock.xxx` → `from reasoner.xxx`
+  * Dependencies: TASK-010
+  * Module: `services/reasoner/src/reasoner/` (all `.py` files including `rag/` sub-package)
+  * Acceptance: `grep -r "from sherlock" services/reasoner/src/` returns zero results; `grep -r "import sherlock" services/reasoner/src/` returns zero results
+
+* \[x] \[TASK-021] \[P] \[REASONER] \[P1] US-2: Update `config.py` NATS subjects, Pulsar topics, queue group names, and MinIO bucket name
+  * Dependencies: TASK-010
+  * Module: `services/reasoner/src/reasoner/config.py`
+  * Acceptance: All 9 string fields updated per plan table (service\*name, nats\_subject, nats\_queue\_group, pulsar request/result topics, pulsar subscription, nats\_v1\_chat\_subject, nats\_v1\_result\_subject, minio\_bucket); `grep -n "sherlock" services/reasoner/src/reasoner/config.py` returns zero results in field default values (env var aliases `SHERLOCK*\*` remain unchanged)
+
+* \[x] \[TASK-022] \[P] \[REASONER] \[P1] US-6: Update OTEL meter name, metric names, and structlog logger names in `observability.py`
+  * Dependencies: TASK-010
+  * Module: `services/reasoner/src/reasoner/observability.py`
+  * Acceptance: `get_meter("arc-reasoner")` used; all 9 metric names use `reasoner.` prefix; all `structlog.get_logger("sherlock.*")` calls updated to `reasoner.*`; `grep "arc-sherlock\|sherlock\." services/reasoner/src/reasoner/observability.py` returns zero results
+
+* \[x] \[TASK-023] \[P] \[REASONER] \[P2] US-7: Update `pyproject.toml` — package name and mypy module override refs
+  * Dependencies: TASK-010
+  * Module: `services/reasoner/pyproject.toml`
+  * Acceptance: `name = "arc-reasoner"`; all `[[tool.mypy.overrides]]` module refs updated from `sherlock.*` to `reasoner.*`; `grep "sherlock" services/reasoner/pyproject.toml` returns zero results
+
+* \[x] \[TASK-024] \[P] \[REASONER] \[P1] Update `Dockerfile` CMD module path and build-time directory scaffold
+  * Dependencies: TASK-010
+  * Module: `services/reasoner/Dockerfile`
+  * Acceptance: `CMD ["uvicorn", "reasoner.main:app", ...]`; `RUN mkdir -p src/reasoner && touch src/reasoner/__init__.py`; Linux OS user `sherlock` kept as-is (not a wire protocol or import — P3 scope); `grep "sherlock.main\|src/sherlock" services/reasoner/Dockerfile` returns zero results
+
+### Parallel Batch B — Go Cortex (independent of Python rename — can start at T=0)
+
+* \[x] \[TASK-025] \[P] \[CORTEX] \[P1] US-3: Update Cortex `config.go` hostname defaults to functional names
+  * Dependencies: TASK-001
+  * Module: `services/cortex/internal/config/config.go`
+  * Acceptance: `arc-oracle` → `arc-persistence` (line 108); `nats://arc-flash:4222` → `nats://arc-messaging:4222` (line 116); `arc-sonic` → `arc-cache` (line 122); `grep "arc-oracle\|arc-flash\|arc-sonic" services/cortex/internal/config/config.go` returns zero results
+
+* \[x] \[TASK-026] \[P] \[CORTEX] \[P1] Update Cortex probe name constants in client files + test assertions
+  * Dependencies: TASK-001
+  * Module: `services/cortex/internal/clients/{nats,postgres,redis}.go`, `services/cortex/internal/clients/*_test.go`
+  * Acceptance: `natsProbeNameConst = "arc-messaging"`; `probeName = "arc-persistence"`; `redisProbeName = "arc-cache"`; test assertions in `nats_test.go:73,77` and `postgres_test.go:116` updated to match; `golangci-lint run ./...` passes
+
+### Parallel Batch C — AsyncAPI contracts (independent)
+
+* \[x] \[TASK-027] \[P] \[REASONER] \[P1] Update `asyncapi.yaml` channel IDs, operation IDs, addresses, and component refs to use `reasoner.*`
+  * Dependencies: TASK-001
+  * Module: `services/reasoner/contracts/asyncapi.yaml`
+  * Acceptance: All channel IDs (`sherlockRequest` → `reasonerRequest`, etc.) renamed; all `address:` fields use `reasoner.*` subjects and `reasoner-*` Pulsar topics; server component tags renamed to `reasoner-core`, `reasoner-v1`; all `sherlock_workers` queue group refs updated; add `x-deprecated-addresses` block listing old subjects for the migration window; `grep -c "sherlock" services/reasoner/contracts/asyncapi.yaml` returns zero count
+
+### Parallel Batch D — SQL migration (independent)
+
+* \[x] \[TASK-028] \[P] \[REASONER] \[P1] US-4: Write idempotent SQL migration to rename Postgres schema `sherlock` → `reasoner`
+  * Dependencies: TASK-001
+  * Module: `migrations/002_rename_schema_sherlock_to_reasoner.sql` (create new file)
+  * Acceptance: Migration uses `DO $$ BEGIN IF EXISTS` guard; handles three cases: sherlock exists (rename), reasoner exists (no-op + NOTICE), neither exists (create reasoner + NOTICE); re-running on already-migrated DB exits cleanly; migration file is valid PostgreSQL syntax
+
+### Parallel Batch F — Container rename arc-sql-db → arc-persistence (independent)
+
+* \[x] \[TASK-029] \[P] \[PERSISTENCE+MULTI] \[P1] FR-13: Rename container `arc-sql-db` → `arc-persistence` across all services and update profile role alias
+  * Dependencies: TASK-001
+  * Module: `services/persistence/service.yaml`, `services/persistence/docker-compose.yml`, `services/profiles.yaml` (role alias `sql-db` → `persistence` in all 3 profiles), `services/flags/docker-compose.yml`, `services/otel/telemetry/config/otel-collector-config.yaml`, `services/cortex/service.yaml`, `services/cortex/docker-compose.yml`, `services/reasoner/service.yaml`, `services/reasoner/docker-compose.yml`, `services/reasoner/src/sherlock/config.py` (postgres URL default), `services/data.mk`
+  * Acceptance: `grep -r "arc-sql-db" services/` returns zero results; `grep "sql-db" services/profiles.yaml` returns zero results; persistence container starts as `arc-persistence`; volume renamed to `arc-persistence-data`; all profiles (`think`, `observe`, `reason`) reference `persistence` not `sql-db`; all DATABASE\_URL and connection strings use `arc-persistence` hostname; `data.mk` `sql-db-*` targets renamed to `persistence-*`
+
+### Parallel Batch G — Remove dead Qdrant service (independent)
+
+* \[x] \[TASK-031] \[P] \[VECTOR] \[P1] FR-14: Delete `services/vector/` (dead Qdrant/Cerebro service) and clean all references
+  * Dependencies: TASK-001
+  * Module: `services/vector/` (delete), `services/data.mk` (remove `vector-db-*` targets + log tail line), `services/reasoner/docker-compose.yml` (remove `arc-vector-db` network comment)
+  * Acceptance: `services/vector/` directory does not exist (SC-12); `grep -r "arc-vector-db" services/` returns zero results; `grep -r "vector-db" services/data.mk` returns zero results; no profile references the deleted service (confirmed — vector was absent from all profiles)
+
+***
+
+## Phase 4: Integration
+
+* \[x] \[TASK-040] \[REASONER+CORTEX] \[P1] Run full lint and type-check sweep on all changed modules
+  * Dependencies: TASK-020, TASK-021, TASK-022, TASK-023, TASK-024, TASK-025, TASK-026, TASK-027, TASK-028, TASK-029, TASK-031
+  * Module: `services/reasoner/src/`, `services/cortex/`
+  * Acceptance: `ruff check services/reasoner/src/` → zero errors; `mypy services/reasoner/src/` → zero errors; `golangci-lint run ./...` in `services/cortex/` → zero errors; `go test ./...` in `services/cortex/` → all pass
+
+* \[x] \[TASK-041] \[REASONER+CORTEX] \[P1] Validate all spec success criteria — grep checks + unit tests
+  * Dependencies: TASK-040
+  * Module: `services/reasoner/src/`, `services/cortex/`, `services/`
+  * Acceptance (all SC gates):
+    * SC-1: `grep -r "from sherlock" services/reasoner/src/` → zero
+    * SC-2: `grep "sherlock\." services/reasoner/src/reasoner/config.py` → zero default values
+    * SC-7: `ruff check` → zero errors
+    * SC-8: `mypy` → zero errors
+    * SC-9: `golangci-lint` → zero errors
+    * SC-11: `grep -r "arc-sql-db" services/` → zero results
+    * SC-12: `services/vector/` directory does not exist
+    * `pytest services/reasoner/tests/` passes
+
+***
+
+## Phase 5: Polish
+
+* \[x] \[TASK-900] \[P] \[DOCS] \[P1] Docs & links update — asyncapi refs, CLAUDE.md, CODENAME-DECOUPLING.md, NERVOUS-SYSTEM.md
+  * Dependencies: TASK-041
+  * Module: `docs/`, `CLAUDE.md`, `CODENAME-DECOUPLING.md` (root), `NERVOUS-SYSTEM.md` (root), `.specify/config.yaml`
+  * Acceptance: Any `docs/` code samples using `sherlock.*` subjects or `from sherlock` imports updated; `CLAUDE.md` service table updated — remove Cerebro/Qdrant row, update persistence hostname to `arc-persistence`; `.specify/config.yaml` reasoner lint/test commands verified correct post-rename; `NERVOUS-SYSTEM.md` stale Cerebro/Qdrant references removed; `CODENAME-DECOUPLING.md` status updated to "implemented" after merge; no broken links in `contracts/asyncapi.yaml`
+
+* \[ ] \[TASK-999] \[REVIEW] \[P1] Reviewer agent verification — full quality gate sweep
+  * Dependencies: TASK-040, TASK-041, TASK-900
+  * Module: all affected modules
+  * Acceptance: All reviewer checklist items from `plan.md` verified; zero remaining `sherlock` in imports/subjects/metrics (SC-1, SC-2); SQL migration is idempotent; Dockerfile CMD is updated; pyproject.toml name is `arc-reasoner`; `arc run --profile think` health checks pass (SC-4, SC-13); `grep "sql-db" services/profiles.yaml` returns zero (SC-6); `services/vector/` does not exist (SC-12); constitution principles II, III, IV, V, VII, VIII, XI all verified compliant
+
+***
+
+## Progress Summary
+
+| Phase                    | Total  | Done  | Parallel |
+| ------------------------ | ------ | ----- | -------- |
+| Setup                    | 1      | 1     | 0        |
+| Foundational             | 1      | 0     | 0        |
+| Implementation           | 11     | 0     | 9        |
+| Container rename (F)     | 1      | 0     | 1        |
+| Dead service removal (G) | 1      | 0     | 1        |
+| Integration              | 2      | 0     | 0        |
+| Polish                   | 2      | 0     | 1        |
+| **Total**                | **19** | **0** | **12**   |
 
 ---
 
