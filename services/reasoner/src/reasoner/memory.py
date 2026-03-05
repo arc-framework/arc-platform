@@ -4,7 +4,7 @@ import json
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, cast, runtime_checkable
 
 import redis.asyncio as aioredis
 import structlog
@@ -74,7 +74,7 @@ class SherlockMemory:
         # Redis (Sonic) — lazy-connect, fail-open
         self._sonic_url: str = settings.sonic_url
         self._cache_ttl: int = settings.context_cache_ttl
-        self._redis: aioredis.Redis | None = None  # type: ignore[type-arg]
+        self._redis: aioredis.Redis | None = None
         self._redis_failed: bool = False
 
         # asyncpg requires the vector codec registered per connection
@@ -102,15 +102,15 @@ class SherlockMemory:
         except Exception as exc:
             _log.warning("postgres_unavailable_at_init", error=str(exc))
 
-    async def _get_redis(self) -> "aioredis.Redis | None":  # type: ignore[type-arg]
+    async def _get_redis(self) -> "aioredis.Redis | None":
         """Return cached Redis client, or None if unavailable (fail-open)."""
         if self._redis is not None:
             return self._redis
         if self._redis_failed:
             return None
         try:
-            r: aioredis.Redis = aioredis.from_url(self._sonic_url, decode_responses=True)  # type: ignore[type-arg]
-            await r.ping()
+            r: aioredis.Redis = aioredis.from_url(self._sonic_url, decode_responses=True)
+            await r.ping()  # type: ignore[misc]
             self._redis = r
             return self._redis
         except Exception as exc:
@@ -140,7 +140,7 @@ class SherlockMemory:
             try:
                 cached = await redis_client.get(cache_key)
                 if cached is not None:
-                    return json.loads(cached)
+                    return cast(list[str], json.loads(cached))
             except Exception as exc:
                 _log.warning("redis_get_failed", error=str(exc))
 

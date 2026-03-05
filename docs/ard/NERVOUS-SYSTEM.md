@@ -150,3 +150,12 @@ services/streaming/service.yaml                     # arc-stream (Dr. Strange / 
 2. Redis cache invalidation: TTL-based (5min default) + explicit invalidation when conversation history changes (new message appended resets key).
 3. Voice pipeline (arc-voice-agent (Scarlett / Voice)) consumes from Pulsar (durable, async) — not NATS. NATS is for real-time client streaming only.
 4. `stream_graph()` is the default path for all transports. Buffering (`invoke_graph`) is opt-in only.
+
+## Implementation Status
+
+| Phase | Status | Commit |
+|-------|--------|--------|
+| Phase 1 — Fast Nerves | ✅ Complete | `feat(reasoner): Phase 1 — NATS token streaming + embedding off critical path` |
+| Phase 2 — Muscle Memory | ✅ Complete | `feat(reasoner): Phase 2 — parallel retrieval + arc-db-cache (Sonic / Redis) context cache` |
+| Phase 3 — Spinal Cord | ✅ Complete | `feat(reasoner): Phase 3 — Pulsar event backbone, RoboCop guards, DLQ fallback` |
+| Integration verification | ⏳ Pending | Requires live `reason` profile environment |

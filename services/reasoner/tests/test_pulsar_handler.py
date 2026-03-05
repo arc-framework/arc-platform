@@ -442,3 +442,71 @@ async def test_inference_completed_has_token_usage() -> None:
     assert usage["input_tokens"] > 0, "input_tokens must be non-zero"
     assert usage["output_tokens"] > 0, "output_tokens must be non-zero"
     assert usage["total_tokens"] > 0, "total_tokens must be non-zero"
+
+
+# ─── _publish_event() coverage ────────────────────────────────────────────────
+
+
+async def test_publish_event_sends_to_producer() -> None:
+    """_publish_event() calls producer.send via asyncio.to_thread when producer is not None."""
+    handler = _make_handler()
+    mock_producer = MagicMock()
+    mock_producer.send = MagicMock()
+
+    payload = b'{"test": "data"}'
+
+    with patch("asyncio.to_thread", side_effect=_fake_to_thread):
+        await handler._publish_event(mock_producer, payload)
+
+    mock_producer.send.assert_called_once_with(payload)
+
+
+async def test_publish_event_skips_none_producer() -> None:
+    """_publish_event() does nothing when producer is None."""
+    handler = _make_handler()
+
+    with patch("asyncio.to_thread", side_effect=_fake_to_thread):
+        # Must not raise
+        await handler._publish_event(None, b"payload")
+
+
+async def test_publish_event_swallows_exceptions() -> None:
+    """_publish_event() never raises — exceptions from producer.send are swallowed."""
+    handler = _make_handler()
+    mock_producer = MagicMock()
+    mock_producer.send = MagicMock(side_effect=RuntimeError("pulsar down"))
+
+    with patch("asyncio.to_thread", side_effect=_fake_to_thread):
+        # Must not raise
+        await handler._publish_event(mock_producer, b"payload")
+
+
+# ─── close() ──────────────────────────────────────────────────────────────────
+
+
+async def test_close_cancels_task_and_closes_client() -> None:
+    """close() cancels the background task and closes the Pulsar client."""
+    handler = _make_handler()
+    mock_client = MagicMock()
+    mock_client.close = MagicMock()
+
+    # Create a real task that can be cancelled
+    async def _never_returns() -> None:
+        await asyncio.sleep(9999)
+
+    task = asyncio.create_task(_never_returns())
+    handler._task = task
+    handler._client = mock_client
+
+    with patch("asyncio.to_thread", side_effect=_fake_to_thread):
+        await handler.close()
+
+    assert task.cancelled()
+    mock_client.close.assert_called_once()
+
+
+async def test_close_with_no_task_or_client() -> None:
+    """close() succeeds gracefully when task and client are both None."""
+    handler = _make_handler()
+    # _task and _client default to None — should not raise
+    await handler.close()
