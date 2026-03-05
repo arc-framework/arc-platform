@@ -8,10 +8,10 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from sherlock.config import Settings
-from sherlock.models_router import StaticModelRegistry
-from sherlock.models_v1 import ChatCompletionChunk, ChoiceDelta, StreamChoice
-from sherlock.openai_router import build_openai_router
+from reasoner.config import Settings
+from reasoner.models_router import StaticModelRegistry
+from reasoner.models_v1 import ChatCompletionChunk, ChoiceDelta, StreamChoice
+from reasoner.openai_router import build_openai_router
 
 # ─── Helpers / constants ──────────────────────────────────────────────────────
 
@@ -136,7 +136,7 @@ async def no_state_client(no_state_app: FastAPI) -> Any:
 
 async def test_chat_completions_happy_path(client: Any) -> None:
     with patch(
-        "sherlock.openai_router.invoke_graph", new_callable=AsyncMock
+        "reasoner.openai_router.invoke_graph", new_callable=AsyncMock
     ) as mock_invoke:
         mock_invoke.return_value = "The answer is 42."
         response = await client.post(
@@ -254,7 +254,7 @@ async def test_responses_no_app_state(no_state_client: Any) -> None:
 async def test_chat_completions_absent_user_field(client: Any) -> None:
     """Router must derive user_id internally when user is not supplied."""
     with patch(
-        "sherlock.openai_router.invoke_graph", new_callable=AsyncMock
+        "reasoner.openai_router.invoke_graph", new_callable=AsyncMock
     ) as mock_invoke:
         mock_invoke.return_value = "reply without user field"
         response = await client.post(
@@ -280,7 +280,7 @@ async def test_chat_completions_absent_user_field(client: Any) -> None:
 
 async def test_responses_string_input(client: Any) -> None:
     with patch(
-        "sherlock.openai_router.invoke_graph", new_callable=AsyncMock
+        "reasoner.openai_router.invoke_graph", new_callable=AsyncMock
     ) as mock_invoke:
         mock_invoke.return_value = "Sherlock deduces the truth."
         response = await client.post(
@@ -308,7 +308,7 @@ async def test_responses_string_input(client: Any) -> None:
 async def test_responses_list_input(client: Any) -> None:
     """POST /v1/responses also accepts a list of ResponseInputItem objects."""
     with patch(
-        "sherlock.openai_router.invoke_graph", new_callable=AsyncMock
+        "reasoner.openai_router.invoke_graph", new_callable=AsyncMock
     ) as mock_invoke:
         mock_invoke.return_value = "list-input reply"
         response = await client.post(
@@ -345,8 +345,8 @@ async def test_chat_completions_logs_no_message_content(client: Any) -> None:
             log_calls.append({"event": event, "kwargs": kw})
 
     with (
-        patch("sherlock.openai_router._log", _CapturingLogger()),
-        patch("sherlock.openai_router.invoke_graph", new_callable=AsyncMock) as mock_invoke,
+        patch("reasoner.openai_router._log", _CapturingLogger()),
+        patch("reasoner.openai_router.invoke_graph", new_callable=AsyncMock) as mock_invoke,
     ):
         mock_invoke.return_value = "response text"
         await client.post(
@@ -377,7 +377,7 @@ async def test_chat_completions_metrics_emitted(
     client: Any, fake_app_state: MagicMock
 ) -> None:
     """Metrics counter must be incremented on each request."""
-    with patch("sherlock.openai_router.invoke_graph", new_callable=AsyncMock) as mock_invoke:
+    with patch("reasoner.openai_router.invoke_graph", new_callable=AsyncMock) as mock_invoke:
         mock_invoke.return_value = "ok"
         await client.post(
             "/v1/chat/completions",
@@ -392,7 +392,7 @@ async def test_chat_completions_metrics_emitted(
 
 async def test_responses_instructions_echoed(client: Any) -> None:
     """instructions field from request is preserved in the response."""
-    with patch("sherlock.openai_router.invoke_graph", new_callable=AsyncMock) as mock_invoke:
+    with patch("reasoner.openai_router.invoke_graph", new_callable=AsyncMock) as mock_invoke:
         mock_invoke.return_value = "following instructions"
         response = await client.post(
             "/v1/responses",
@@ -411,7 +411,7 @@ async def test_responses_instructions_echoed(client: Any) -> None:
 async def test_chat_completions_explicit_user_passed_through(client: Any) -> None:
     """When user is explicitly set, it should be passed to invoke_graph as-is."""
     with patch(
-        "sherlock.openai_router.invoke_graph", new_callable=AsyncMock
+        "reasoner.openai_router.invoke_graph", new_callable=AsyncMock
     ) as mock_invoke:
         mock_invoke.return_value = "hi user-123"
         response = await client.post(

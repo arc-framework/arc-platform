@@ -12,7 +12,7 @@ WORKDIR /build
 # Copy only the manifest first — deps are only re-installed when pyproject.toml changes.
 # Stub package init allows setuptools to resolve the package name during dep resolution.
 COPY pyproject.toml .
-RUN mkdir -p src/sherlock && touch src/sherlock/__init__.py
+RUN mkdir -p src/reasoner && touch src/reasoner/__init__.py
 # Install CPU-only PyTorch first — prevents pip from pulling the CUDA variant (~2.5 GB).
 # This single line reduces cold build time from ~20 min to ~2 min.
 RUN pip install --prefix=/install --no-cache-dir \
@@ -45,4 +45,4 @@ EXPOSE 8000
 
 USER sherlock
 
-CMD ["uvicorn", "sherlock.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "reasoner.main:app", "--host", "0.0.0.0", "--port", "8000"]

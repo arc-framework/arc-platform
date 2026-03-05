@@ -1,12 +1,12 @@
-"""Unit tests for sherlock.rag.application.retrieve.HybridRetriever."""
+"""Unit tests for reasoner.rag.application.retrieve.HybridRetriever."""
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from sherlock.rag.application.retrieve import HybridRetriever
-from sherlock.rag.domain.models import SearchResult
+from reasoner.rag.application.retrieve import HybridRetriever
+from reasoner.rag.domain.models import SearchResult
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────

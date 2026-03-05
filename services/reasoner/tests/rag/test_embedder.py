@@ -1,4 +1,4 @@
-"""Unit tests for sherlock.rag.adapters.embedder."""
+"""Unit tests for reasoner.rag.adapters.embedder."""
 from __future__ import annotations
 
 from unittest.mock import MagicMock
@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
-from sherlock.rag.adapters.embedder import EmbedderAdapter
+from reasoner.rag.adapters.embedder import EmbedderAdapter
 
 
 def _make_mock_model(vectors: list[list[float]]) -> MagicMock:

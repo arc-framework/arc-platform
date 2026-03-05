@@ -1,10 +1,10 @@
-name: arc-sql-db
-role: sql-db
+name: arc-persistence
+role: persistence
 codename: oracle
-image: ghcr.io/arc-framework/arc-sql-db:latest
+image: ghcr.io/arc-framework/arc-persistence:latest
 tech: postgres
 upstream: pgvector/pgvector:17-alpine
 ports:
   - 5432   # PostgreSQL client
-health: docker exec arc-sql-db pg_isready -U arc
+health: docker exec arc-persistence pg_isready -U arc
 depends_on: []

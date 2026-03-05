@@ -13,7 +13,7 @@ import yaml
 
 
 async def test_chat_happy_path(test_client: Any) -> None:
-    with patch("sherlock.main.invoke_graph", new_callable=AsyncMock) as mock_invoke:
+    with patch("reasoner.main.invoke_graph", new_callable=AsyncMock) as mock_invoke:
         mock_invoke.return_value = "mocked response"
         response = await test_client.post(
             "/chat", json={"user_id": "u1", "text": "hello"}
@@ -45,7 +45,7 @@ async def test_chat_422_empty_text(test_client: Any) -> None:
 
 
 async def test_chat_503_service_not_ready(test_client: Any) -> None:
-    from sherlock.main import app
+    from reasoner.main import app
 
     # Remove app_state so the endpoint cannot reach it
     del app.state.app_state
@@ -108,7 +108,7 @@ async def test_chat_response_matches_openapi_schema(test_client: Any) -> None:
 
     chat_response_schema = spec["components"]["schemas"]["ChatResponse"]
 
-    with patch("sherlock.main.invoke_graph", new_callable=AsyncMock) as mock_invoke:
+    with patch("reasoner.main.invoke_graph", new_callable=AsyncMock) as mock_invoke:
         mock_invoke.return_value = "mocked response"
         response = await test_client.post(
             "/chat", json={"user_id": "u1", "text": "hello"}

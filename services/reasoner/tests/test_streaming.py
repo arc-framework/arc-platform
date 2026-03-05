@@ -5,13 +5,13 @@ from collections.abc import AsyncGenerator
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-from sherlock.graph import stream_graph
-from sherlock.models_v1 import (
+from reasoner.graph import stream_graph
+from reasoner.models_v1 import (
     ChatCompletionChunk,
     ChatCompletionRequest,
     ChatMessage,
 )
-from sherlock.streaming import GraphStreamingAdapter, _derive_user_id
+from reasoner.streaming import GraphStreamingAdapter, _derive_user_id
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 

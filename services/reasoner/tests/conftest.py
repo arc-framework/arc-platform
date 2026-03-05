@@ -5,10 +5,10 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
-from sherlock.main import AppState, app
-from sherlock.memory import SherlockMemory
-from sherlock.nats_handler import NATSHandler
-from sherlock.observability import SherlockMetrics
+from reasoner.main import AppState, app
+from reasoner.memory import SherlockMemory
+from reasoner.nats_handler import NATSHandler
+from reasoner.observability import SherlockMetrics
 
 
 @pytest.fixture

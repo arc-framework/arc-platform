@@ -51,14 +51,14 @@ func TestNewPulsarClient(t *testing.T) {
 
 	cb := NewCircuitBreaker("new-pulsar-test")
 	cfg := config.PulsarConfig{
-		AdminURL:   "http://arc-strange:8080",
-		ServiceURL: "pulsar://arc-strange:6650",
+		AdminURL:   "http://arc-streaming:8080",
+		ServiceURL: "pulsar://arc-streaming:6650",
 		Tenant:     "arc-system",
 	}
 	client := NewPulsarClient(cfg, cb)
 
 	assert.NotNil(t, client)
-	assert.Equal(t, "http://arc-strange:8080", client.adminURL)
+	assert.Equal(t, "http://arc-streaming:8080", client.adminURL)
 	assert.Equal(t, "arc-system", client.tenant)
 	assert.NotNil(t, client.httpDo)
 }

@@ -1,4 +1,4 @@
-"""Unit tests for sherlock.openai_nats_handler.OpenAINATSHandler.
+"""Unit tests for reasoner.openai_nats_handler.OpenAINATSHandler.
 
 Tests cover the _handle() dispatch logic: fire-and-forget semantics, request-reply
 dual publish, error responses, connection state, user_id derivation, and the
@@ -13,10 +13,10 @@ import json
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from sherlock.config import Settings
-from sherlock.models_v1 import ChatCompletionResponse
-from sherlock.observability import SherlockMetrics
-from sherlock.openai_nats_handler import OpenAINATSHandler, _derive_user_id
+from reasoner.config import Settings
+from reasoner.models_v1 import ChatCompletionResponse
+from reasoner.observability import SherlockMetrics
+from reasoner.openai_nats_handler import OpenAINATSHandler, _derive_user_id
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -24,9 +24,9 @@ from sherlock.openai_nats_handler import OpenAINATSHandler, _derive_user_id
 def _make_settings() -> MagicMock:
     s = MagicMock(spec=Settings)
     s.nats_url = "nats://localhost:4222"
-    s.nats_v1_chat_subject = "sherlock.v1.chat"
-    s.nats_v1_result_subject = "sherlock.v1.result"
-    s.nats_queue_group = "sherlock_workers"
+    s.nats_v1_chat_subject = "reasoner.v1.chat"
+    s.nats_v1_result_subject = "reasoner.v1.result"
+    s.nats_queue_group = "reasoner_workers"
     s.nats_v1_enabled = True
     return s
 
@@ -67,7 +67,7 @@ def _make_msg(messages_data: list[dict], reply: str | None = None) -> MagicMock:
     }
     msg = MagicMock()
     msg.data = json.dumps(payload).encode()
-    msg.subject = "sherlock.v1.chat"
+    msg.subject = "reasoner.v1.chat"
     msg.reply = reply
     msg.respond = AsyncMock()
     return msg
@@ -82,7 +82,7 @@ async def test_fire_and_forget_no_respond_called() -> None:
     msg = _make_msg([{"role": "user", "content": "hello"}], reply=None)
 
     with patch(
-        "sherlock.openai_nats_handler.invoke_graph",
+        "reasoner.openai_nats_handler.invoke_graph",
         new_callable=AsyncMock,
         return_value="response text",
     ):
@@ -97,14 +97,14 @@ async def test_fire_and_forget_result_published() -> None:
     msg = _make_msg([{"role": "user", "content": "hello"}], reply=None)
 
     with patch(
-        "sherlock.openai_nats_handler.invoke_graph",
+        "reasoner.openai_nats_handler.invoke_graph",
         new_callable=AsyncMock,
         return_value="response text",
     ):
         await handler._handle(msg)
 
     handler._nc.publish.assert_awaited_once_with(
-        "sherlock.v1.result",
+        "reasoner.v1.result",
         handler._nc.publish.call_args.args[1],
     )
 
@@ -118,7 +118,7 @@ async def test_request_reply_respond_called() -> None:
     msg = _make_msg([{"role": "user", "content": "hi"}], reply="INBOX.123")
 
     with patch(
-        "sherlock.openai_nats_handler.invoke_graph",
+        "reasoner.openai_nats_handler.invoke_graph",
         new_callable=AsyncMock,
         return_value="reply response",
     ):
@@ -133,7 +133,7 @@ async def test_request_reply_also_publishes_to_result_subject() -> None:
     msg = _make_msg([{"role": "user", "content": "hi"}], reply="INBOX.123")
 
     with patch(
-        "sherlock.openai_nats_handler.invoke_graph",
+        "reasoner.openai_nats_handler.invoke_graph",
         new_callable=AsyncMock,
         return_value="dual publish response",
     ):
@@ -141,7 +141,7 @@ async def test_request_reply_also_publishes_to_result_subject() -> None:
 
     msg.respond.assert_awaited_once()
     handler._nc.publish.assert_awaited_once_with(
-        "sherlock.v1.result",
+        "reasoner.v1.result",
         handler._nc.publish.call_args.args[1],
     )
 
@@ -152,7 +152,7 @@ async def test_request_reply_respond_payload_is_valid_response() -> None:
     msg = _make_msg([{"role": "user", "content": "hi"}], reply="INBOX.abc")
 
     with patch(
-        "sherlock.openai_nats_handler.invoke_graph",
+        "reasoner.openai_nats_handler.invoke_graph",
         new_callable=AsyncMock,
         return_value="the answer",
     ):
@@ -212,7 +212,7 @@ async def test_invoke_graph_exception_publishes_error() -> None:
     msg = _make_msg([{"role": "user", "content": "crash me"}], reply=None)
 
     with patch(
-        "sherlock.openai_nats_handler.invoke_graph",
+        "reasoner.openai_nats_handler.invoke_graph",
         new_callable=AsyncMock,
         side_effect=RuntimeError("graph exploded"),
     ):
@@ -231,7 +231,7 @@ async def test_invoke_graph_exception_with_reply_responds() -> None:
     msg = _make_msg([{"role": "user", "content": "boom"}], reply="INBOX.crash")
 
     with patch(
-        "sherlock.openai_nats_handler.invoke_graph",
+        "reasoner.openai_nats_handler.invoke_graph",
         new_callable=AsyncMock,
         side_effect=ValueError("bad value"),
     ):
@@ -252,7 +252,7 @@ async def test_result_bytes_are_valid_chat_completion_response() -> None:
     msg = _make_msg([{"role": "user", "content": "valid?"}], reply=None)
 
     with patch(
-        "sherlock.openai_nats_handler.invoke_graph",
+        "reasoner.openai_nats_handler.invoke_graph",
         new_callable=AsyncMock,
         return_value="validated",
     ):
@@ -277,12 +277,12 @@ async def test_no_message_content_in_debug_log() -> None:
     debug_calls: list = []
     error_calls: list = []
 
-    with patch("sherlock.openai_nats_handler._log") as mock_log:
+    with patch("reasoner.openai_nats_handler._log") as mock_log:
         mock_log.debug = MagicMock(side_effect=lambda *a, **kw: debug_calls.append((a, kw)))
         mock_log.error = MagicMock(side_effect=lambda *a, **kw: error_calls.append((a, kw)))
 
         with patch(
-            "sherlock.openai_nats_handler.invoke_graph",
+            "reasoner.openai_nats_handler.invoke_graph",
             new_callable=AsyncMock,
             return_value="safe response",
         ):
@@ -305,12 +305,12 @@ async def test_no_message_content_in_error_log_on_exception() -> None:
 
     error_calls: list = []
 
-    with patch("sherlock.openai_nats_handler._log") as mock_log:
+    with patch("reasoner.openai_nats_handler._log") as mock_log:
         mock_log.debug = MagicMock()
         mock_log.error = MagicMock(side_effect=lambda *a, **kw: error_calls.append((a, kw)))
 
         with patch(
-            "sherlock.openai_nats_handler.invoke_graph",
+            "reasoner.openai_nats_handler.invoke_graph",
             new_callable=AsyncMock,
             side_effect=RuntimeError("some error"),
         ):
@@ -374,7 +374,7 @@ async def test_user_id_uses_req_user_when_set() -> None:
     }
     msg = MagicMock()
     msg.data = json.dumps(payload).encode()
-    msg.subject = "sherlock.v1.chat"
+    msg.subject = "reasoner.v1.chat"
     msg.reply = None
     msg.respond = AsyncMock()
 
@@ -384,7 +384,7 @@ async def test_user_id_uses_req_user_when_set() -> None:
         captured_user_id.append(user_id)
         return "ok"
 
-    with patch("sherlock.openai_nats_handler.invoke_graph", side_effect=fake_invoke):
+    with patch("reasoner.openai_nats_handler.invoke_graph", side_effect=fake_invoke):
         await handler._handle(msg)
 
     assert captured_user_id == ["explicit-user-123"]
@@ -401,7 +401,7 @@ async def test_user_id_derives_uuid_v5_when_absent() -> None:
         captured_user_id.append(user_id)
         return "ok"
 
-    with patch("sherlock.openai_nats_handler.invoke_graph", side_effect=fake_invoke):
+    with patch("reasoner.openai_nats_handler.invoke_graph", side_effect=fake_invoke):
         await handler._handle(msg)
 
     assert len(captured_user_id) == 1
@@ -422,7 +422,7 @@ async def test_user_id_derives_uuid_v5_when_absent() -> None:
 
 def test_derive_user_id_stable_across_calls() -> None:
     """_derive_user_id returns the same UUID v5 for identical message content."""
-    from sherlock.models_v1 import ChatMessage
+    from reasoner.models_v1 import ChatMessage
 
     messages = [
         ChatMessage(role="user", content="hello world"),
@@ -436,7 +436,7 @@ def test_derive_user_id_stable_across_calls() -> None:
 
 def test_derive_user_id_only_uses_user_messages() -> None:
     """_derive_user_id ignores non-user messages when building the hash."""
-    from sherlock.models_v1 import ChatMessage
+    from reasoner.models_v1 import ChatMessage
 
     messages_with_system = [
         ChatMessage(role="system", content="system prompt"),

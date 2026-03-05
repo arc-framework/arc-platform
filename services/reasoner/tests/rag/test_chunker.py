@@ -1,9 +1,9 @@
-"""Unit tests for sherlock.rag.chunker."""
+"""Unit tests for reasoner.rag.chunker."""
 from __future__ import annotations
 
 import pytest
 
-from sherlock.rag.chunker import chunk_text
+from reasoner.rag.chunker import chunk_text
 
 
 class TestChunkTextBasic:

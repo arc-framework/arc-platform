@@ -55,34 +55,34 @@ func (b *blockingPGProber) Probe(_ context.Context) ProbeResult {
 // --- helpers ---
 
 func okPG() *mockPGProber {
-	return &mockPGProber{result: ProbeResult{Name: "arc-oracle", OK: true}}
+	return &mockPGProber{result: ProbeResult{Name: "arc-persistence", OK: true}}
 }
 func errPG(msg string) *mockPGProber {
-	return &mockPGProber{result: ProbeResult{Name: "arc-oracle", OK: false, Error: msg}}
+	return &mockPGProber{result: ProbeResult{Name: "arc-persistence", OK: false, Error: msg}}
 }
 func okNATS() *mockNATSProvisioner {
-	return &mockNATSProvisioner{probeResult: ProbeResult{Name: "arc-flash", OK: true}}
+	return &mockNATSProvisioner{probeResult: ProbeResult{Name: "arc-messaging", OK: true}}
 }
 func errNATS(msg string) *mockNATSProvisioner {
 	return &mockNATSProvisioner{
 		provisionErr: errors.New(msg),
-		probeResult:  ProbeResult{Name: "arc-flash", OK: false, Error: msg},
+		probeResult:  ProbeResult{Name: "arc-messaging", OK: false, Error: msg},
 	}
 }
 func okPulsar() *mockPulsarProvisioner {
-	return &mockPulsarProvisioner{probeResult: ProbeResult{Name: "arc-strange", OK: true}}
+	return &mockPulsarProvisioner{probeResult: ProbeResult{Name: "arc-streaming", OK: true}}
 }
 func errPulsar(msg string) *mockPulsarProvisioner {
 	return &mockPulsarProvisioner{
 		provisionErr: errors.New(msg),
-		probeResult:  ProbeResult{Name: "arc-strange", OK: false, Error: msg},
+		probeResult:  ProbeResult{Name: "arc-streaming", OK: false, Error: msg},
 	}
 }
 func okRedis() *mockRedisProber {
-	return &mockRedisProber{result: ProbeResult{Name: "arc-sonic", OK: true}}
+	return &mockRedisProber{result: ProbeResult{Name: "arc-cache", OK: true}}
 }
 func errRedis(msg string) *mockRedisProber {
-	return &mockRedisProber{result: ProbeResult{Name: "arc-sonic", OK: false, Error: msg}}
+	return &mockRedisProber{result: ProbeResult{Name: "arc-cache", OK: false, Error: msg}}
 }
 
 // --- tests ---

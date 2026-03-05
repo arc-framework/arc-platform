@@ -5,11 +5,11 @@ services:
   # ── Sherlock: LangGraph reasoning engine ──────────────────────────────────
   # Three invocation modes:
   #   - HTTP sync:  POST http://localhost:8083/chat
-  #   - NATS:       subscribe sherlock.request (queue group: sherlock_workers)
+  #   - NATS:       subscribe reasoner.request (queue group: reasoner_workers)
   #   - Pulsar:     sherlock-requests topic (opt-in, SHERLOCK_PULSAR_ENABLED=true)
   #
   # Networks:
-  #   arc_platform_net — reaches arc-sql-db, arc-vector-db, arc-messaging, arc-streaming
+  #   arc_platform_net — reaches arc-persistence, arc-messaging, arc-streaming
   #   arc_otel_net     — reaches arc-friday-collector for OTLP telemetry
   #
   # No depends_on — orchestration handled by resolve-deps.sh using service.yaml
@@ -22,15 +22,15 @@ services:
     ports:
       - "127.0.0.1:8083:8000"   # localhost-only; cortex=8081, pulsar-admin=8082
     environment:
-      SHERLOCK_POSTGRES_URL: "postgresql+asyncpg://arc:arc@arc-sql-db:5432/arc"
+      SHERLOCK_POSTGRES_URL: "postgresql+asyncpg://arc:arc@arc-persistence:5432/arc"
       SHERLOCK_NATS_URL: "nats://arc-messaging:4222"
       LOG_LEVEL: "debug"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://arc-friday-collector:4317"
       # For local binary runs override with: OTEL_EXPORTER_OTLP_ENDPOINT=127.0.0.1:4317
-      OTEL_SERVICE_NAME: "arc-sherlock"
+      OTEL_SERVICE_NAME: "arc-reasoner"
       OTEL_SERVICE_VERSION: "0.1.0"
       OTEL_DEPLOYMENT_ENVIRONMENT: "development"
-      OTEL_RESOURCE_ATTRIBUTES: "service.namespace=arc-platform,service.instance.id=arc-sherlock-1"
+      OTEL_RESOURCE_ATTRIBUTES: "service.namespace=arc-platform,service.instance.id=arc-reasoner-1"
       OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
       OTEL_TRACES_SAMPLER: "always_on"
       OTEL_PROPAGATORS: "tracecontext,baggage"
@@ -42,7 +42,7 @@ services:
       SHERLOCK_MINIO_ENDPOINT: "arc-storage:9000"
       SHERLOCK_MINIO_ACCESS_KEY: "arc"
       SHERLOCK_MINIO_SECRET_KEY: "arc-minio-dev"
-      SHERLOCK_MINIO_BUCKET: "sherlock-files"
+      SHERLOCK_MINIO_BUCKET: "reasoner-files"
       # SHERLOCK_LLM_SUPPORTS_SYSTEM_ROLE — omitted: auto-detected from model name.
       # Set to true/false explicitly only when the heuristic is wrong (e.g. ChatML Llama fine-tune).
       # SHERLOCK_SYSTEM_PROMPT — omitted: uses the default Sherlock persona.

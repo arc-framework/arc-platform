@@ -11,4 +11,4 @@ depends_on:
   - streaming        # arc-streaming (Pulsar)
   - cache            # arc-cache (Redis)
   - friday-collector # arc-friday-collector (OTEL)
-  - sql-db           # arc-sql-db (PostgreSQL)
+  - persistence      # arc-persistence (PostgreSQL)

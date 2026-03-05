@@ -1,12 +1,12 @@
 name: arc-platform
 
 services:
-  arc-sql-db:
+  arc-persistence:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ghcr.io/arc-framework/arc-sql-db:latest
-    container_name: arc-sql-db
+    image: ghcr.io/arc-framework/arc-persistence:latest
+    container_name: arc-persistence
     environment:
       POSTGRES_USER: arc
       POSTGRES_PASSWORD: arc
@@ -28,7 +28,7 @@ services:
 
 volumes:
   oracle-data:
-    name: arc-sql-db-data
+    name: arc-persistence-data
 
 networks:
   arc_platform_net:

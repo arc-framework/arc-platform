@@ -70,11 +70,11 @@ func TestNewNATSClient(t *testing.T) {
 	t.Parallel()
 
 	cb := NewCircuitBreaker("new-nats-test")
-	cfg := config.NATSConfig{URL: "nats://arc-flash:4222"}
+	cfg := config.NATSConfig{URL: "nats://arc-messaging:4222"}
 	client := NewNATSClient(cfg, cb)
 
 	assert.NotNil(t, client)
-	assert.Equal(t, "nats://arc-flash:4222", client.url)
+	assert.Equal(t, "nats://arc-messaging:4222", client.url)
 	assert.NotNil(t, client.newJS)
 }
 

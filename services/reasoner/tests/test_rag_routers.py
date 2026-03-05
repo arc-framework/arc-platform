@@ -22,13 +22,13 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from sherlock.config import Settings
-from sherlock.embeddings_router import router as embeddings_router
-from sherlock.files_router import build_files_router
-from sherlock.models_router import StaticModelRegistry
-from sherlock.openai_router import build_openai_router
-from sherlock.rag.store import RAGInfra
-from sherlock.vector_stores_router import build_vector_stores_router
+from reasoner.config import Settings
+from reasoner.embeddings_router import router as embeddings_router
+from reasoner.files_router import build_files_router
+from reasoner.models_router import StaticModelRegistry
+from reasoner.openai_router import build_openai_router
+from reasoner.rag.store import RAGInfra
+from reasoner.vector_stores_router import build_vector_stores_router
 
 # ─── Default model used in chat completion tests ──────────────────────────────
 
@@ -643,7 +643,7 @@ async def test_chat_completions_usage_prompt_tokens_nonzero() -> None:
     application.state.app_state = state
 
     with patch(
-        "sherlock.openai_router.invoke_graph", new_callable=AsyncMock
+        "reasoner.openai_router.invoke_graph", new_callable=AsyncMock
     ) as mock_invoke:
         mock_invoke.return_value = "hello"
         async with AsyncClient(

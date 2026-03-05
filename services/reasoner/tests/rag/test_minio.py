@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from minio.error import S3Error
 
-from sherlock.config import Settings
-from sherlock.rag.adapters.minio import MinioFileStore, MinioUnavailableError
+from reasoner.config import Settings
+from reasoner.rag.adapters.minio import MinioFileStore, MinioUnavailableError
 
 
 def _settings() -> Settings:
@@ -19,7 +19,7 @@ def _settings() -> Settings:
 
 def _store_with_mock_client() -> tuple[MinioFileStore, MagicMock]:
     """Return a MinioFileStore with a mocked Minio client."""
-    with patch("sherlock.rag.adapters.minio.Minio") as mock_cls:
+    with patch("reasoner.rag.adapters.minio.Minio") as mock_cls:
         mock_client = MagicMock()
         mock_cls.return_value = mock_client
         store = MinioFileStore(_settings())

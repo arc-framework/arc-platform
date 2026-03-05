@@ -1,4 +1,4 @@
-"""Unit tests for sherlock.rag.adapters.reranker."""
+"""Unit tests for reasoner.rag.adapters.reranker."""
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from sherlock.rag.adapters.reranker import RerankerAdapter
+from reasoner.rag.adapters.reranker import RerankerAdapter
 
 
 def _make_settings(model_name: str = "cross-encoder/test-model") -> MagicMock:
@@ -71,7 +71,7 @@ class TestRerankerAdapterRerank:
         settings = _make_settings("my-model")
 
         mock_instance = MagicMock()
-        with patch("sherlock.rag.adapters.reranker.CrossEncoder", return_value=mock_instance):
+        with patch("reasoner.rag.adapters.reranker.CrossEncoder", return_value=mock_instance):
             adapter = RerankerAdapter(settings)
             result1 = adapter._get_or_load_model()
             result2 = adapter._get_or_load_model()

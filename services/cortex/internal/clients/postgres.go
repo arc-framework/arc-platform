@@ -14,7 +14,7 @@ import (
 	"arc-framework/cortex/internal/orchestrator"
 )
 
-const probeName = "arc-oracle"
+const probeName = "arc-persistence"
 
 // dbPinger abstracts the pgxpool.Pool methods used in Probe so that tests
 // can inject a fake without standing up a real database.

@@ -71,7 +71,7 @@ func TestBootstrapFlow_202ThenReady(t *testing.T) {
 	// Step 1: POST /api/v1/bootstrap → 202
 	resp, err := client.Post(srv.URL+"/api/v1/bootstrap", "application/json", strings.NewReader(""))
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	assert.Equal(t, http.StatusAccepted, resp.StatusCode, "bootstrap should return 202 Accepted")
 
@@ -85,7 +85,7 @@ func TestBootstrapFlow_202ThenReady(t *testing.T) {
 	for time.Now().Before(deadline) {
 		r, err := client.Get(srv.URL + "/ready")
 		require.NoError(t, err)
-		r.Body.Close()
+		r.Body.Close() //nolint:errcheck
 
 		lastCode = r.StatusCode
 		if lastCode == http.StatusOK {

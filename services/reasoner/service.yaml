@@ -15,7 +15,7 @@ healthcheck:
   retries: 5
   start_period: 60s
 depends_on:
-  - sql-db           # arc-sql-db (PostgreSQL — conversation history)
+  - persistence      # arc-persistence (PostgreSQL — conversation history)
   - messaging        # arc-messaging (NATS — real-time request-reply)
   - streaming        # arc-streaming (Pulsar — durable async, optional)
   - friday-collector # arc-friday-collector (OTEL)
