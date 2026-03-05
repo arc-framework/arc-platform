@@ -73,7 +73,10 @@ async def build_rag_infra(
             "rag.startup.degraded",
             reason="MinIO (arc-storage) unreachable",
             endpoint=settings.minio_endpoint,
-            hint="Start arc-storage with 'make dev PROFILE=reason' or set SHERLOCK_RAG_ENABLED=false",
+            hint=(
+                "Start arc-storage with 'make dev PROFILE=reason'"
+                " or set SHERLOCK_RAG_ENABLED=false"
+            ),
         )
         return None
 

@@ -113,7 +113,11 @@ def build_files_router() -> APIRouter:
 
         # Generate file ID and upload to MinIO
         file_id = f"file-{uuid.uuid4()}"
-        mime_type = file.content_type or mimetypes.guess_type(filename)[0] or "application/octet-stream"
+        mime_type = (
+            file.content_type
+            or mimetypes.guess_type(filename)[0]
+            or "application/octet-stream"
+        )
 
         try:
             await rag.file_store.upload(file_id, data, mime_type)

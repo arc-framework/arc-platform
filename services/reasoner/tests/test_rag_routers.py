@@ -52,6 +52,7 @@ def _make_file_row(
     row.content_type = content_type
     row.bytes = size
     row.minio_key = file_id
+    row.purpose = "assistants"
     row.status = status
     row.created_at = datetime.datetime(2025, 1, 1, tzinfo=datetime.UTC)
     return row

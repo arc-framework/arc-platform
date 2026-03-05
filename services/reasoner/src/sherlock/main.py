@@ -179,7 +179,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         else:
             log.warning(
                 "rag.disabled",
-                reason="RAG was requested (SHERLOCK_RAG_ENABLED=true) but dependencies are unavailable — all /v1/files, /v1/vector_stores, /v1/embeddings routes will return 503",
+                reason=(
+                    "RAG was requested (SHERLOCK_RAG_ENABLED=true) but dependencies are"
+                    " unavailable — all /v1/files, /v1/vector_stores, /v1/embeddings"
+                    " routes will return 503"
+                ),
             )
     else:
         log.info("rag.disabled", rag_enabled=False)
