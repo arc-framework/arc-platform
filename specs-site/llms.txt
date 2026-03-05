@@ -77,3 +77,10 @@
 - [Implementation Plan: Sherlock Chat API — Provider-Agnostic Layer](/arc-platform/specs-site/012-sherlock-chat-api/plan.md)
 - [Tasks: Sherlock Chat API — Provider-Agnostic Layer](/arc-platform/specs-site/012-sherlock-chat-api/tasks.md)
 
+### 013 — Sherlock Rag Api
+
+- [Feature: Sherlock Universal RAG API](/arc-platform/specs-site/013-sherlock-rag-api/spec.md)
+- [Implementation Plan: Sherlock Universal RAG API](/arc-platform/specs-site/013-sherlock-rag-api/plan.md)
+- [Tasks: Sherlock Universal RAG API](/arc-platform/specs-site/013-sherlock-rag-api/tasks.md)
+- [Analysis Report: 013-Sherlock-RAG-API](/arc-platform/specs-site/013-sherlock-rag-api/analysis-report.md)
+

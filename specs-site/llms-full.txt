@@ -3029,6 +3029,452 @@ Once these are addressed, all 7 requirements map cleanly to 12 tasks with safe p
 ---
 
 ---
+url: /arc-platform/specs-site/013-sherlock-rag-api/analysis-report.md
+---
+# Analysis Report: 013-Sherlock-RAG-API
+
+**Date:** 2026-03-03\
+**Stage:** Pre-implementation\
+**Spec Status:** Approved\
+**Auditor:** Claude Code (read-only analysis)
+
+***
+
+## Executive Summary
+
+013 is a well-scoped, architecturally sound feature extending Sherlock (012) into a Universal RAG engine. All user scenarios, functional requirements, and success criteria are clearly defined with proper edge case coverage. The tasks are properly parallelized (19 of 30 can run concurrently), dependencies form a valid DAG, and constitution/pattern compliance is strong.
+
+**Verdict:** READY FOR IMPLEMENTATION (with minor clarifications noted below)
+
+***
+
+## 1. Coverage Matrix
+
+### Functional Requirements (FR-1 to FR-15)
+
+| FR | User Story(ies) | Plan Section | Task(s) | Status |
+|----|-----------------|--------------|---------|--------|
+| FR-1 | US-1 | Files API | TASK-050 | ✓ |
+| FR-2 | US-1, US-6 | Files CRUD | TASK-050 | ✓ |
+| FR-3 | US-14 | File download | TASK-050 | ✓ |
+| FR-4 | US-2, US-15 | Vector Store CRUD | TASK-051 | ✓ |
+| FR-5 | US-3, US-9 | Async/Sync ingest | TASK-051 | ✓ |
+| FR-6 | US-3 | File-within-store CRUD | TASK-051 | ✓ |
+| FR-7 | US-8, US-11 | Hybrid search | TASK-051 | ✓ |
+| FR-8 | US-5 | Embeddings API | TASK-052 | ✓ |
+| FR-9 | US-4, US-11, US-13 | RAG chat with tools | TASK-053, TASK-054 | ✓ |
+| FR-10 | US-3 | IngestPipeline | TASK-030, TASK-031, TASK-040 | ✓ |
+| FR-11 | US-8 | HybridRetriever | TASK-021, TASK-041 | ✓ |
+| FR-12 | US-12 | NATS handlers | TASK-055 | ✓ |
+| FR-13 | US-7 | RAG disabled → 503 | TASK-050, TASK-051, TASK-052, TASK-053 | ✓ |
+| FR-14 | US-13 | Token counting | TASK-054 | ✓ |
+| FR-15 | — | DB schema init | TASK-002, TASK-021 | ✓ |
+
+**Result:** 15/15 FRs mapped to tasks. ✓ COMPLETE
+
+### Non-Functional Requirements (NFR-1 to NFR-9)
+
+| NFR | Description | Plan Coverage | Task(s) | Status |
+|-----|-------------|----------------|---------|--------|
+| NFR-1 | Content tracing gate | Config → TASK-001 | TASK-001 | ✓ |
+| NFR-2 | Ingest failure handling | Application layer | TASK-040 | ✓ |
+| NFR-3 | Think profile byte-identical with RAG disabled | Config gate | TASK-001, TASK-060 | ✓ |
+| NFR-4 | Ruff + mypy strict | Quality standards | TASK-001 through TASK-071 | ✓ |
+| NFR-5 | ≥75% coverage on rag/, routers | Test tasks | TASK-070, TASK-071 | ✓ |
+| NFR-6 | Hybrid search latency ≤100ms | SQL optimized | TASK-021 | ✓ |
+| NFR-7 | Reranker latency ≤20ms | CrossEncoder | TASK-023 | ✓ |
+| NFR-8 | OTEL counter/timer/error pattern | All routers | TASK-050 through TASK-055 | ✓ |
+| NFR-9 | All 012 tests pass unchanged | Integration | TASK-071 | ✓ |
+
+**Result:** 9/9 NFRs covered. ✓ COMPLETE
+
+### Success Criteria (SC-1 to SC-12)
+
+| SC | Requirement | Task Coverage | Status |
+|----|-------------|----------------|--------|
+| SC-1 | `GET /v1/files` returns 200 | TASK-050, TASK-071 | ✓ |
+| SC-2 | Full ingest cycle end-to-end | TASK-040, TASK-051, TASK-071 | ✓ |
+| SC-3 | RAG chat grounded (not hallucinated) | TASK-053, TASK-054, TASK-071 | ✓ |
+| SC-4 | Embeddings returns 384-element vector | TASK-052, TASK-071 | ✓ |
+| SC-5 | RAG disabled → 503, 012 unaffected | TASK-001, TASK-050-052, TASK-071 | ✓ |
+| SC-6 | Lint zero errors | TASK-001 through TASK-071 | ✓ |
+| SC-7 | ≥75% coverage; 012 tests pass | TASK-070, TASK-071 | ✓ |
+| SC-8 | `usage.prompt_tokens` non-zero | TASK-054, TASK-071 | ✓ |
+| SC-9 | NATS ingest request→result | TASK-055, TASK-071 | ✓ |
+| SC-10 | Hybrid search alpha blending | TASK-021, TASK-041, TASK-071 | ✓ |
+| SC-11 | SigNoz metrics populated | TASK-050-052, TASK-055 | ✓ |
+| SC-12 | service.yaml bumped v0.3.0; storage added | TASK-062 | ✓ |
+
+**Result:** 12/12 SCs covered. ✓ COMPLETE
+
+### User Stories (US-1 to US-15)
+
+All 15 user stories are covered by one or more tasks. US-14 and US-15 (P3 — nice to have) are included in FR-3 and FR-4 respectively.
+
+**Result:** 15/15 USs covered. ✓ COMPLETE
+
+***
+
+## 2. Edge Cases Audit
+
+The spec defines 11 edge cases (lines 283-300). Verification:
+
+| Edge Case | Scenario | Acceptance Criterion | Task(s) | Status |
+|-----------|----------|----------------------|---------|--------|
+| EC-1 | Unsupported extension | 400 error | TASK-050 (files\_router) | ✓ |
+| EC-2 | File exceeds max size (50 MB) | 400 error | TASK-050 (files\_router) | ✓ |
+| EC-3 | Ingest fails (corrupt PDF, parser exception) | `status=failed`, error\_message in DB | TASK-040 (IngestPipeline exception handling) | ✓ |
+| EC-4 | MinIO unreachable during upload | 503 not 500 | TASK-020 (MinIO adapter error handling) | ✓ |
+| EC-5 | pgvector unavailable during search | Graceful degradation (empty context) | TASK-021 (pgvector adapter) + TASK-053 (graph node) | ✓ |
+| EC-6 | Non-existent vector\_store\_id | Empty results, rest still searched | TASK-041 (HybridRetriever) | ✓ |
+| EC-7 | Same file added to VS twice | Idempotent (returns existing row) | TASK-051 (vector\_stores\_router) | ✓ |
+| EC-8 | `hybrid_alpha=0.0` (pure keyword) | FTS-only scoring | TASK-021 (SQL weighted scoring) | ✓ |
+| EC-9 | `hybrid_alpha=1.0` (pure dense) | Dense cosine only | TASK-021 (SQL weighted scoring) | ✓ |
+| EC-10 | `?sync=true` on file >30s | Timeout → fallback to 202 | TASK-051 (asyncio.wait\_for with timeout) | ✓ |
+| EC-11 | Delete file during ingest in-progress | `status=failed` in DB | TASK-040 (exception handling) | ✓ |
+
+**Result:** 11/11 edge cases covered. ✓ COMPLETE
+
+***
+
+## 3. CI Build Success Criteria (BC-1 to BC-5)
+
+From spec.md lines 331–461, the CI investigation requires these criteria:
+
+| Criterion | Description | Plan Coverage | Task(s) | Status |
+|-----------|-------------|----------------|---------|--------|
+| BC-1 | Cold build ≤5 minutes | M-1 (CPU-only torch) + M-3 (uv) | TASK-004 | ✓ |
+| BC-2 | Warm build (cache hit) ≤90s | M-1 + M-3 | TASK-004 | ✓ |
+| BC-3 | typecheck/test jobs ≤3 min each | M-2 (pip cache) | TASK-005 | ✓ |
+| BC-4 | torch CPU-only (`torch.version.cuda` = None) | M-1 | TASK-004 | ✓ |
+| BC-5 | No regression on existing tests | All tasks | TASK-071 | ✓ |
+
+**Result:** All 5 BC criteria mapped to tasks. ✓ COMPLETE
+
+***
+
+## 4. Task Dependency Analysis
+
+### DAG Validation
+
+Analyzed tasks.md dependency graph (lines 23–110). **Result: Valid DAG, no cycles.** ✓
+
+Key dependency chains verified:
+
+* **T001 (config)** → T002 (DB) → T010 (models) → T011 (ports) → T020–T031 (adapters/parsers)
+* **T040 (ingest)** ← T020, T021, T022, T030, T031
+* **T041 (retriever)** ← T021, T022, T023
+* **T050–T055 (routers)** ← T042 (RAGInfra)
+* **T060 (main.py wire)** ← T050–T055
+* **T070–T071 (tests)** ← T060
+* **T999 (reviewer)** ← ALL
+
+All dependencies are **acyclic and properly ordered.**
+
+### Parallelization Analysis
+
+Tasks marked `[P]` in tasks.md: **19 out of 30 tasks can run in parallel.**
+
+**Verified parallel-safe groups:**
+
+1. **Setup Phase (2 tasks, 2 parallel):**
+   * TASK-004 (Dockerfile)
+   * TASK-005 (CI workflow)
+
+2. **Parallel Batch A — Adapters (4 tasks, 4 parallel after TASK-011):**
+   * TASK-020 (MinIO)
+   * TASK-021 (pgvector)
+   * TASK-022 (embedder)
+   * TASK-023 (reranker)
+
+3. **Parallel Batch B — Parsers + Chunker (2 tasks, 2 parallel after TASK-010):**
+   * TASK-030 (parsers)
+   * TASK-031 (chunker)
+
+4. **Parallel Batch C — HTTP Routers (6 tasks, 6 parallel after TASK-042):**
+   * TASK-050 (files\_router)
+   * TASK-051 (vector\_stores\_router)
+   * TASK-052 (embeddings\_router)
+   * TASK-053 (graph.py RAG node)
+   * TASK-054 (openai\_router tiktoken)
+   * TASK-055 (NATS RAG handler)
+
+5. **Parallel Batch D — Config + Wiring (3 tasks, 2 parallel after setup):**
+   * TASK-061 (docker-compose.yml) \[P]
+   * TASK-062 (service.yaml bump) \[P]
+
+6. **Parallel Batch E — Tests (2 tasks, 2 parallel after TASK-060):**
+   * TASK-070 (unit tests) \[P]
+   * TASK-071 (integration tests) \[P]
+
+7. **Parallel Batch F — Docs (1 task, 1 parallel after TASK-060):**
+   * TASK-900 (OpenAPI/AsyncAPI) \[P]
+
+**All parallel tasks verified to have non-overlapping module paths.** ✓
+
+***
+
+## 5. Mandatory Tasks Audit
+
+| Task | Purpose | Status |
+|------|---------|--------|
+| TASK-900 | Docs/links (OpenAPI, AsyncAPI) | ✓ Present |
+| TASK-999 | Reviewer verification | ✓ Present |
+
+**Result:** Both mandatory tasks present with clear acceptance criteria. ✓ COMPLETE
+
+***
+
+## 6. Constitution Compliance (v2.2.0)
+
+Reviewed against `.specify/memory/constitution.md`. Plan.md already includes a constitution table (lines 155–171). Cross-check:
+
+| Principle | Applies | Plan Status | Compliant | Evidence |
+|-----------|---------|------------|-----------|----------|
+| I. Zero-Dependency CLI | \[ ] | N/A | — | No CLI changes |
+| II. Platform-in-a-Box | \[x] | PASS | \[x] | RAG disabled by default; think profile unchanged; MinIO in reason profile only |
+| III. Modular Services | \[x] | PASS | \[x] | All changes in `services/reasoner/`; no new service directory |
+| IV. Two-Brain | \[x] | PASS | \[x] | Python only (parsing, chunking, embedding, reranking) |
+| V. Polyglot Standards | \[x] | PASS | \[x] | FastAPI + Pydantic v2 + ruff + mypy strict + pytest; no AI attribution per CLAUDE.md |
+| VI. Local-First | \[ ] | N/A | — | No CLI component |
+| VII. Observability | \[x] | PASS | \[x] | 6 new OTEL metrics; every route follows counter/timer/error pattern; tasks include `event_type` logging |
+| VIII. Security | \[x] | PASS | \[x] | MinIO creds via `SecretStr`; file content never in logs/spans (gated by `SHERLOCK_CONTENT_TRACING=false`) |
+| IX. Declarative | \[ ] | N/A | — | No CLI component |
+| X. Stateful Ops | \[ ] | N/A | — | No CLI component |
+| XI. Resilience | \[x] | PASS | \[x] | Ingest failure → DB status=failed (API unaffected); pgvector down → empty ctx (chat continues) |
+| XII. Interactive | \[ ] | N/A | — | No CLI component |
+
+**Result:** 7/7 applicable principles compliant. ✓ READY
+
+***
+
+## 7. Patterns Compliance (v1.0.0)
+
+Reviewed against `.specify/memory/patterns.md`. Task design aligns with required patterns:
+
+| Pattern | Applies | Design | Status |
+|---------|---------|--------|--------|
+| Factory/DI | \[x] | `RAGInfra` dataclass holds all ports; factory function in TASK-042 | ✓ |
+| Repository | \[x] | Port-based architecture (FileStore, VectorStore, Embedder, Reranker protocols) | ✓ |
+| Config Precedence | \[x] | Env → Pydantic Settings with defaults (TASK-001) | ✓ |
+| Error Handling | \[x] | Custom exceptions, structured error responses, non-500 on expected failures (e.g., 503 MinIO) | ✓ |
+| Testing Standards | \[x] | pytest fixtures, table-driven, ≥75% coverage requirement (TASK-070, TASK-071) | ✓ |
+| XDG Base Directory | \[ ] | N/A (Python service, not CLI) | — |
+| OTEL Observability (Go) | N/A | — | — |
+| UI Service (Go) | N/A | — | — |
+
+**Result:** 5/5 applicable patterns covered. ✓ READY
+
+***
+
+## 8. Gaps Found
+
+### Blockers (must fix before implementation)
+
+None identified. All major gaps are pre-integration clarifications, not implementation blockers.
+
+***
+
+### Warnings (should address)
+
+**Warning-1: Service.yaml version and docker-compose.yml coordination**
+
+* **File:** `services/reasoner/service.yaml` and `docker-compose.yml`
+* **Issue:** Plan.md (line 23) says docker-compose.yml changes are needed, but TASK-061 says `arc-storage` container is "added to compose (or referenced)." This is ambiguous.
+* **Recommendation:** Clarify in TASK-061 acceptance criteria whether:
+  * Arc-storage is added as a new service in the `reason` profile, OR
+  * It's referenced via existing `compose.override.yml` or merged profile config
+  * Current `docker-compose.yml` (line 30) shows no explicit `depends_on` — how is service startup ordering enforced?
+  * Look at how other services (arc-sql-db, arc-messaging) are composed
+
+**Warning-2: `/health/deep` MinIO component missing**
+
+* **File:** `main.py` lifespan (TASK-060)
+* **Issue:** Plan.md says "/health/deep includes `minio: bool` component when `rag_enabled`" but existing health\_deep() (main.py:283) only checks postgres + nats.
+* **Recommendation:** TASK-060 acceptance must explicitly add MinIO health check to `/health/deep` endpoint:
+  ```python
+  if state.rag:
+      components["minio"] = state.rag.file_store.is_healthy()
+  ```
+
+**Warning-3: Reranker lazy init may exceed timeout on first request**
+
+* **File:** TASK-023 (reranker\_router)
+* **Issue:** TASK-023 says "lazy CrossEncoder init on first call (model name from settings)" but spec.md (H-5) notes the model is ~200 MB. First chat request with RAG could timeout if reranker download takes >30s sync timeout.
+* **Recommendation:** Document in TASK-023 acceptance criteria:
+  * Model is cached after first download (subsequent calls use cached version)
+  * Consider pre-downloading model at image build (mitigation H-5 — currently not required by spec)
+
+**Warning-4: TASK-061 docker-compose changes undefined**
+
+* **File:** `docker-compose.yml` modification in TASK-061
+* **Issue:** Plan.md (line 23) says "arc-storage container added to compose (or referenced) in reason profile configuration" but doesn't specify whether docker-compose.yml is the right place or if a separate override should be used.
+* **Recommendation:** TASK-061 acceptance criteria should clarify:
+  * Is docker-compose.yml modified directly?
+  * Or does `reason` profile use a separate `compose.reason.yml` overlay?
+  * How are `SHERLOCK_RAG_*` env vars scoped to `reason` profile only?
+
+***
+
+### Observations (nice to know, not blockers)
+
+**Observation-1: Tiktoken token counting in FR-14 fixes 012 gap**
+
+* Current config.py and openai\_router already import tiktoken, but 012 returns `(0, 0, 0)`. TASK-054 must wire this.
+* Recommendation: Verify existing tiktoken import is correct and accessible.
+
+**Observation-2: Duplicate embedding models**
+
+* `sentence-transformers/all-MiniLM-L6-v2` is used by both SherlockMemory (embeddings for conv history) and RAGInfra (knowledge chunks).
+* This is by design (plan.md line 239) — "EmbedderAdapter accepts encoder instance, main.py passes memory.\_encoder".
+* Recommendation: Confirm in TASK-042 that `RAGInfra.embedder` receives `memory._encoder` instance (not a new load).
+
+**Observation-3: Qdrant mentioned in plan.md but removed from spec**
+
+* Plan.md (line 99) references "qdrant" in the RAG package diagram, but no Qdrant integration is in the spec.
+* The diagram shows pgvector adapters only. This is correct (pgvector is the chosen backend).
+* Recommendation: Verify diagram in plan.md line 99 doesn't confuse pgvector (Postgres extension) with Qdrant (separate vector DB).
+
+**Observation-4: OTEL metrics namespace**
+
+* Spec.md SC-11 expects `sherlock.rag.uploads.total`, `sherlock.rag.ingest.latency`, etc.
+* Confirm metric names exactly match in all router implementations (TASK-050–TASK-055).
+
+**Observation-5: No explicit cancellation token for async tasks**
+
+* TASK-051 specifies `?sync=true` with `asyncio.wait_for(timeout)` fallback to 202.
+* If timeout occurs, the background task continues but is not tracked after client disconnects.
+* Consider: What happens if the same file is re-added before the first ingest completes?
+  * Plan.md EC-7 (line 293) says "idempotent — returns existing row" but doesn't specify if re-add during in-flight ingest is atomic.
+  * Recommendation: TASK-051 should clarify: insert vector\_store\_files with unique constraint (vs\_id, file\_id) to prevent duplicates.
+
+***
+
+## 9. Missing or Unclear Acceptance Criteria
+
+### Minor Clarity Issues (all resolvable in implementation)
+
+1. **TASK-002 (DB schema)**: Plan.md line 393 shows `fts_vector GENERATED ALWAYS` but doesn't specify PostgreSQL version requirement. Acceptance criteria should add: "Postgres 12+ required (GENERATED ALWAYS supported)." Oracle runs PG 17 ✓, but document it.
+
+2. **TASK-021 (hybrid search SQL)**: Plan.md describes the algorithm but acceptance criteria should explicitly test both `alpha=0.0` and `alpha=1.0` edge cases with fixed test data.
+
+3. **TASK-040 (IngestPipeline)**: Specify timeout for large file parsing (> 30s). Currently doc says "configurable timeout; if exceeded → returns 202" but no default. Recommendation: add `ingest_timeout_s` setting or use `sync_timeout_s`.
+
+4. **TASK-060 (main.py wiring)**: Document when RAGInfra is None (rag\_enabled=false) — all routers must return 503 immediately. Confirm check happens before any logic in routers.
+
+5. **TASK-071 (integration tests)**: Spec requires ≥75% coverage on `rag/`, `files_router.py`, `vector_stores_router.py`, `embeddings_router.py`. Acceptance should specify command: `pytest tests/ --cov=sherlock.rag,sherlock.files_router,sherlock.vector_stores_router,sherlock.embeddings_router --cov-fail-under=75`.
+
+***
+
+## 10. Cross-Module Dependency Risks
+
+### Potential Issues (all mitigated in plan)
+
+| Risk | Severity | Mitigation | Task |
+|------|----------|-----------|------|
+| MinIO unreachable at startup | M | Error logged, service starts degraded, routers return 503 | TASK-020, TASK-060 |
+| pgvector unavailable at startup | M | DB schema init best-effort (logs warning), app continues; search returns empty | TASK-021, TASK-060 |
+| File deletion during in-flight ingest | M | FK cascade deletes chunks; `vector_store_files` status=failed with error\_message | TASK-040, TASK-051 |
+| Reranker model download blocks HTTP request | M | Lazy init; download happens on first chat request only; subsequent cached | TASK-023 |
+| CrossEncoder model not in cache | L | Lazy download, user sees first request latency spike (~5s); mitigated by H-5 (image pre-download, optional) | TASK-023 |
+
+**Result:** All risks identified and mitigated. ✓ MANAGED
+
+***
+
+## 11. Spec-to-Plan-to-Tasks Traceability
+
+Sampling verification (10 user stories):
+
+| US | Spec Section | Plan Evidence | Task Chain | Mapped |
+|----|--------------|----------------|-----------|--------|
+| US-1 (upload) | L136–140 | "Files API" line 12, 183 | TASK-050 | ✓ |
+| US-3 (add to VS) | L148–152 | "Ingestion Flow" line 90 | TASK-051, TASK-040 | ✓ |
+| US-4 (RAG chat) | L154–158 | "RAG Chat Flow" line 117 | TASK-053, TASK-054 | ✓ |
+| US-5 (embeddings) | L160–164 | "Embeddings API" line 183 | TASK-052 | ✓ |
+| US-7 (disabled error) | L172–176 | "RAGInfra factory check" line 236 | TASK-050–052 | ✓ |
+| US-8 (search) | L180–184 | "Hybrid Search SQL" line 139 | TASK-051, TASK-041 | ✓ |
+| US-9 (sync ingest) | L186–190 | "Sync timeout" line 262 | TASK-051 | ✓ |
+| US-12 (NATS) | L204–208 | "NATS handlers" line 78 | TASK-055 | ✓ |
+| US-13 (token count) | L210–214 | "Tiktoken wiring" line 270 | TASK-054 | ✓ |
+| US-14 (download) | L218–222 | "File download" line 183 | TASK-050 | ✓ |
+
+**Result:** All sampled stories correctly mapped. ✓ COMPLETE
+
+***
+
+## 12. Summary Verdict
+
+### Completion Status
+
+* **Coverage:** 15 FR + 9 NFR + 12 SC + 15 US + 11 EC + 5 BC = **67/67 requirements covered** ✓
+* **Tasks:** 30 total, 19 parallelizable, all depend on 2 setup tasks ✓
+* **Mandatory tasks:** TASK-900 (docs), TASK-999 (reviewer) present ✓
+* **Constitution:** 7/7 applicable principles compliant ✓
+* **Patterns:** 5/5 applicable patterns implemented ✓
+* **Edge cases:** 11/11 covered with explicit acceptance criteria ✓
+* **DAG validation:** No cycles, proper dependency ordering ✓
+
+### Known Limitations (not blockers)
+
+1. **Docker-compose profile wiring** — TASK-061 needs clarification on whether to modify docker-compose.yml directly or use compose overlays
+2. **MinIO health check** — TASK-060 must add MinIO to `/health/deep` when `rag_enabled=true`
+3. **Reranker lazy init timeout** — Document expected latency spike on first request
+
+### Recommendation
+
+**READY FOR IMPLEMENTATION** — All critical pieces are in place. Team can begin parallel execution immediately:
+
+**Start immediately (no dependencies):**
+
+* Group A: TASK-004, TASK-005 (CI build fixes)
+* TASK-001, TASK-002, TASK-003 (config/schema setup)
+
+**After setup (Day 1–2):**
+
+* Group B: TASK-010, TASK-011 (domain models/ports)
+* Parallel: TASK-020–023 (adapters), TASK-030–031 (parsers), plus existing TASK-001–003
+
+**Mid-week (Phase 3–4):**
+
+* Group C: TASK-040–042 (application layer)
+* Parallel: TASK-050–055 (routers) + TASK-061–062 (config/service.yaml)
+
+**End of week (Phase 5–6):**
+
+* TASK-060 (main.py wire) — blocks TASK-070/071
+* TASK-070–071 (tests)
+* TASK-900 (docs)
+* TASK-999 (reviewer)
+
+**Estimated duration:** 1–2 weeks with 4–6 parallel agents across 3 phases.
+
+***
+
+## Appendix: File Paths Referenced
+
+* `/services/reasoner/src/sherlock/config.py` — Settings additions
+* `/services/reasoner/src/sherlock/main.py` — AppState, lifespan, router wiring
+* `/services/reasoner/src/sherlock/rag/` — New package (domain, adapters, application, parsers)
+* `/services/reasoner/src/sherlock/files_router.py` — New file
+* `/services/reasoner/src/sherlock/vector_stores_router.py` — New file
+* `/services/reasoner/src/sherlock/embeddings_router.py` — New file
+* `/services/reasoner/pyproject.toml` — Dependency additions
+* `/services/reasoner/service.yaml` — Version bump to 0.3.0
+* `/services/reasoner/docker-compose.yml` — Env var additions
+* `/services/reasoner/Dockerfile` — CPU-torch + uv optimization
+* `/services/persistence/initdb/004_sherlock_rag_schema.sql` — New SQL init
+* `/.github/workflows/reasoner-images.yml` — pip cache addition
+* `/specs/013-sherlock-rag-api/contracts/openapi.yaml` — 13 new paths
+* `/specs/013-sherlock-rag-api/contracts/asyncapi.yaml` — 4 new channel pairs
+
+***
+
+**End of Analysis Report**
+
+---
+
+---
 url: /arc-platform/specs-site/009-sherlock-reasoning/analysis-report.md
 ---
 # Analysis Report: Sherlock Reasoning Service (Re-Audit Post-Fixes)
@@ -6074,6 +6520,508 @@ FastAPI serves the live Swagger UI at `http://localhost:8083/docs` and raw spec 
 | X. Stateful Ops | ✗ | n/a | CLI principle — not applicable |
 | XI. Resilience | ✓ | ✓ | `tenacity` retries, Pulsar negative-ack, health check `start_period: 30s` |
 | XII. Interactive | ✗ | n/a | CLI principle — not applicable |
+
+---
+
+---
+url: /arc-platform/specs-site/013-sherlock-rag-api/spec.md
+---
+# Feature: Sherlock Universal RAG API
+
+> **Spec**: 013-sherlock-rag-api
+> **Author**: arc-platform
+> **Date**: 2026-03-03
+> **Status**: Approved
+
+## Target Modules
+
+| Module | Path | Impact |
+|--------|------|--------|
+| Reasoner | `services/reasoner/` | New `rag/` package, 3 new routers, graph extension, config, models, NATS handler |
+| Persistence | `services/persistence/` | 4 new tables in `sherlock` schema |
+| Storage | `services/storage/` | New MinIO bucket `sherlock-files` — added to `reason` profile only |
+
+## Overview
+
+013 transforms Sherlock from a text-to-text LLM API into a **Universal RAG engine**. It adds an OpenAI-compatible Files API and Vector Stores API on top of the 012 chat surface, so any client already using the OpenAI SDK can upload documents, build knowledge collections, and send RAG-augmented chat completions — all pointing at Sherlock.
+
+The core chat logic (012) is unchanged. RAG is a conditional extension: when a request includes `tools: [{ type: "file_search", vector_store_ids: [...] }]`, knowledge context is retrieved from pgvector and merged into the LLM prompt. Without that field, the request is processed identically to today.
+
+***
+
+## Architecture
+
+### Ingestion Flow
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant FilesAPI as /v1/files
+    participant VSFilesAPI as /v1/vector_stores/{id}/files
+    participant MinIO as Tardis (MinIO)
+    participant DB as Oracle (pgvector)
+    participant BG as BackgroundTask
+
+    Client->>FilesAPI: POST multipart/form-data
+    FilesAPI->>MinIO: upload(bytes) → key
+    FilesAPI->>DB: INSERT knowledge_files
+    FilesAPI-->>Client: 201 { id, filename, ... }
+
+    Client->>VSFilesAPI: POST { file_id }
+    VSFilesAPI->>DB: INSERT vector_store_files (status=queued)
+    VSFilesAPI-->>Client: 202 Accepted
+    VSFilesAPI->>BG: IngestPipeline.ingest(file_id, vs_id)
+
+    BG->>MinIO: download(key) → bytes
+    BG->>BG: parse → chunk → embed
+    BG->>DB: INSERT knowledge_chunks (content + embedding + fts_vector)
+    BG->>DB: UPDATE vector_store_files (status=completed, chunk_count=N)
+```
+
+### RAG Chat Flow
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Router as openai_router.py
+    participant Graph as LangGraph
+    participant ConvMem as pgvector (conversations)
+    participant KnowMem as pgvector (knowledge_chunks)
+    participant Reranker as CrossEncoderReranker
+    participant LLM as LLM Provider
+
+    Client->>Router: POST /v1/chat/completions + tools.file_search
+    Router->>Graph: invoke_graph(..., vector_store_ids=[...])
+
+    Graph->>ConvMem: search(user_id, query) → conv_ctx[]
+    Graph->>KnowMem: hybrid SQL (dense + FTS) → top-50 candidates
+    KnowMem-->>Graph: candidate chunks
+    Graph->>Reranker: rerank(query, candidates) → top-5
+    Graph->>LLM: prompt = system + conv_ctx + knowledge_ctx + user message
+    LLM-->>Graph: response text
+    Graph-->>Client: ChatCompletionResponse
+```
+
+### Hybrid Search Query
+
+```mermaid
+flowchart LR
+    Q[query text] --> VEC["encode: vector(384)"]
+    Q --> FTS[to_tsquery]
+    VEC --> DENSE["dense: 0.7 * cosine_sim"]
+    FTS --> SPARSE["sparse: 0.3 * ts_rank"]
+    DENSE --> SCORE["score = dense + sparse"]
+    SPARSE --> SCORE
+    SCORE --> LIMIT["LIMIT 50 candidates"]
+    LIMIT --> RERANK["CrossEncoder rerank: top 5"]
+```
+
+### Module Dependency Graph
+
+```mermaid
+graph TD
+    CFG[config.py] --> RAG
+    MDL[models_v1.py] --> RAG
+    ITF[interfaces.py] --> RAG
+
+    subgraph RAG[rag/ package]
+        DOM[domain/models.py + ports.py]
+        PGV[adapters/pgvector.py]
+        MIO[adapters/minio.py]
+        EMB[adapters/embedder.py]
+        RNK[adapters/reranker.py]
+        ING[application/ingest.py]
+        RET[application/retrieve.py]
+        PIP[application/pipeline.py]
+        PRS[parsers/]
+        CHK[chunker.py]
+        STR[store.py]
+        NAT[nats_handler.py]
+    end
+
+    PGV --> ING
+    MIO --> ING
+    EMB --> ING
+    PRS --> ING
+    CHK --> ING
+    PGV --> RET
+    EMB --> RET
+    RNK --> RET
+
+    RAG --> FILES[files_router.py]
+    RAG --> VS[vector_stores_router.py]
+    RAG --> EMB_R[embeddings_router.py]
+    RAG --> GR[graph.py]
+    RAG --> MAIN[main.py]
+```
+
+***
+
+## User Scenarios & Testing
+
+### P1 — Must Have
+
+**US-1**: As an API client, I want to upload a document so that I can later query it.
+
+* **Given**: Sherlock running with `SHERLOCK_RAG_ENABLED=true`
+* **When**: `POST /v1/files` with `file=@doc.txt` multipart
+* **Then**: `201 { "id": "file-xxx", "object": "file", "filename": "doc.txt", "status": "uploaded" }`
+* **Test**: `curl -X POST http://localhost:8083/v1/files -F "file=@doc.txt" -F "purpose=assistants"`
+
+**US-2**: As an API client, I want to create a knowledge collection so that I can organize documents by topic.
+
+* **Given**: RAG enabled
+* **When**: `POST /v1/vector_stores { "name": "Q4 Financials" }`
+* **Then**: `201 { "id": "vs-xxx", "name": "Q4 Financials", "file_count": 0 }`
+* **Test**: `curl -X POST http://localhost:8083/v1/vector_stores -d '{"name":"Q4 Financials"}'`
+
+**US-3**: As an API client, I want to add a file to a vector store so that it gets ingested and indexed.
+
+* **Given**: A file and a vector store both exist
+* **When**: `POST /v1/vector_stores/vs-xxx/files { "file_id": "file-xxx" }`
+* **Then**: `202 { "status": "queued" }` — file is ingested asynchronously into pgvector
+* **Test**: Poll `GET /v1/vector_stores/vs-xxx/files/file-xxx` until `"status": "completed"`
+
+**US-4**: As an API client, I want to send a chat request with file\_search so that the LLM answers using my documents.
+
+* **Given**: A vector store with completed chunks exists
+* **When**: `POST /v1/chat/completions` with `tools: [{ "type": "file_search", "vector_store_ids": ["vs-xxx"] }]`
+* **Then**: `200 ChatCompletionResponse` — answer is grounded in document content
+* **Test**: Upload a fact-specific doc, ask a question that requires it; verify answer
+
+**US-5**: As an API client, I want to embed text so that I can use Sherlock's encoder in my own pipeline.
+
+* **Given**: RAG enabled
+* **When**: `POST /v1/embeddings { "input": "hello world" }`
+* **Then**: `200 { "data": [{ "embedding": [...384 floats...], "index": 0 }] }`
+* **Test**: Check `len(response.data[0].embedding) == 384`
+
+**US-6**: As an API client, I want to delete a file so that its chunks are removed from all vector stores.
+
+* **Given**: A file with ingested chunks
+* **When**: `DELETE /v1/files/file-xxx`
+* **Then**: `200` — `knowledge_chunks` rows deleted, `knowledge_files` row deleted, MinIO object deleted
+* **Test**: Verify `GET /v1/files/file-xxx` returns `404`
+
+**US-7**: As an API client with `SHERLOCK_RAG_ENABLED=false`, I want to get a clear error when hitting RAG routes so that I understand the feature is disabled.
+
+* **Given**: RAG disabled (default `think` profile)
+* **When**: Any `/v1/files`, `/v1/vector_stores`, `/v1/embeddings` request
+* **Then**: `503 { "detail": "RAG is not enabled — set SHERLOCK_RAG_ENABLED=true" }`
+* **Test**: `docker compose --profile think up && curl http://localhost:8083/v1/files`
+
+### P2 — Should Have
+
+**US-8**: As an API client, I want to run a standalone hybrid search against a vector store so that I can inspect what the retriever finds without triggering a full chat.
+
+* **Given**: Vector store with chunks
+* **When**: `POST /v1/vector_stores/vs-xxx/search { "query": "...", "top_k": 5 }`
+* **Then**: `200 { "results": [{ "content": "...", "score": 0.87, "file_id": "...", "chunk_index": 3 }] }`
+* **Test**: Verify results are ordered by descending score
+
+**US-9**: As an API client, I want to trigger synchronous ingestion for small files so that I don't need to poll status.
+
+* **Given**: RAG enabled, small file
+* **When**: `POST /v1/vector_stores/vs-xxx/files?sync=true { "file_id": "file-xxx" }`
+* **Then**: `200 { "status": "completed", "chunk_count": 12 }` (blocking response)
+* **Test**: Response arrives with `status=completed` without polling
+
+**US-10**: As an API client, I want to list my files and vector stores so that I can audit what is indexed.
+
+* **Given**: Multiple files and vector stores exist
+* **When**: `GET /v1/files` and `GET /v1/vector_stores`
+* **Then**: `200 { "object": "list", "data": [...] }` paginated, consistent with OpenAI list format
+* **Test**: Create 3 files → list → verify count
+
+**US-11**: As an API client, I want to control the hybrid search blend per request so that I can optimize for my use case.
+
+* **Given**: RAG enabled
+* **When**: `POST /v1/chat/completions` with `tools: [{ "type": "file_search", "hybrid_alpha": 0.3 }]`
+* **Then**: Retriever uses 0.3 dense + 0.7 keyword (overrides `SHERLOCK_HYBRID_ALPHA`)
+* **Test**: Keyword-heavy query, low alpha → higher recall on exact terms
+
+**US-12**: As an API client, I want async NATS-based ingestion and RAG chat so that I can integrate without HTTP.
+
+* **Given**: NATS running, RAG enabled
+* **When**: Publish `{ "file_id": "...", "vector_store_id": "..." }` to `sherlock.v1.rag.ingest.request`
+* **Then**: `sherlock.v1.rag.ingest.result` receives `{ "status": "completed", "chunk_count": N }`
+* **Test**: `nats sub sherlock.v1.rag.ingest.result` while publishing
+
+**US-13**: As an API client, I want token counts in API responses so that I can track usage accurately.
+
+* **Given**: 012 returns `usage: (0, 0, 0)` — tiktoken is installed but not wired
+* **When**: Any `/v1/chat/completions` or `/v1/embeddings` request
+* **Then**: `usage.prompt_tokens`, `completion_tokens`, `total_tokens` contain real values
+* **Test**: Send a known-length message → verify token count matches tiktoken estimate
+
+### P3 — Nice to Have
+
+**US-14**: As an API client, I want to download the original file I uploaded so that I can verify what was stored.
+
+* **Given**: A file was uploaded
+* **When**: `GET /v1/files/file-xxx/content`
+* **Then**: Raw file bytes streamed with `Content-Type` matching original upload
+* **Test**: Upload → download → diff original and downloaded bytes
+
+**US-15**: As an API client, I want to delete an entire vector store so that all its chunks and files are cleaned up.
+
+* **Given**: Vector store with multiple ingested files
+* **When**: `DELETE /v1/vector_stores/vs-xxx`
+* **Then**: Cascades: `knowledge_chunks` deleted, `vector_store_files` deleted, `vector_stores` row deleted, MinIO objects deleted
+* **Test**: Verify `GET /v1/vector_stores/vs-xxx` returns `404`
+
+***
+
+## Requirements
+
+### Functional
+
+* \[ ] **FR-1**: `POST /v1/files` — upload document (`.txt`, `.md`, `.rst`, `.pdf`, `.json`, `.py`, `.go`, `.ts`, `.js`, `.tsx`, `.jsx`, `.docx`, `.csv`) → MinIO + `knowledge_files` row → `201`
+* \[ ] **FR-2**: `GET /v1/files`, `GET /v1/files/{id}`, `DELETE /v1/files/{id}` — standard file CRUD
+* \[ ] **FR-3**: `GET /v1/files/{id}/content` — stream original bytes from MinIO
+* \[ ] **FR-4**: `POST /v1/vector_stores` + `GET /v1/vector_stores` + `GET /v1/vector_stores/{id}` + `DELETE /v1/vector_stores/{id}` — collection CRUD
+* \[ ] **FR-5**: `POST /v1/vector_stores/{id}/files` — async ingestion (202 default, `?sync=true` → 200)
+* \[ ] **FR-6**: `GET /v1/vector_stores/{id}/files` + `DELETE /v1/vector_stores/{id}/files/{fid}` — file-within-store CRUD
+* \[ ] **FR-7**: `POST /v1/vector_stores/{id}/search` — hybrid search with configurable `mode` and `hybrid_alpha`
+* \[ ] **FR-8**: `POST /v1/embeddings` — encode text via the shared `SentenceTransformer` (384-dim)
+* \[ ] **FR-9**: `POST /v1/chat/completions` — when `tools[].type == "file_search"`, retrieve and inject knowledge context
+* \[ ] **FR-10**: IngestPipeline: parse → chunk → embed → INSERT `knowledge_chunks` (content + `vector(384)` + `fts_vector` GENERATED)
+* \[ ] **FR-11**: HybridRetriever: single SQL — `0.7 × cosine_similarity + 0.3 × ts_rank` → top-50 candidates → cross-encoder rerank → top-5
+* \[ ] **FR-12**: NATS handlers: `sherlock.v1.rag.ingest.*`, `sherlock.v1.rag.chat.*`, `sherlock.v1.rag.search.*`, `sherlock.v1.rag.embed.*`
+* \[ ] **FR-13**: `SHERLOCK_RAG_ENABLED=false` → all RAG routes return `503` with actionable message
+* \[ ] **FR-14**: Token counting: wire `tiktoken` for `usage.prompt_tokens` + `completion_tokens` in all responses (fix 012 gap)
+* \[ ] **FR-15**: DB tables created at startup if not exist: `sherlock.vector_stores`, `sherlock.knowledge_files`, `sherlock.vector_store_files`, `sherlock.knowledge_chunks`
+
+### Non-Functional
+
+* \[ ] **NFR-1**: No file content, chunk text, or message content in logs or traces (same gate as 012 — `SHERLOCK_CONTENT_TRACING=false` default)
+* \[ ] **NFR-2**: Ingestion failure → `status: failed` + `error_message` in DB — API endpoints unaffected, no unhandled exception
+* \[ ] **NFR-3**: `SHERLOCK_RAG_ENABLED=false` leaves the `think` profile byte-for-byte identical to 012 startup
+* \[ ] **NFR-4**: `ruff check src/ && mypy src/ --strict` — zero errors
+* \[ ] **NFR-5**: `pytest tests/ --cov=sherlock` — ≥ 75% coverage on `rag/`, `files_router.py`, `vector_stores_router.py`, `embeddings_router.py`
+* \[ ] **NFR-6**: Hybrid search latency ≤ 100ms for collections of up to 100k chunks on the local dev machine
+* \[ ] **NFR-7**: Reranker latency ≤ 20ms per call (cross-encoder/ms-marco-MiniLM-L-6-v2, 50 candidates)
+* \[ ] **NFR-8**: All enterprise OTEL standards from 012 maintained — every new route must follow the counter/timer/error pattern
+* \[ ] **NFR-9**: All existing 012 tests pass unchanged (`pytest tests/ -k "not rag"`)
+
+### Key Entities
+
+| Entity | Module | Description |
+|--------|--------|-------------|
+| `VectorStore` | `rag/domain/models.py` | Named collection of knowledge chunks — `sherlock.vector_stores` |
+| `KnowledgeFile` | `rag/domain/models.py` | Uploaded document metadata — `sherlock.knowledge_files` |
+| `VectorStoreFile` | `rag/domain/models.py` | Join table + ingest status — `sherlock.vector_store_files` |
+| `KnowledgeChunk` | `rag/domain/models.py` | Text chunk with `vector(384)` + `tsvector` — `sherlock.knowledge_chunks` |
+| `ParsedDocument` | `rag/parsers/base.py` | `{ text: str, metadata: dict }` — output of every parser |
+| `SearchResult` | `rag/domain/models.py` | `{ content, score, file_id, chunk_index }` — retriever output |
+| `IngestJob` | `rag/domain/models.py` | Represents a background ingest — tracks status in DB + memory |
+| `RAGInfra` | `main.py` | Dataclass held in `AppState` — `rag: RAGInfra | None` |
+| `FileStorePort` | `rag/domain/ports.py` | Protocol: `upload`, `download`, `delete` |
+| `VectorStorePort` | `rag/domain/ports.py` | Protocol: `upsert_chunks`, `search_hybrid`, `delete_vs` |
+| `EmbedderPort` | `rag/domain/ports.py` | Protocol: `encode(texts) → list[list[float]]` |
+| `RerankerPort` | `rag/domain/ports.py` | Protocol: `rerank(query, texts) → list[float]` (scores) |
+
+***
+
+## Edge Cases
+
+| Scenario | Expected Behavior |
+|----------|-------------------|
+| Upload file with unsupported extension | `400 { "error": "unsupported_file_type" }` |
+| File upload exceeds max size (`SHERLOCK_MAX_FILE_BYTES`, default 50 MB) | `400 { "error": "file_too_large" }` |
+| Ingest fails (PDF corrupt, parser exception) | `status=failed`, `error_message` in DB; `GET /v1/vector_stores/{id}/files/{fid}` shows failure; API unaffected |
+| MinIO unreachable during upload | `503 { "detail": "Storage unavailable" }` — not a 500 |
+| pgvector unavailable during search | Empty knowledge context → chat responds from conversation memory only (graceful degradation) |
+| `vector_store_ids` contains non-existent VS | Search over that ID returns empty, rest still searched |
+| Same file added to VS twice | Second `POST` is idempotent — returns existing `VectorStoreFile` row, does not re-ingest |
+| `hybrid_alpha=0.0` (pure keyword) | FTS only — `ts_rank` score, no pgvector distance |
+| `hybrid_alpha=1.0` (pure dense) | Dense cosine only — `fts_vector` column unused in scoring |
+| `?sync=true` on large file (> 30s) | Configurable timeout; if exceeded → returns `202` with background continuation |
+| Delete file while ingest is in-progress | `status=failed` + `error_message="file deleted during ingestion"` in `vector_store_files` |
+| `SHERLOCK_RAG_ENABLED=false` | All RAG routes → `503`; `/v1/chat/completions` and all 012 routes → unchanged |
+| Empty `messages` in RAG chat | `400 { "error": "bad_request" }` |
+| Reranker model not downloaded | First call triggers download (lazy init), subsequent calls cached |
+
+***
+
+## Success Criteria
+
+* \[ ] **SC-1**: `curl http://localhost:8083/v1/files` returns `200 { "object": "list" }` (RAG enabled)
+* \[ ] **SC-2**: Full ingest cycle — upload → add to VS → poll → `status=completed` — works end-to-end
+* \[ ] **SC-3**: RAG chat returns answer grounded in an uploaded document (not hallucinated)
+* \[ ] **SC-4**: `POST /v1/embeddings` returns a 384-element vector
+* \[ ] **SC-5**: `SHERLOCK_RAG_ENABLED=false` → all RAG routes return `503`; existing 012 routes unaffected
+* \[ ] **SC-6**: `ruff check src/ && mypy src/ --strict` — zero errors
+* \[ ] **SC-7**: `pytest tests/ --cov=sherlock` — ≥ 75% on `rag/`, `files_router.py`, `vector_stores_router.py`, `embeddings_router.py`; all 012 tests still pass
+* \[ ] **SC-8**: `usage.prompt_tokens` + `completion_tokens` are non-zero in all chat responses (tiktoken wired)
+* \[ ] **SC-9**: NATS ingest: publish to `sherlock.v1.rag.ingest.request` → result on `sherlock.v1.rag.ingest.result` with `status=completed`
+* \[ ] **SC-10**: Hybrid search — keyword query with `hybrid_alpha=0.2` returns higher keyword-match results than dense-only `alpha=1.0` for the same query
+* \[ ] **SC-11**: SigNoz shows `sherlock.rag.uploads.total`, `sherlock.rag.ingest.latency`, `sherlock.rag.retrieval.latency` metrics populated after a full ingest+chat cycle
+* \[ ] **SC-12**: `service.yaml` version bumped to `0.3.0`, `storage` added to `depends_on`
+
+***
+
+## Docs & Links Update
+
+* \[ ] Update `services/reasoner/contracts/openapi.yaml` — add all 13 new paths + schemas
+* \[ ] Update `services/reasoner/contracts/asyncapi.yaml` — add 4 `sherlock.v1.rag.*` channel pairs
+* \[ ] Bump `services/reasoner/service.yaml` version to `0.3.0`, add `storage` depends\_on
+* \[ ] Update `services/reasoner/pyproject.toml` — new deps: `qdrant-client` removed if planned, `minio>=7.2`, `pypdf>=4.0`, `python-docx>=1.1`, `sentence-transformers` (existing), `tiktoken` (existing, wire it)
+* \[ ] Verify internal links in `.specify/docs/architecture/013-sherlock-rag-api.md` point to correct module paths after implementation
+
+***
+
+## CI Build Performance Investigation
+
+> **Observed**: `arc-sherlock` image takes ~20 minutes to build in GitHub Actions.
+> **Target**: ≤ 5 minutes cold build, ≤ 2 minutes with layer cache hit.
+> **When to fix**: After 013 implementation is complete (before merge to main).
+
+### Root Cause Hypotheses (priority order)
+
+| # | Hypothesis | Evidence | Expected Impact |
+|---|------------|----------|-----------------|
+| H-1 | `sentence-transformers` pulls full **CUDA PyTorch** (~2.5 GB) instead of CPU-only (~200 MB) | `pyproject.toml` has no torch variant constraint; default PyPI torch includes CUDA | **Saves 8–12 min** — biggest win |
+| H-2 | Docker GHA layer cache eviction — 10 GB limit means torch layer is evicted between runs | `_reusable-build.yml` uses `type=gha,scope=arc-sherlock`; torch layer alone exceeds 1 GB compressed | **Saves 10 min on cache miss** |
+| H-3 | `typecheck` and `test` CI jobs each run `pip install ".[dev]"` from scratch — no pip cache | `reasoner-images.yml` has no `actions/setup-python cache: pip`; they both download torch fresh | **Saves 5 min per job × 2** |
+| H-4 | `pip` used in Dockerfile instead of `uv` despite `uv.lock` being present in the repo | `uv.lock` referenced in change detection paths but `Dockerfile` uses `pip install` | **Saves 2–4 min** on resolution + install |
+| H-5 | `all-MiniLM-L6-v2` model (~90 MB) downloaded at runtime on every cold container start | `SherlockMemory.__init__` calls `SentenceTransformer(...)` — no pre-download at image build | **Not build time** but adds 30s to cold start |
+
+### Investigation Steps
+
+Run these to confirm which hypotheses are true before writing any code:
+
+```bash
+# 1. Check what torch variant is actually installed (CUDA vs CPU-only)
+docker run --rm arc-sherlock:latest pip show torch | grep -E "Version|Location"
+docker run --rm arc-sherlock:latest python -c "import torch; print(torch.__version__); print(torch.version.cuda)"
+
+# 2. Check installed package sizes
+docker run --rm arc-sherlock:latest du -sh /usr/local/lib/python3.13/site-packages/torch
+
+# 3. Check GHA cache hit rate — look at recent workflow runs
+gh run list --workflow=reasoner-images.yml --limit=10 --json databaseId,conclusion,createdAt
+# Then for each run: gh run view {id} --log | grep -i "cache"
+
+# 4. Time each Dockerfile stage locally (simulate cold build)
+docker buildx build --no-cache --progress=plain services/reasoner/ 2>&1 | grep -E "^#[0-9]+ \[" | head -40
+
+# 5. Confirm uv.lock is fully resolved and usable
+cd services/reasoner && uv lock --check && uv export --format requirements-txt | grep torch
+```
+
+### Mitigations to Evaluate
+
+Each mitigation is independent. Implement in order — stop when target is met.
+
+#### M-1: Switch to PyTorch CPU-only (fix H-1) — **implement first**
+
+In `services/reasoner/Dockerfile`, install CPU-only torch before the full `pip install`:
+
+```dockerfile
+# Install CPU-only torch first — prevents pip from resolving CUDA variant (~2.5 GB → ~200 MB)
+RUN pip install --prefix=/install --no-cache-dir \
+    torch --index-url https://download.pytorch.org/whl/cpu
+RUN pip install --prefix=/install --no-cache-dir ".[dev]" --no-deps-for torch
+```
+
+Or constrain in `pyproject.toml`:
+
+```toml
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+```
+
+Expected result: builder stage drops from ~10 min to ~2 min.
+
+#### M-2: Add pip cache to CI quality jobs (fix H-3) — **quick win**
+
+In `reasoner-images.yml`, update `typecheck` and `test` jobs:
+
+```yaml
+- uses: actions/setup-python@v5
+  with:
+    python-version: '3.13'
+    cache: 'pip'                    # ← add this line
+    cache-dependency-path: services/reasoner/pyproject.toml
+```
+
+Expected result: second and subsequent CI runs skip torch download entirely in these jobs.
+
+#### M-3: Switch Dockerfile to `uv` (fix H-4) — **install speed**
+
+```dockerfile
+FROM python:3.13-slim AS builder
+
+RUN pip install uv
+
+WORKDIR /build
+COPY pyproject.toml uv.lock ./
+RUN mkdir -p src/sherlock && touch src/sherlock/__init__.py
+
+# uv sync uses the lockfile — no resolution needed, 10-100x faster than pip
+RUN uv sync --frozen --no-dev --no-install-project
+
+COPY src/ ./src/
+RUN uv sync --frozen --no-dev
+```
+
+Expected result: dependency install step drops from ~8 min to ~1 min (uv resolves from lockfile directly).
+
+#### M-4: Pre-download the embedding model at build time (fix H-5) — **cold start**
+
+```dockerfile
+# After pip install, pre-download model to /home/sherlock/.cache/huggingface
+# SHERLOCK_ENCODER_MODEL is the model name, default all-MiniLM-L6-v2
+ARG ENCODER_MODEL=sentence-transformers/all-MiniLM-L6-v2
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('${ENCODER_MODEL}')"
+```
+
+This bakes the 90 MB model into the image layer. The layer is cached in GHA and GHCR — no download on startup. Trade-off: larger image, model is hardcoded to build arg.
+
+#### M-5: Split into a base image (fix H-2 permanently) — **if M-1+M-2+M-3 still not enough**
+
+Build a `arc-sherlock-base` image containing only the heavy deps (torch, sentence-transformers). Trigger rebuild only when `pyproject.toml` changes. The main `Dockerfile` uses:
+
+```dockerfile
+FROM ghcr.io/arc-framework/arc-sherlock-base:latest AS builder
+COPY src/ ./src/
+RUN pip install "." --no-deps
+```
+
+Cold builds then only download `arc-sherlock-base` from GHCR cache — zero pip install for heavy deps. Requires a separate base image workflow.
+
+### Success Criteria
+
+* \[ ] **BC-1**: Cold build (no layer cache) completes in ≤ 5 minutes
+* \[ ] **BC-2**: Warm build (layer cache hit on deps layer) completes in ≤ 90 seconds
+* \[ ] **BC-3**: `typecheck` and `test` CI jobs complete in ≤ 3 minutes each (with pip cache)
+* \[ ] **BC-4**: `torch` installed is CPU-only variant — `torch.version.cuda` returns `None`
+* \[ ] **BC-5**: No regression — all existing tests pass in CI after Dockerfile changes
+
+***
+
+## Constitution Compliance
+
+| Principle | Applies | Compliant | Notes |
+|-----------|---------|-----------|-------|
+| I. Zero-Dep CLI | \[ ] | N/A | No CLI changes |
+| II. Platform-in-a-Box | \[x] | \[x] | `rag_enabled=false` default — `think` profile unchanged; MinIO only in `reason` |
+| III. Modular Services | \[x] | \[x] | All changes inside `services/reasoner/` — additive, no new service directory |
+| IV. Two-Brain | \[x] | \[x] | Python only — parsing, chunking, embedding, reranking are intelligence concerns |
+| V. Polyglot Standards | \[x] | \[x] | FastAPI + Pydantic v2 + ruff + mypy strict + pytest fixtures |
+| VI. Local-First | \[ ] | N/A | No CLI component |
+| VII. Observability | \[x] | \[x] | 6 new OTEL metrics; every route follows counter/timer/error pattern; `event_type` on all logs |
+| VIII. Security | \[x] | \[x] | MinIO creds via env + Pydantic `SecretStr`; file content never in logs or spans |
+| IX. Declarative | \[ ] | N/A | No CLI component |
+| X. Stateful Ops | \[ ] | N/A | No CLI component |
+| XI. Resilience | \[x] | \[x] | Ingest failure → `status:failed`, API unaffected; pgvector down → empty ctx, chat still works |
+| XII. Interactive | \[ ] | N/A | No CLI component |
 
 ---
 
@@ -10108,6 +11056,460 @@ Targets: `reasoner-help`, `reasoner-build`, `reasoner-build-fresh`, `reasoner-up
 ---
 
 ---
+url: /arc-platform/specs-site/013-sherlock-rag-api/plan.md
+---
+# Implementation Plan: Sherlock Universal RAG API
+
+> **Spec**: 013-sherlock-rag-api
+> **Date**: 2026-03-03
+
+***
+
+## Summary
+
+013 extends Sherlock (012) into a Universal RAG engine by adding an OpenAI-compatible Files API, Vector Stores API, and Embeddings API on top of the existing chat surface. RAG is strictly additive: gated by `SHERLOCK_RAG_ENABLED` (default `false`), it initializes only in the `reason`/`ultra-instinct` profiles. All 012 routes and tests remain untouched when the flag is off.
+
+The implementation lives entirely in `services/reasoner/` (new `rag/` package + 3 new routers). Persistence changes are additive SQL tables in `services/persistence/`. A new MinIO bucket (`sherlock-files`) is added to the `reason` profile compose.
+
+***
+
+## Target Modules
+
+| Module | Language | Changes |
+|--------|----------|---------|
+| `services/reasoner/` | Python | New `rag/` package; 3 new routers; graph extension; config additions; RAGInfra in AppState |
+| `services/persistence/` | SQL | 4 new tables in `sherlock` schema (init script additive) |
+| `services/storage/` | Config | No change to service; `sherlock-files` bucket provisioned at startup by RAGInfra |
+| `services/reasoner/docker-compose.yml` | YAML | Add `arc-storage` to `reason` profile depends; add `SHERLOCK_RAG_*` env vars |
+| `services/reasoner/service.yaml` | YAML | Bump to `0.3.0`; add `storage` to `depends_on` |
+| `services/reasoner/pyproject.toml` | TOML | Add `minio>=7.2`, `pypdf>=4.0`, `python-docx>=1.1`; wire `tiktoken` |
+| `services/reasoner/Dockerfile` | Docker | Add CPU-only torch constraint (CI build optimization) |
+| `.github/workflows/reasoner-images.yml` | YAML | Add `pip cache` to typecheck/test jobs |
+
+***
+
+## Technical Context
+
+| Aspect | Value |
+|--------|-------|
+| Language | Python 3.13 |
+| Frameworks | FastAPI, LangGraph, SQLAlchemy async, pgvector |
+| Storage | PostgreSQL 17 (pgvector) + MinIO (via `minio` SDK) |
+| Testing | pytest + httpx, `pytest-asyncio`, ≥ 75% coverage on `rag/` + new routers |
+| New Dependencies | `minio>=7.2`, `pypdf>=4.0`, `python-docx>=1.1` |
+| Existing (already installed) | `sentence-transformers`, `tiktoken`, `pgvector`, `sqlalchemy`, `asyncpg` |
+| Lint | `ruff check src/ && mypy src/ --strict` (zero errors) |
+
+***
+
+## Architecture
+
+### Component Overview
+
+```mermaid
+graph TD
+    subgraph main.py
+        APP[FastAPI app]
+        STATE[AppState]
+    end
+
+    subgraph config.py
+        CFG[Settings + RAG fields]
+    end
+
+    subgraph routers
+        FR[files_router.py]
+        VR[vector_stores_router.py]
+        ER[embeddings_router.py]
+        OR[openai_router.py — extended]
+    end
+
+    subgraph rag/
+        DOM[domain/models.py + ports.py]
+        STORE[store.py — RAGInfra factory]
+        PGV[adapters/pgvector.py]
+        MIO[adapters/minio.py]
+        EMB[adapters/embedder.py]
+        RNK[adapters/reranker.py]
+        PRS[parsers/ — txt/md/pdf/docx/json/code]
+        CHK[chunker.py]
+        ING[application/ingest.py]
+        RET[application/retrieve.py]
+        NAT[nats_handler.py — RAG subjects]
+    end
+
+    CFG --> STATE
+    STATE --> FR & VR & ER & OR
+    STORE --> STATE
+    PGV & MIO & EMB & RNK --> ING & RET
+    PRS & CHK --> ING
+    ING & RET --> FR & VR & OR
+    DOM --> PGV & MIO & EMB & RNK & ING & RET
+```
+
+### Ingestion Flow
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant FR as /v1/files
+    participant VS as /v1/vector_stores/{id}/files
+    participant MIO as MinIO (Tardis)
+    participant DB as pgvector (Oracle)
+    participant BG as IngestPipeline
+
+    C->>FR: POST multipart (file + purpose)
+    FR->>MIO: upload(bytes) → key
+    FR->>DB: INSERT knowledge_files
+    FR-->>C: 201 { id, filename, status: uploaded }
+
+    C->>VS: POST { file_id }
+    VS->>DB: INSERT vector_store_files (status=queued)
+    VS-->>C: 202 Accepted
+    VS--)BG: BackgroundTask: ingest(file_id, vs_id)
+
+    BG->>MIO: download(key) → bytes
+    BG->>BG: parse → chunk → embed
+    BG->>DB: INSERT knowledge_chunks (content + vector + fts_vector)
+    BG->>DB: UPDATE vector_store_files (status=completed, chunk_count=N)
+```
+
+### RAG Chat Flow
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant OR as openai_router.py
+    participant G as LangGraph
+    participant CONV as pgvector (conversations)
+    participant KNOW as pgvector (knowledge_chunks)
+    participant RNK as CrossEncoderReranker
+    participant LLM as LLM Provider
+
+    C->>OR: POST /v1/chat/completions + tools[file_search]
+    OR->>G: invoke_graph(..., vector_store_ids=[...])
+    G->>CONV: search(user_id, query) → conv_ctx
+    G->>KNOW: hybrid SQL (dense + FTS) → top-50
+    G->>RNK: rerank(query, candidates) → top-5
+    G->>LLM: prompt = system + conv_ctx + knowledge_ctx + user msg
+    LLM-->>G: response text
+    G-->>C: ChatCompletionResponse (with usage counts)
+```
+
+### Hybrid Search SQL
+
+```mermaid
+flowchart LR
+    Q[query] --> VEC[encode → vector-384]
+    Q --> FTS[to_tsquery]
+    VEC --> DENSE["0.7 × cosine_sim"]
+    FTS --> SPARSE["0.3 × ts_rank"]
+    DENSE --> SCORE[score = dense + sparse]
+    SPARSE --> SCORE
+    SCORE --> TOP50[LIMIT 50 candidates]
+    TOP50 --> RERANK[CrossEncoder → top-5]
+```
+
+***
+
+## Constitution Check
+
+| # | Principle | Status | Evidence |
+|---|-----------|--------|----------|
+| I | Zero-Dep CLI | N/A | No CLI changes |
+| II | Platform-in-a-Box | PASS | `rag_enabled=false` default — `think` profile byte-for-byte identical to 012; MinIO only in `reason` |
+| III | Modular Services | PASS | All changes inside `services/reasoner/`; MinIO referenced via existing `arc-storage` service |
+| IV | Two-Brain | PASS | Python only — parsing, chunking, embedding, reranking are intelligence concerns |
+| V | Polyglot Standards | PASS | FastAPI + Pydantic v2 + ruff + mypy strict + pytest fixtures; no AI attribution in commits |
+| VI | Local-First | N/A | No CLI component |
+| VII | Observability | PASS | 6 new OTEL metrics (`uploads.total`, `ingest.latency`, `retrieval.latency`, `search.latency`, `embed.latency`, `rag.errors`); every route follows counter/timer/error pattern |
+| VIII | Security | PASS | MinIO creds via `SecretStr` in Settings; file content never logged or put in spans (`SHERLOCK_CONTENT_TRACING=false` default) |
+| IX | Declarative | N/A | No CLI component |
+| X | Stateful Ops | N/A | No CLI component |
+| XI | Resilience | PASS | Ingest failure → `status=failed` + `error_message` in DB, API unaffected; pgvector down → empty knowledge ctx, chat responds from conv memory only |
+| XII | Interactive | N/A | No CLI component |
+
+***
+
+## Project Structure
+
+```
+services/reasoner/
+├── src/sherlock/
+│   ├── config.py                     # + rag_enabled, minio_*, hybrid_alpha, max_file_bytes, sync_timeout_s
+│   ├── main.py                       # + RAGInfra in AppState; lifespan init; router mounts
+│   ├── openai_router.py              # + file_search tool detection → vector_store_ids passthrough
+│   ├── graph.py                      # + rag_retrieve node (no-op when vector_store_ids absent)
+│   ├── files_router.py               # NEW — POST/GET/DELETE /v1/files + /content
+│   ├── vector_stores_router.py       # NEW — CRUD + /files sub-resource + /search
+│   ├── embeddings_router.py          # NEW — POST /v1/embeddings
+│   └── rag/
+│       ├── __init__.py
+│       ├── store.py                  # RAGInfra factory + dataclass
+│       ├── chunker.py                # Fixed-size chunker (512 tokens, 50 overlap)
+│       ├── nats_handler.py           # sherlock.v1.rag.{ingest,chat,search,embed}.*
+│       ├── domain/
+│       │   ├── models.py             # VectorStore, KnowledgeFile, VectorStoreFile, KnowledgeChunk, SearchResult, IngestJob
+│       │   └── ports.py              # FileStorePort, VectorStorePort, EmbedderPort, RerankerPort (Protocols)
+│       ├── adapters/
+│       │   ├── pgvector.py           # VectorStorePort impl — init tables, upsert_chunks, search_hybrid, delete_vs
+│       │   ├── minio.py              # FileStorePort impl — upload, download, delete
+│       │   ├── embedder.py           # EmbedderPort impl — wraps existing SentenceTransformer
+│       │   └── reranker.py           # RerankerPort impl — lazy CrossEncoder(ms-marco-MiniLM-L-6-v2)
+│       ├── parsers/
+│       │   ├── __init__.py           # dispatch_parser(filename, bytes) → ParsedDocument
+│       │   ├── base.py               # ParsedDocument dataclass + ParserPort Protocol
+│       │   ├── text_parser.py        # .txt, .md, .rst, .py, .go, .ts, .js, .tsx, .jsx (UTF-8 passthrough)
+│       │   ├── pdf_parser.py         # .pdf → pypdf
+│       │   ├── docx_parser.py        # .docx → python-docx
+│       │   ├── json_parser.py        # .json → pretty-print string
+│       │   └── csv_parser.py         # .csv → row-per-chunk
+│       └── application/
+│           ├── ingest.py             # IngestPipeline.ingest(file_id, vs_id) → chunk_count
+│           └── retrieve.py           # HybridRetriever.search(query, vs_ids, alpha) → list[SearchResult]
+│
+services/persistence/
+└── initdb/
+    └── 004_sherlock_rag_schema.sql   # NEW — 4 tables: vector_stores, knowledge_files, vector_store_files, knowledge_chunks
+
+services/reasoner/
+├── pyproject.toml                    # + minio>=7.2, pypdf>=4.0, python-docx>=1.1
+├── service.yaml                      # version: 0.3.0; depends_on += storage
+├── docker-compose.yml                # + SHERLOCK_RAG_ENABLED, MINIO_* env vars
+└── Dockerfile                        # CPU-only torch constraint (CI build fix)
+
+specs/013-sherlock-rag-api/
+└── contracts/
+    ├── openapi.yaml                  # + 13 new paths + schemas
+    └── asyncapi.yaml                 # + 4 sherlock.v1.rag.* channel pairs
+
+.github/workflows/
+└── reasoner-images.yml               # + pip cache on typecheck/test jobs
+```
+
+***
+
+## Key Technical Decisions
+
+### 1. RAGInfra dataclass in AppState (not a service singleton)
+
+`RAGInfra` holds `file_store`, `vector_store`, `embedder`, `reranker`, `ingest_pipeline`, `retriever`. Injected into `AppState.rag: RAGInfra | None`. Routers check `state.rag` and return `503` immediately if `None` — zero impact on existing code paths.
+
+### 2. Shared SentenceTransformer instance
+
+`SherlockMemory` already holds a `SentenceTransformer` for conversation embeddings. `EmbedderAdapter` accepts an encoder instance — `main.py` passes `memory._encoder` when constructing `RAGInfra`. No second model load.
+
+### 3. `fts_vector` as GENERATED ALWAYS column
+
+```sql
+fts_vector tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED
+```
+
+Eliminates application-side tsvector construction. pgvector adapter only inserts `content` + `embedding`.
+
+### 4. Hybrid search as a single SQL query
+
+```sql
+SELECT id, content, file_id, chunk_index,
+    ($1::vector <=> embedding) * (-0.7) + ts_rank(fts_vector, query) * 0.3 AS score
+FROM sherlock.knowledge_chunks
+WHERE vector_store_id = ANY($2)
+  AND ($3::tsquery IS NULL OR fts_vector @@ $3::tsquery)
+ORDER BY score DESC
+LIMIT 50
+```
+
+`hybrid_alpha=0.0` → coalesce dense weight to 0; `hybrid_alpha=1.0` → coalesce FTS weight to 0.
+
+### 5. `?sync=true` with configurable timeout
+
+`IngestPipeline.ingest()` is awaited directly (no `BackgroundTask`). A `asyncio.wait_for(..., timeout=settings.sync_timeout_s)` wraps it. On `TimeoutError` → falls back to creating a `BackgroundTask` and returns `202`.
+
+### 6. DB tables created by `pgvector.py` adapter `init_schema()`
+
+Called inside `RAGInfra` init (after `memory.init()`). Mirrors the existing `SherlockMemory.init()` pattern: `CREATE TABLE IF NOT EXISTS`, best-effort, logs warning on failure.
+
+### 7. Tiktoken wiring (FR-14 — fixes 012 gap)
+
+`openai_router.py` already imports `tiktoken` but returns `(0, 0, 0)`. Add `_count_tokens(model, messages) → int` helper using `tiktoken.encoding_for_model` with fallback to `cl100k_base`. Wire into both `/v1/chat/completions` and `/v1/embeddings` response objects.
+
+***
+
+## Parallel Execution Strategy
+
+```mermaid
+gantt
+    title 013 Implementation Phases
+    dateFormat  YYYY-MM-DD
+    section Phase 1 — Foundation (sequential)
+    Config additions          :p1a, 2026-03-03, 1d
+    DB schema SQL             :p1b, after p1a, 1d
+    Domain models + ports     :p1c, after p1b, 1d
+
+    section Phase 2 — Parallel streams
+    MinIO adapter             :p2a, after p1c, 2d
+    pgvector adapter          :p2b, after p1c, 2d
+    Embedder + Reranker       :p2c, after p1c, 1d
+    Parsers (all formats)     :p2d, after p1c, 2d
+    Chunker                   :p2e, after p1c, 1d
+
+    section Phase 3 — Application layer (sequential)
+    IngestPipeline            :p3a, after p2a, 1d
+    HybridRetriever           :p3b, after p2b, 1d
+
+    section Phase 4 — Parallel routers + integration
+    files_router.py           :p4a, after p3a, 1d
+    vector_stores_router.py   :p4b, after p3a, 1d
+    embeddings_router.py      :p4c, after p2c, 1d
+    graph.py extension        :p4d, after p3b, 1d
+    NATS RAG handler          :p4e, after p3a, 1d
+
+    section Phase 5 — Wire + CI
+    main.py RAGInfra + AppState :p5a, after p4a, 1d
+    Tiktoken wiring           :p5b, after p4d, 1d
+    CI Dockerfile (M-1/M-3)   :p5c, after p1a, 1d
+    CI workflow (M-2)         :p5d, after p1a, 1d
+
+    section Phase 6 — Tests
+    Unit tests rag/           :p6a, after p4a, 2d
+    Integration tests routers :p6b, after p5a, 2d
+    Contract files (OpenAPI)  :p6c, after p4b, 1d
+```
+
+**Parallelizable agent groups:**
+
+* **Group A** (Phase 2): `minio.py` + `pgvector.py` + `embedder.py` + `reranker.py` + parsers + `chunker.py`
+* **Group B** (Phase 4): `files_router.py` + `vector_stores_router.py` + `embeddings_router.py`
+* **Group C** (Phase 5): CI Dockerfile changes + CI workflow changes (independent of Python code)
+
+***
+
+## New Settings Fields (config.py additions)
+
+```python
+# RAG feature gate
+rag_enabled: bool = Field(False, alias="SHERLOCK_RAG_ENABLED")
+
+# MinIO (Tardis)
+minio_endpoint: str = Field("arc-storage:9000", alias="SHERLOCK_MINIO_ENDPOINT")
+minio_access_key: SecretStr = Field("minioadmin", alias="SHERLOCK_MINIO_ACCESS_KEY")
+minio_secret_key: SecretStr = Field("minioadmin", alias="SHERLOCK_MINIO_SECRET_KEY")
+minio_bucket: str = Field("sherlock-files", alias="SHERLOCK_MINIO_BUCKET")
+minio_secure: bool = Field(False, alias="SHERLOCK_MINIO_SECURE")
+
+# RAG tunables
+max_file_bytes: int = Field(50 * 1024 * 1024, alias="SHERLOCK_MAX_FILE_BYTES")  # 50 MB
+hybrid_alpha: float = Field(0.7, alias="SHERLOCK_HYBRID_ALPHA")  # 0=FTS, 1=dense
+chunk_size_tokens: int = Field(512, alias="SHERLOCK_CHUNK_SIZE_TOKENS")
+chunk_overlap_tokens: int = Field(50, alias="SHERLOCK_CHUNK_OVERLAP_TOKENS")
+retrieval_candidate_k: int = Field(50, alias="SHERLOCK_RETRIEVAL_CANDIDATE_K")
+retrieval_top_k: int = Field(5, alias="SHERLOCK_RETRIEVAL_TOP_K")
+reranker_model: str = Field(
+    "cross-encoder/ms-marco-MiniLM-L-6-v2", alias="SHERLOCK_RERANKER_MODEL"
+)
+sync_timeout_s: float = Field(30.0, alias="SHERLOCK_SYNC_TIMEOUT_S")
+```
+
+***
+
+## DB Schema (004\_sherlock\_rag\_schema.sql)
+
+```sql
+-- Requires: 003_enable_pgvector.sql (CREATE EXTENSION vector already applied)
+
+CREATE TABLE IF NOT EXISTS sherlock.vector_stores (
+    id          text PRIMARY KEY DEFAULT 'vs-' || gen_random_uuid()::text,
+    name        text NOT NULL,
+    file_count  integer NOT NULL DEFAULT 0,
+    created_at  timestamptz NOT NULL DEFAULT now(),
+    updated_at  timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS sherlock.knowledge_files (
+    id          text PRIMARY KEY DEFAULT 'file-' || gen_random_uuid()::text,
+    filename    text NOT NULL,
+    purpose     text NOT NULL DEFAULT 'assistants',
+    bytes       bigint NOT NULL DEFAULT 0,
+    minio_key   text NOT NULL,
+    status      text NOT NULL DEFAULT 'uploaded',
+    created_at  timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS sherlock.vector_store_files (
+    vector_store_id text NOT NULL REFERENCES sherlock.vector_stores(id) ON DELETE CASCADE,
+    file_id         text NOT NULL REFERENCES sherlock.knowledge_files(id) ON DELETE CASCADE,
+    status          text NOT NULL DEFAULT 'queued',
+    chunk_count     integer,
+    error_message   text,
+    created_at      timestamptz NOT NULL DEFAULT now(),
+    updated_at      timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (vector_store_id, file_id)
+);
+
+CREATE TABLE IF NOT EXISTS sherlock.knowledge_chunks (
+    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    vector_store_id text NOT NULL REFERENCES sherlock.vector_stores(id) ON DELETE CASCADE,
+    file_id         text NOT NULL REFERENCES sherlock.knowledge_files(id) ON DELETE CASCADE,
+    chunk_index     integer NOT NULL,
+    content         text NOT NULL,
+    embedding       vector(384),
+    fts_vector      tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED,
+    created_at      timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_vs_id
+    ON sherlock.knowledge_chunks (vector_store_id);
+CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_embedding
+    ON sherlock.knowledge_chunks USING hnsw (embedding vector_cosine_ops);
+CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_fts
+    ON sherlock.knowledge_chunks USING gin (fts_vector);
+```
+
+***
+
+## Cross-Module Dependencies
+
+| Dependency | Direction | Notes |
+|------------|-----------|-------|
+| `services/reasoner` → `services/persistence` | Startup: DDL via `pgvector.py init_schema()` | Tables created idempotently; safe on 012 cold start if `rag_enabled=false` (skipped) |
+| `services/reasoner` → `services/storage` | Runtime: MinIO S3 API `:9000` | Only when `rag_enabled=true`; `reason` profile includes `arc-storage` |
+| `services/persistence/initdb/004_...sql` | `initdb` (first Oracle boot only) | Additive — does not alter existing tables |
+
+***
+
+## Risks & Mitigations
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| CrossEncoder lazy download (~200 MB) blocks first request | M | Lazy init on first `rerank()` call with cached instance; document in README |
+| MinIO unreachable at startup | H | `minio.py` `upload()` raises `StorageUnavailableError` → router returns `503`; startup continues |
+| `fts_vector` GENERATED column requires PG 12+ | L | Oracle uses PG 17 — no risk |
+| `hybrid_alpha` edge cases (`0.0`, `1.0`) | M | SQL handles via `CASE WHEN alpha = 0.0 THEN 0 ELSE ...` weight; tested in unit tests |
+| mypy strict on `minio` SDK (minimal type stubs) | L | `[[tool.mypy.overrides]] module = ["sherlock.rag.adapters.minio"] ignore_missing_imports = true` |
+| Large DOCX/PDF parse time blocks HTTP request | M | Ingest runs in `BackgroundTask` by default (async, non-blocking) |
+| CI build >20 min (H-1/H-4) | M | Dockerfile CPU-torch + uv (M-1 + M-3) — implement before merge |
+
+***
+
+## Reviewer Checklist
+
+* \[ ] `SHERLOCK_RAG_ENABLED=false` (default): `think` profile starts, all 012 tests pass unchanged
+* \[ ] `SHERLOCK_RAG_ENABLED=true`: all 6 success criteria (SC-1 through SC-6) pass
+* \[ ] `ruff check src/ && mypy src/ --strict` — zero errors
+* \[ ] `pytest tests/ --cov=sherlock` — ≥ 75% on `rag/`, `files_router.py`, `vector_stores_router.py`, `embeddings_router.py`
+* \[ ] All 012 tests pass: `pytest tests/ -k "not rag"`
+* \[ ] `usage.prompt_tokens` + `completion_tokens` non-zero in all chat responses (SC-8)
+* \[ ] NATS RAG subjects wired and tested (SC-9)
+* \[ ] `service.yaml` bumped to `0.3.0`, `storage` in `depends_on`
+* \[ ] `openapi.yaml` and `asyncapi.yaml` updated with new paths/channels
+* \[ ] File content never appears in logs or OTEL spans
+* \[ ] `SecretStr` used for all MinIO credentials
+* \[ ] CI: `torch.version.cuda` returns `None` in rebuilt image (BC-4)
+* \[ ] No AI attribution in any commit messages
+
+---
+
+---
 url: /arc-platform/specs-site/008-specs-site/plan.md
 ---
 # Implementation Plan: Specs Documentation Site
@@ -13368,6 +14770,321 @@ When running `/speckit.implement`, the following batches can be dispatched simul
 | After T035 | T060 | service.yaml exists |
 | After T036 | T061 | reasoner.mk exists |
 | After all | T999 | reviewer gate |
+
+---
+
+---
+url: /arc-platform/specs-site/013-sherlock-rag-api/tasks.md
+---
+# Tasks: Sherlock Universal RAG API
+
+> **Spec**: 013-sherlock-rag-api
+> **Date**: 2026-03-03
+
+## Task Format
+
+```
+[TASK-NNN] [P?] [MODULE] [PRIORITY] Description
+  Dependencies: [TASK-XXX] or none
+  Module: path
+  Acceptance: Testable criteria
+  Status: [ ] pending | [~] in-progress | [x] done
+```
+
+* `[P]` = Safe for parallel agent execution
+* Priority: P1 (must), P2 (should), P3 (nice)
+
+***
+
+## Dependency Graph
+
+```mermaid
+graph TD
+    T001["001 config.py additions"]
+    T002["002 DB schema SQL"]
+    T003["003 pyproject.toml deps"]
+    T004["004 Dockerfile CPU-torch+uv [P]"]
+    T005["005 CI workflow pip-cache [P]"]
+
+    T010["010 domain/models.py"]
+    T011["011 domain/ports.py"]
+
+    T020["020 MinIO adapter [P]"]
+    T021["021 pgvector adapter [P]"]
+    T022["022 embedder adapter [P]"]
+    T023["023 reranker adapter [P]"]
+    T030["030 parsers [P]"]
+    T031["031 chunker [P]"]
+
+    T040["040 IngestPipeline"]
+    T041["041 HybridRetriever"]
+    T042["042 RAGInfra store.py"]
+
+    T050["050 files_router.py [P]"]
+    T051["051 vector_stores_router.py [P]"]
+    T052["052 embeddings_router.py [P]"]
+    T053["053 graph.py RAG node [P]"]
+    T054["054 openai_router tiktoken [P]"]
+    T055["055 NATS RAG handler [P]"]
+
+    T060["060 main.py wire"]
+    T061["061 docker-compose.yml [P]"]
+    T062["062 service.yaml bump [P]"]
+
+    T070["070 unit tests rag/ [P]"]
+    T071["071 integration tests routers [P]"]
+
+    T900["900 contracts openapi+asyncapi [P]"]
+    T999["999 Reviewer verification"]
+
+    T001 --> T002
+    T001 --> T010
+    T002 --> T021
+    T010 --> T011
+    T010 --> T020
+    T010 --> T022
+    T010 --> T023
+    T010 --> T030
+    T010 --> T031
+    T011 --> T020
+    T011 --> T021
+    T011 --> T022
+    T011 --> T023
+    T020 --> T040
+    T021 --> T040
+    T021 --> T041
+    T022 --> T040
+    T022 --> T041
+    T023 --> T041
+    T030 --> T040
+    T031 --> T040
+    T040 --> T042
+    T041 --> T042
+    T041 --> T053
+    T042 --> T050
+    T042 --> T051
+    T042 --> T052
+    T042 --> T055
+    T053 --> T054
+    T050 --> T060
+    T051 --> T060
+    T052 --> T060
+    T053 --> T060
+    T054 --> T060
+    T055 --> T060
+    T001 --> T061
+    T001 --> T062
+    T060 --> T070
+    T060 --> T071
+    T060 --> T900
+    T070 --> T999
+    T071 --> T999
+    T900 --> T999
+    T003 --> T999
+    T004 --> T999
+    T005 --> T999
+    T061 --> T999
+    T062 --> T999
+```
+
+***
+
+## Quality Requirements
+
+| Module | Coverage | Lint |
+|--------|----------|------|
+| `rag/` | ≥ 75% | `ruff check src/ && mypy src/ --strict` |
+| `files_router.py` | ≥ 75% | same |
+| `vector_stores_router.py` | ≥ 75% | same |
+| `embeddings_router.py` | ≥ 75% | same |
+| All 012 tests | pass unchanged | `pytest tests/ -k "not rag"` |
+
+***
+
+## Phase 1: Setup
+
+* \[x] **\[TASK-001]** \[REASONER] \[P1] Add RAG settings fields to `config.py`
+  * Dependencies: none
+  * Module: `services/reasoner/src/sherlock/config.py`
+  * Acceptance: `Settings` class has `rag_enabled`, `minio_endpoint`, `minio_access_key` (SecretStr), `minio_secret_key` (SecretStr), `minio_bucket`, `minio_secure`, `max_file_bytes`, `hybrid_alpha`, `chunk_size_tokens`, `chunk_overlap_tokens`, `retrieval_candidate_k`, `retrieval_top_k`, `reranker_model`, `sync_timeout_s` with correct env aliases and defaults; `mypy --strict` passes
+
+* \[x] **\[TASK-002]** \[PERSISTENCE] \[P1] Add RAG schema SQL init script
+  * Dependencies: TASK-001
+  * Module: `services/persistence/initdb/004_sherlock_rag_schema.sql`
+  * Acceptance: File creates tables `sherlock.vector_stores`, `sherlock.knowledge_files`, `sherlock.vector_store_files`, `sherlock.knowledge_chunks` with correct columns, FK constraints, HNSW index, GIN FTS index, and `fts_vector GENERATED ALWAYS AS` column; all `IF NOT EXISTS` guarded
+
+* \[x] **\[TASK-003]** \[REASONER] \[P1] Add new dependencies to `pyproject.toml`
+  * Dependencies: none
+  * Module: `services/reasoner/pyproject.toml`
+  * Acceptance: `minio>=7.2`, `pypdf>=4.0`, `python-docx>=1.1` added to `[project.dependencies]`; `mypy.overrides` for `sherlock.rag.adapters.minio` with `ignore_missing_imports = true` added; `uv lock` runs clean
+
+* \[x] **\[TASK-004]** \[P] \[CI] \[P2] Switch Dockerfile to CPU-only torch + uv (M-1 + M-3)
+  * Dependencies: none
+  * Module: `services/reasoner/Dockerfile`
+  * Acceptance: `torch` installed via `--index-url https://download.pytorch.org/whl/cpu` before full `pip install`; or `uv sync --frozen --no-dev` used; `docker build` completes; `python -c "import torch; print(torch.version.cuda)"` returns `None`
+
+* \[x] **\[TASK-005]** \[P] \[CI] \[P2] Add pip cache to CI typecheck/test jobs
+  * Dependencies: none
+  * Module: `.github/workflows/reasoner-images.yml`
+  * Acceptance: `typecheck` and `test` jobs use `actions/setup-python@v5` with `cache: 'pip'` and `cache-dependency-path: services/reasoner/pyproject.toml`; second CI run shows cache hit log
+
+***
+
+## Phase 2: Foundational
+
+* \[x] **\[TASK-010]** \[REASONER] \[P1] Create `rag/domain/models.py` with all entity dataclasses
+  * Dependencies: TASK-001
+  * Module: `services/reasoner/src/sherlock/rag/domain/models.py`
+  * Acceptance: Defines `VectorStore`, `KnowledgeFile`, `VectorStoreFile`, `KnowledgeChunk`, `SearchResult`, `IngestJob`, `ParsedDocument`; all are Pydantic `BaseModel` or `dataclass`; `mypy --strict` passes; `rag/__init__.py` and `rag/domain/__init__.py` exist
+
+* \[x] **\[TASK-011]** \[REASONER] \[P1] Create `rag/domain/ports.py` with all port Protocols
+  * Dependencies: TASK-010
+  * Module: `services/reasoner/src/sherlock/rag/domain/ports.py`
+  * Acceptance: Defines `FileStorePort` (upload/download/delete), `VectorStorePort` (init\_schema/upsert\_chunks/search\_hybrid/delete\_by\_file/delete\_vs), `EmbedderPort` (encode), `RerankerPort` (rerank); all use `typing.Protocol` with `@runtime_checkable`; `mypy --strict` passes
+
+***
+
+## Phase 3: Implementation
+
+### Parallel Batch A — Adapters (run concurrently after TASK-011)
+
+* \[x] **\[TASK-020]** \[P] \[REASONER] \[P1] Implement `rag/adapters/minio.py` (MinIO file store)
+  * Dependencies: TASK-010, TASK-011
+  * Module: `services/reasoner/src/sherlock/rag/adapters/minio.py`
+  * Acceptance: Implements `FileStorePort`; `upload(key, data)` creates bucket if absent; `download(key)` returns bytes; `delete(key)` removes object; `MinioUnavailableError` raised (not `500`) when MinIO unreachable; `mypy --strict` passes (with mypy override for minio stubs)
+
+* \[x] **\[TASK-021]** \[P] \[REASONER] \[P1] Implement `rag/adapters/pgvector.py` (vector + FTS store)
+  * Dependencies: TASK-010, TASK-011, TASK-002
+  * Module: `services/reasoner/src/sherlock/rag/adapters/pgvector.py`
+  * Acceptance: Implements `VectorStorePort`; `init_schema()` is idempotent (CREATE IF NOT EXISTS); `upsert_chunks(vs_id, file_id, chunks, embeddings)` inserts into `knowledge_chunks`; `search_hybrid(query_vec, query_text, vs_ids, alpha, candidate_k)` executes single SQL with `alpha`-weighted dense + FTS scoring; `delete_by_file(file_id)` cascades chunks; `alpha=0.0` uses FTS-only, `alpha=1.0` uses dense-only; `mypy --strict` passes
+
+* \[x] **\[TASK-022]** \[P] \[REASONER] \[P1] Implement `rag/adapters/embedder.py` (SentenceTransformer wrapper)
+  * Dependencies: TASK-010, TASK-011
+  * Module: `services/reasoner/src/sherlock/rag/adapters/embedder.py`
+  * Acceptance: Implements `EmbedderPort`; accepts `SentenceTransformer` instance (injected, not created); `encode(texts) → list[list[float]]`; returns 384-dim vectors; handles empty input gracefully; `mypy --strict` passes
+
+* \[x] **\[TASK-023]** \[P] \[REASONER] \[P1] Implement `rag/adapters/reranker.py` (CrossEncoder wrapper)
+  * Dependencies: TASK-010, TASK-011
+  * Module: `services/reasoner/src/sherlock/rag/adapters/reranker.py`
+  * Acceptance: Implements `RerankerPort`; lazy `CrossEncoder` init on first call (model name from settings); `_instance` cached as class variable after first load — never reloaded; `rerank(query, texts) → list[float]` wraps `CrossEncoder.predict()` with `asyncio.to_thread(...)` since it is a synchronous CPU call; `mypy --strict` passes
+  * Note (W-3): First call triggers model download (~200 MB, `cross-encoder/ms-marco-MiniLM-L-6-v2`). The latency spike on the first RAG chat request is expected and documented. Subsequent calls use the cached model. Pre-downloading at image build time (M-4 in spec CI section) is a later optimisation, not MVP.
+
+### Parallel Batch B — Parsers + Chunker (run concurrently after TASK-010)
+
+* \[x] **\[TASK-030]** \[P] \[REASONER] \[P1] Implement `rag/parsers/` (all format parsers)
+  * Dependencies: TASK-010
+  * Module: `services/reasoner/src/sherlock/rag/parsers/`
+  * Acceptance: `base.py` defines `ParsedDocument(text: str, metadata: dict)` and `ParserPort` Protocol; `text_parser.py` handles `.txt,.md,.rst,.py,.go,.ts,.js,.tsx,.jsx` (UTF-8); `pdf_parser.py` uses `pypdf`; `docx_parser.py` uses `python-docx`; `json_parser.py` pretty-prints; `csv_parser.py` yields one chunk per row; `__init__.py` exports `dispatch_parser(filename, data) → ParsedDocument`; unsupported extension raises `UnsupportedFileTypeError`; `mypy --strict` passes
+
+* \[x] **\[TASK-031]** \[P] \[REASONER] \[P1] Implement `rag/chunker.py` (token-aware text chunker)
+  * Dependencies: TASK-010
+  * Module: `services/reasoner/src/sherlock/rag/chunker.py`
+  * Acceptance: `chunk_text(text, chunk_size, overlap) → list[str]`; uses `tiktoken` (`cl100k_base`) for token counting; respects `chunk_size_tokens` and `chunk_overlap_tokens` from settings; empty input → empty list; `mypy --strict` passes
+
+### Application Layer (sequential within stream)
+
+* \[x] **\[TASK-040]** \[REASONER] \[P1] Implement `rag/application/ingest.py` (IngestPipeline)
+  * Dependencies: TASK-020, TASK-021, TASK-022, TASK-030, TASK-031
+  * Module: `services/reasoner/src/sherlock/rag/application/ingest.py`
+  * Acceptance: `IngestPipeline.ingest(file_id, vs_id) → int` downloads file from MinIO, dispatches parser, chunks, embeds, batch-inserts `knowledge_chunks`, updates `vector_store_files.status` to `completed`/`failed`; on exception sets `status=failed` and `error_message` in DB; returns `chunk_count`; `mypy --strict` passes
+
+* \[x] **\[TASK-041]** \[REASONER] \[P1] Implement `rag/application/retrieve.py` (HybridRetriever)
+  * Dependencies: TASK-021, TASK-022, TASK-023
+  * Module: `services/reasoner/src/sherlock/rag/application/retrieve.py`
+  * Acceptance: `HybridRetriever.search(query, vs_ids, alpha, candidate_k, top_k) → list[SearchResult]`; encodes query, calls `search_hybrid`, then reranks to `top_k`; non-existent `vs_id` → empty results (no error); `alpha` per-request overrides default; `mypy --strict` passes
+
+* \[x] **\[TASK-042]** \[REASONER] \[P1] Implement `rag/store.py` (RAGInfra factory + dataclass)
+  * Dependencies: TASK-040, TASK-041
+  * Module: `services/reasoner/src/sherlock/rag/store.py`
+  * Acceptance: `RAGInfra` dataclass holds `file_store`, `vector_store`, `embedder`, `reranker`, `ingest_pipeline`, `retriever`, `settings`; `async build_rag_infra(settings, encoder) → RAGInfra` wires all adapters and application objects; calls `pgvector_adapter.init_schema()` and MinIO bucket creation on startup; `mypy --strict` passes
+
+### Parallel Batch C — HTTP Routers (run concurrently after TASK-042)
+
+* \[x] **\[TASK-050]** \[P] \[REASONER] \[P1] Implement `files_router.py` (US-1, US-6, FR-1/2/3)
+  * Dependencies: TASK-042
+  * Module: `services/reasoner/src/sherlock/files_router.py`
+  * Acceptance: `POST /v1/files` → 201 (multipart); validates extension + size (`UnsupportedFileTypeError` → 400, size > `max_file_bytes` → 400); uploads to MinIO, inserts `knowledge_files`; `GET /v1/files` → 200 list; `GET /v1/files/{id}` → 200 or 404; `DELETE /v1/files/{id}` → 200 (cascades chunks + MinIO delete); `GET /v1/files/{id}/content` → streamed bytes; all routes return 503 when `state.rag is None`; OTEL counter `sherlock.rag.uploads.total`; `mypy --strict` passes
+
+* \[x] **\[TASK-051]** \[P] \[REASONER] \[P1] Implement `vector_stores_router.py` (US-2/3/8/9/10, FR-4/5/6/7)
+  * Dependencies: TASK-042
+  * Module: `services/reasoner/src/sherlock/vector_stores_router.py`
+  * Acceptance: `POST /v1/vector_stores` → 201; `GET/DELETE /v1/vector_stores/{id}` → 200/404; `POST /v1/vector_stores/{id}/files` → 202 async (`BackgroundTask`) or 200 sync (`?sync=true`); `?sync=true` uses `asyncio.wait_for(settings.sync_timeout_s)`, falls back to 202 on timeout; `GET /v1/vector_stores/{id}/files/{fid}` → shows status/chunk\_count/error; `DELETE /v1/vector_stores/{id}/files/{fid}` → removes chunks; `POST /v1/vector_stores/{id}/search` → hybrid search with optional `hybrid_alpha` override; same-file-twice → idempotent (returns existing row); all routes 503 when `state.rag is None`; OTEL timers `sherlock.rag.ingest.latency`, `sherlock.rag.search.latency`; `mypy --strict` passes
+
+* \[x] **\[TASK-052]** \[P] \[REASONER] \[P1] Implement `embeddings_router.py` (US-5, FR-8)
+  * Dependencies: TASK-042
+  * Module: `services/reasoner/src/sherlock/embeddings_router.py`
+  * Acceptance: `POST /v1/embeddings` → 200 `{ "object": "list", "data": [{ "embedding": [...384 floats...], "index": 0, "object": "embedding" }] }`; uses shared `EmbedderAdapter`; supports batch input (`input` as string or list); `usage.prompt_tokens` populated via tiktoken; 503 when `state.rag is None`; OTEL timer `sherlock.rag.embed.latency`; `mypy --strict` passes
+
+* \[x] **\[TASK-053]** \[P] \[REASONER] \[P1] Extend `graph.py` with RAG retrieve node (FR-9)
+  * Dependencies: TASK-041
+  * Module: `services/reasoner/src/sherlock/graph.py`
+  * Acceptance: New `rag_retrieve` node runs when `vector_store_ids` is non-empty; calls `HybridRetriever.search`; injects knowledge context into LLM prompt after system prompt and conv memory; when `vector_store_ids` is absent/empty node is a no-op (all existing 012 tests pass unchanged); `invoke_graph` signature extended with optional `vector_store_ids: list[str] | None = None`; `mypy --strict` passes
+
+* \[x] **\[TASK-054]** \[P] \[REASONER] \[P1] Wire tiktoken token counts + file\_search tool detection in `openai_router.py` (FR-9, FR-14, US-13)
+  * Dependencies: TASK-053
+  * Module: `services/reasoner/src/sherlock/openai_router.py`
+  * Acceptance: `_count_tokens(model, text) → int` helper using `tiktoken.encoding_for_model` with `cl100k_base` fallback; `usage.prompt_tokens` and `completion_tokens` are non-zero in all `/v1/chat/completions` responses; when `req.tools` contains `{ "type": "file_search", "vector_store_ids": [...] }` → extracts `vector_store_ids` and passes to `invoke_graph`; when `req.tools` contains `hybrid_alpha` → passes to graph; all existing streaming + non-streaming code paths pass; `mypy --strict` passes
+
+* \[x] **\[TASK-055]** \[P] \[REASONER] \[P2] Implement `rag/nats_handler.py` (RAG NATS subjects, US-12)
+  * Dependencies: TASK-042
+  * Module: `services/reasoner/src/sherlock/rag/nats_handler.py`
+  * Acceptance: Subscribes to `sherlock.v1.rag.ingest.request` → runs `IngestPipeline.ingest` → publishes to `sherlock.v1.rag.ingest.result`; subscribes to `sherlock.v1.rag.search.request` → runs `HybridRetriever.search` → publishes result; subscribes to `sherlock.v1.rag.embed.request` → runs `EmbedderAdapter.encode` → publishes result; subscribes to `sherlock.v1.rag.chat.request` → runs graph with `vector_store_ids` → publishes result; `mypy --strict` passes
+
+***
+
+## Phase 4: Integration
+
+* \[x] **\[TASK-060]** \[REASONER] \[P1] Wire `RAGInfra` into `main.py` (AppState + lifespan + router mounts)
+  * Dependencies: TASK-042, TASK-050, TASK-051, TASK-052, TASK-053, TASK-054, TASK-055
+  * Module: `services/reasoner/src/sherlock/main.py`
+  * Acceptance: `AppState` has `rag: RAGInfra | None = None`; lifespan calls `build_rag_infra(settings, memory._encoder)` only when `settings.rag_enabled`; `files_router`, `vector_stores_router`, `embeddings_router` included with prefix `/v1`; NATS RAG handler started when `rag_enabled and nats_enabled`; `/health/deep` adds `"minio": await state.rag.file_store.health_check()` to the `components` dict when `state.rag is not None` — MinIO unhealthy → overall status 503 (W-2); startup log shows `rag_enabled=true/false`; `mypy --strict` passes
+
+* \[x] **\[TASK-061]** \[P] \[REASONER] \[P1] Update `docker-compose.yml` with RAG env vars
+  * Dependencies: TASK-001
+  * Module: `services/reasoner/docker-compose.yml`
+  * Acceptance: Add to `arc-sherlock` environment block: `SHERLOCK_RAG_ENABLED: "false"` (default off), `SHERLOCK_MINIO_ENDPOINT: "arc-storage:9000"`, `SHERLOCK_MINIO_ACCESS_KEY: "arc"`, `SHERLOCK_MINIO_SECRET_KEY: "arc-minio-dev"` (matches `services/storage/docker-compose.yml` `MINIO_ROOT_*`), `SHERLOCK_MINIO_BUCKET: "sherlock-files"`; no other structural changes needed — `arc-storage` service wiring is handled by `services/profiles.yaml` (`reason` profile already includes `storage`) and `service.yaml` startup ordering is handled by `resolve-deps.sh` (W-1, W-4)
+
+* \[x] **\[TASK-062]** \[P] \[REASONER] \[P1] Bump `service.yaml` to v0.3.0, add `storage` depends\_on
+  * Dependencies: TASK-001
+  * Module: `services/reasoner/service.yaml`
+  * Acceptance: `version: "0.3.0"`; `depends_on` list includes `storage`; `description` updated to mention RAG
+
+* \[x] **\[TASK-070]** \[P] \[REASONER] \[P1] Write unit tests for `rag/` package
+  * Dependencies: TASK-060
+  * Module: `services/reasoner/tests/rag/`
+  * Acceptance: Tests cover `domain/models.py`, `adapters/embedder.py`, `adapters/reranker.py`, `parsers/` (all formats + dispatch), `chunker.py`, `application/ingest.py` (mocked adapters), `application/retrieve.py` (mocked adapters); `hybrid_alpha=0.0` and `alpha=1.0` SQL edge cases tested; `IngestPipeline` exception → `status=failed`; `pytest tests/ -k "rag" --cov=sherlock.rag` ≥ 75%
+
+* \[x] **\[TASK-071]** \[P] \[REASONER] \[P1] Write integration tests for all 3 new routers + RAG chat
+  * Dependencies: TASK-060
+  * Module: `services/reasoner/tests/`
+  * Acceptance: `httpx.AsyncClient` tests for `POST /v1/files`, `GET /v1/files`, `DELETE /v1/files/{id}`, `POST /v1/vector_stores`, `POST /v1/vector_stores/{id}/files`, `GET /v1/vector_stores/{id}/files/{fid}`, `POST /v1/vector_stores/{id}/search`, `POST /v1/embeddings`; `SHERLOCK_RAG_ENABLED=false` → all new routes return 503; `usage.prompt_tokens` non-zero in chat response; all 012 tests still pass (`pytest tests/ -k "not rag"`); overall rag router coverage ≥ 75%
+
+***
+
+## Phase 5: Polish
+
+* \[x] **\[TASK-900]** \[P] \[DOCS] \[P1] Update OpenAPI and AsyncAPI contracts
+  * Dependencies: TASK-060
+  * Module: `specs/013-sherlock-rag-api/contracts/openapi.yaml`, `specs/013-sherlock-rag-api/contracts/asyncapi.yaml`
+  * Acceptance: `openapi.yaml` includes all 13 new paths (`/v1/files`, `/v1/files/{id}`, `/v1/files/{id}/content`, `/v1/vector_stores`, `/v1/vector_stores/{id}`, `/v1/vector_stores/{id}/files`, `/v1/vector_stores/{id}/files/{fid}`, `/v1/vector_stores/{id}/search`, `/v1/embeddings`) with request/response schemas; `asyncapi.yaml` includes 4 channel pairs (`sherlock.v1.rag.ingest.*`, `sherlock.v1.rag.chat.*`, `sherlock.v1.rag.search.*`, `sherlock.v1.rag.embed.*`); files pass YAML lint
+
+* \[x] **\[TASK-999]** \[REVIEW] \[P1] Reviewer agent verification
+  * Dependencies: ALL tasks
+  * Module: all affected modules
+  * Acceptance: All tasks above are `[x]` done; `ruff check src/ && mypy src/ --strict` zero errors; `pytest tests/ --cov=sherlock` ≥ 75% on rag/ + new routers; `pytest tests/ -k "not rag"` all pass; `usage.prompt_tokens` non-zero; NATS RAG subjects verified; `service.yaml` version = `0.3.0`; `openapi.yaml` and `asyncapi.yaml` updated; no file content in logs/spans; `SecretStr` on MinIO creds; `SHERLOCK_RAG_ENABLED=false` → 012 identical; CI Dockerfile produces CPU-only torch
+
+***
+
+## Progress Summary
+
+| Phase | Total | Done | Parallel |
+|-------|-------|------|----------|
+| Setup | 5 | 0 | 2 |
+| Foundational | 2 | 0 | 0 |
+| Implementation | 15 | 0 | 12 |
+| Integration | 6 | 0 | 4 |
+| Polish | 2 | 1 | 1 |
+| **Total** | **30** | **1** | **19** |
 
 ---
 
