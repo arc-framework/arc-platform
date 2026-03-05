@@ -29,8 +29,7 @@ include services/messaging/messaging.mk
 include services/streaming/streaming.mk
 include services/cache/cache.mk
 include services/messaging.mk
-include services/persistence/sql-db.mk
-include services/vector/vector-db.mk
+include services/persistence/persistence.mk
 include services/storage/storage.mk
 include services/data.mk
 include services/gateway/gateway.mk

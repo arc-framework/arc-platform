@@ -3,7 +3,7 @@
 // @title          A.R.C. Cortex API
 // @version        1.0
 // @description    Cortex bootstrap service — provisions Postgres, NATS, Pulsar, and Redis, then exposes a health/status HTTP API.
-// @host           localhost:8081
+// @host           localhost:8801
 // @BasePath       /
 // @schemes        http
 package main

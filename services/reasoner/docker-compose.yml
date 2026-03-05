@@ -4,23 +4,23 @@ services:
 
   # ── Sherlock: LangGraph reasoning engine ──────────────────────────────────
   # Three invocation modes:
-  #   - HTTP sync:  POST http://localhost:8083/chat
+  #   - HTTP sync:  POST http://localhost:8802/chat
   #   - NATS:       subscribe reasoner.request (queue group: reasoner_workers)
-  #   - Pulsar:     sherlock-requests topic (opt-in, SHERLOCK_PULSAR_ENABLED=true)
+  #   - Pulsar:     reasoner-requests topic (opt-in, SHERLOCK_PULSAR_ENABLED=true)
   #
   # Networks:
   #   arc_platform_net — reaches arc-persistence, arc-messaging, arc-streaming
   #   arc_otel_net     — reaches arc-friday-collector for OTLP telemetry
   #
   # No depends_on — orchestration handled by resolve-deps.sh using service.yaml
-  arc-sherlock:
+  arc-reasoner:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ghcr.io/arc-framework/arc-sherlock:latest
-    container_name: arc-sherlock
+    image: ghcr.io/arc-framework/arc-reasoner:latest
+    container_name: arc-reasoner
     ports:
-      - "127.0.0.1:8083:8000"   # localhost-only; cortex=8081, pulsar-admin=8082
+      - "127.0.0.1:8802:8000"   # localhost-only (host:8802 → container:8000); cortex=8801, pulsar-admin=8082
     environment:
       SHERLOCK_POSTGRES_URL: "postgresql+asyncpg://arc:arc@arc-persistence:5432/arc"
       SHERLOCK_NATS_URL: "nats://arc-messaging:4222"

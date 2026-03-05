@@ -12,7 +12,7 @@ info:
     url: https://github.com/arc-framework/arc-platform
 
 servers:
-  - url: http://localhost:8083
+  - url: http://localhost:8802
     description: Local development
 
 tags:

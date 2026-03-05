@@ -4,8 +4,8 @@ image: ghcr.io/arc-framework/arc-cortex:latest
 version: "0.1.0"
 description: "Bootstrap orchestrator — provisions all A.R.C. platform infrastructure at startup"
 language: go
-port: 8081
-health: http://localhost:8081/health
+port: 8801
+health: http://localhost:8801/health
 depends_on:
   - messaging        # arc-messaging (NATS)
   - streaming        # arc-streaming (Pulsar)

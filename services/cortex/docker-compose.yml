@@ -4,7 +4,7 @@ services:
 
   # ── Cortex: platform bootstrap service ───────────────────────────────────────
   # Provisions Postgres, NATS, Pulsar, and Redis on startup, then exposes
-  # a health / status HTTP API on port 8081.
+  # a health / status HTTP API on port 8801 (host) → 8081 (container).
   #
   # Networks:
   #   arc_platform_net — reaches infra services (arc-persistence, arc-messaging, arc-streaming, arc-cache)
@@ -21,7 +21,7 @@ services:
     container_name: arc-cortex
     command: ["server", "--log-level", "debug"]
     ports:
-      - "127.0.0.1:8081:8081"   # HTTP API — localhost only
+      - "127.0.0.1:8801:8081"   # HTTP API — localhost only (host:8801 → container:8081)
     environment:
       CORTEX_BOOTSTRAP_POSTGRES_PASSWORD: arc
       OTEL_SERVICE_NAME: "arc-cortex"

@@ -1,12 +1,12 @@
-name: arc-sherlock
+name: arc-reasoner
 role: reasoner
 codename: sherlock
-image: ghcr.io/arc-framework/arc-sherlock:latest
+image: ghcr.io/arc-framework/arc-reasoner:latest
 version: "0.3.0"
 description: "LangGraph reasoning engine with pgvector memory, NATS integration, and RAG knowledge base"
 language: python
-port: 8083
-health: http://localhost:8083/health
+port: 8802
+health: http://localhost:8802/health
 timeout: 180        # sentence-transformers model download on first cold start
 healthcheck:
   test: "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""
