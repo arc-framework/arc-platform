@@ -87,3 +87,31 @@ def test_otel_span_content_when_enabled() -> None:
 
     mock_span.set_attribute.assert_any_call("user_message", "What is the weather?")
     mock_span.set_attribute.assert_any_call("assistant_message", "It is sunny today.")
+
+
+def test_ttft_histogram_registered() -> None:
+    """SherlockMetrics registers the reasoner.ttft.seconds histogram instrument."""
+    from unittest.mock import MagicMock, patch
+
+    mock_meter = MagicMock()
+    mock_histogram = MagicMock()
+    mock_meter.create_histogram.return_value = mock_histogram
+
+    with patch("reasoner.observability.metrics") as mock_metrics_module:
+        mock_metrics_module.get_meter.return_value = mock_meter
+
+        from reasoner.observability import SherlockMetrics
+        m = SherlockMetrics()
+
+    # Verify ttft histogram was created with correct name and unit
+    histogram_calls = {
+        call.args[0]: call.kwargs
+        for call in mock_meter.create_histogram.call_args_list
+    }
+    assert "reasoner.ttft.seconds" in histogram_calls, (
+        "SherlockMetrics must register 'reasoner.ttft.seconds' histogram"
+    )
+    assert histogram_calls["reasoner.ttft.seconds"].get("unit") == "s", (
+        "reasoner.ttft.seconds must use unit='s'"
+    )
+    assert m.ttft_seconds is mock_histogram

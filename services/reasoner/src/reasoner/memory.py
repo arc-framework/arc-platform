@@ -1,4 +1,6 @@
+import asyncio
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
 
@@ -63,6 +65,8 @@ class SherlockMemory:
         )
         self._top_k: int = settings.context_top_k
         self._dim: int = settings.embedding_dim
+        # Dedicated executor so CPU-bound encoding never blocks the event loop
+        self._executor: ThreadPoolExecutor = ThreadPoolExecutor(max_workers=2)
 
         # asyncpg requires the vector codec registered per connection
         @event.listens_for(self._engine.sync_engine, "connect")
@@ -91,7 +95,10 @@ class SherlockMemory:
 
     async def search(self, user_id: str, text_query: str) -> list[str]:
         """Encode query and search pgvector with user_id filter; return top-k strings."""
-        vector: list[float] = self._encoder.encode(text_query).tolist()
+        loop = asyncio.get_event_loop()
+        vector: list[float] = await loop.run_in_executor(
+            self._executor, lambda: self._encoder.encode(text_query).tolist()
+        )
         async with self._session_factory() as session:
             result = await session.execute(
                 select(Conversation.content)
@@ -103,7 +110,10 @@ class SherlockMemory:
 
     async def save(self, user_id: str, role: str, content: str) -> None:
         """Persist a conversation turn to PostgreSQL with vector embedding."""
-        vector: list[float] = self._encoder.encode(content).tolist()
+        loop = asyncio.get_event_loop()
+        vector: list[float] = await loop.run_in_executor(
+            self._executor, lambda: self._encoder.encode(content).tolist()
+        )
         async with self._session_factory() as session:
             session.add(
                 Conversation(

@@ -45,6 +45,111 @@ servers:
         description: Durable async message streaming
 
 channels:
+  # ── arc.* streaming subjects (Phase 1 — token streaming) ────────────────────
+
+  arcReasonerRequest:
+    address: arc.reasoner.request
+    servers:
+      - $ref: '#/servers/nats'
+    tags:
+      - name: arc-reasoner-streaming
+        description: arc.* streaming channels (Phase 1)
+    description: |
+      Inbound NATS subject for arc.* streaming requests. Replaces the legacy
+      `reasoner.request` channel. Each message triggers stream_graph() and
+      publishes token chunks to `arc.reasoner.stream.{request_id}`.
+
+      Queue group `reasoner_workers` ensures exactly one replica processes
+      each message. request_id is server-generated (UUID v4).
+    messages:
+      ArcReasoningRequest:
+        $ref: '#/components/messages/ArcReasoningRequest'
+
+  arcReasonerStream:
+    address: "arc.reasoner.stream.{request_id}"
+    parameters:
+      request_id:
+        description: Server-generated UUID v4 correlating chunks to a single request.
+    servers:
+      - $ref: '#/servers/nats'
+    tags:
+      - name: arc-reasoner-streaming
+        description: arc.* streaming channels (Phase 1)
+    description: |
+      Outbound NATS subject for token chunks. Published by Reasoner for each
+      token received from the LLM. Clients subscribe before publishing to
+      `arc.reasoner.request` and use the request_id for correlation.
+
+      TTFT (time to first token) is typically <200ms after Phase 1 + Phase 2.
+    messages:
+      ArcStreamChunk:
+        $ref: '#/components/messages/ArcStreamChunk'
+
+  arcReasonerResult:
+    address: arc.reasoner.result
+    servers:
+      - $ref: '#/servers/nats'
+    tags:
+      - name: arc-reasoner-streaming
+        description: arc.* streaming channels (Phase 1)
+    description: |
+      Outbound NATS subject for completion signals. Published after all token
+      chunks for a request have been sent. Carries request_id, ttft_ms, and
+      total latency_ms. Clients use this to know when a stream is finished.
+    messages:
+      ArcReasonerCompletion:
+        $ref: '#/components/messages/ArcReasonerCompletion'
+
+  arcReasonerError:
+    address: arc.reasoner.error
+    servers:
+      - $ref: '#/servers/nats'
+    tags:
+      - name: arc-reasoner-streaming
+        description: arc.* streaming channels (Phase 1)
+    description: |
+      Outbound NATS subject for error signals. Published when stream_graph()
+      raises or the request payload is invalid. Carries request_id and error
+      string. Clients subscribed to arc.reasoner.stream.{request_id} should
+      also watch this subject for early termination.
+    messages:
+      ArcReasonerError:
+        $ref: '#/components/messages/ArcReasonerError'
+
+  arcIngestRequest:
+    address: arc.ingest.request
+    servers:
+      - $ref: '#/servers/nats'
+    tags:
+      - name: arc-ingest
+        description: Ingestion pipeline channels
+    description: |
+      Inbound NATS subject to trigger the ingestion pipeline. Published by
+      clients when new data should be ingested into the knowledge base.
+    messages:
+      ArcIngestRequest:
+        $ref: '#/components/messages/ArcIngestRequest'
+
+  arcIngestProgress:
+    address: "arc.ingest.progress.{ingest_id}"
+    parameters:
+      ingest_id:
+        description: Server-generated UUID v4 for the ingestion job.
+    servers:
+      - $ref: '#/servers/nats'
+    tags:
+      - name: arc-ingest
+        description: Ingestion pipeline channels
+    description: |
+      Outbound NATS subject for ingestion progress updates. Published during
+      pipeline execution (parse, chunk, embed, store). Clients subscribe for
+      real-time visibility into long-running ingest jobs.
+    messages:
+      ArcIngestProgress:
+        $ref: '#/components/messages/ArcIngestProgress'
+
+  # ── Legacy NATS subjects (kept for backward compatibility) ───────────────────
+
   reasonerRequest:
     address: reasoner.request
     servers:
@@ -146,6 +251,67 @@ channels:
         $ref: '#/components/messages/V1ChatResult'
 
 operations:
+  # ── arc.* streaming operations (Phase 1) ────────────────────────────────────
+
+  receiveArcReasonerRequest:
+    action: receive
+    channel:
+      $ref: '#/channels/arcReasonerRequest'
+    tags:
+      - name: arc-reasoner-streaming
+    title: Receive arc.* streaming request
+    summary: Real-time token-streaming request via arc.reasoner.request
+    description: |
+      Reasoner subscribes to `arc.reasoner.request` in queue group `reasoner_workers`.
+
+      Processing flow:
+      1. Decode JSON payload → {user_id, text}
+      2. Generate request_id (UUID v4)
+      3. Call stream_graph(graph, memory, user_id, text)
+      4. Publish each token chunk to arc.reasoner.stream.{request_id}
+      5. Record ttft_seconds on first token
+      6. Publish completion to arc.reasoner.result
+      7. If msg.reply set: respond with completion payload (legacy compat)
+
+      On exception: publish error to arc.reasoner.error; respond if msg.reply set.
+    messages:
+      - $ref: '#/channels/arcReasonerRequest/messages/ArcReasoningRequest'
+
+  publishArcStreamChunk:
+    action: send
+    channel:
+      $ref: '#/channels/arcReasonerStream'
+    tags:
+      - name: arc-reasoner-streaming
+    title: Publish token chunk to arc.reasoner.stream.{request_id}
+    summary: Individual LLM token chunk streamed to waiting clients
+    messages:
+      - $ref: '#/channels/arcReasonerStream/messages/ArcStreamChunk'
+
+  publishArcReasonerResult:
+    action: send
+    channel:
+      $ref: '#/channels/arcReasonerResult'
+    tags:
+      - name: arc-reasoner-streaming
+    title: Publish completion signal to arc.reasoner.result
+    summary: Stream-complete notification with ttft_ms and latency_ms
+    messages:
+      - $ref: '#/channels/arcReasonerResult/messages/ArcReasonerCompletion'
+
+  publishArcReasonerError:
+    action: send
+    channel:
+      $ref: '#/channels/arcReasonerError'
+    tags:
+      - name: arc-reasoner-streaming
+    title: Publish error signal to arc.reasoner.error
+    summary: Error notification when stream_graph fails or payload is invalid
+    messages:
+      - $ref: '#/channels/arcReasonerError/messages/ArcReasonerError'
+
+  # ── Legacy NATS operations ───────────────────────────────────────────────────
+
   receiveNatsRequest:
     action: receive
     channel:
@@ -253,6 +419,82 @@ operations:
 
 components:
   messages:
+    # ── arc.* streaming messages (Phase 1) ──────────────────────────────────
+
+    ArcReasoningRequest:
+      name: ArcReasoningRequest
+      title: arc.* Streaming Request
+      summary: Real-time request that triggers token streaming via stream_graph()
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ArcReasoningRequestPayload'
+      examples:
+        - name: basic_request
+          payload:
+            user_id: "user-123"
+            text: "What are the main benefits of vector databases?"
+
+    ArcStreamChunk:
+      name: ArcStreamChunk
+      title: Token Stream Chunk
+      summary: Single LLM token chunk published to arc.reasoner.stream.{request_id}
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ArcStreamChunkPayload'
+      examples:
+        - name: token_chunk
+          payload:
+            request_id: "req-uuid-v4"
+            chunk: " databases"
+
+    ArcReasonerCompletion:
+      name: ArcReasonerCompletion
+      title: Stream Completion Signal
+      summary: Published to arc.reasoner.result when all chunks have been sent
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ArcReasonerCompletionPayload'
+      examples:
+        - name: completion
+          payload:
+            request_id: "req-uuid-v4"
+            user_id: "user-123"
+            done: true
+            ttft_ms: 187
+            latency_ms: 2340
+
+    ArcReasonerError:
+      name: ArcReasonerError
+      title: Stream Error Signal
+      summary: Published to arc.reasoner.error when stream_graph fails
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ArcReasonerErrorPayload'
+      examples:
+        - name: error
+          payload:
+            request_id: "req-uuid-v4"
+            error: "LLM API timeout"
+            latency_ms: 5100
+
+    ArcIngestRequest:
+      name: ArcIngestRequest
+      title: Ingestion Trigger
+      summary: Triggers the ingestion pipeline for new data
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ArcIngestRequestPayload'
+
+    ArcIngestProgress:
+      name: ArcIngestProgress
+      title: Ingestion Progress Update
+      summary: Real-time progress during ingestion pipeline execution
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ArcIngestProgressPayload'
+
+    # ── Legacy messages ────────────────────────────────────────────────────────
+
     ReasoningRequest:
       name: ReasoningRequest
       title: NATS Reasoning Request
@@ -386,6 +628,126 @@ components:
               total_tokens: 0
 
   schemas:
+    # ── arc.* streaming schemas (Phase 1) ────────────────────────────────────
+
+    ArcReasoningRequestPayload:
+      type: object
+      required: [user_id, text]
+      properties:
+        user_id:
+          type: string
+          description: Unique identifier for the user or agent session.
+          example: "user-123"
+          minLength: 1
+        text:
+          type: string
+          description: The message or question to reason about.
+          example: "What are the main benefits of vector databases?"
+          minLength: 1
+
+    ArcStreamChunkPayload:
+      type: object
+      required: [request_id, chunk]
+      properties:
+        request_id:
+          type: string
+          description: Server-generated UUID v4 correlating this chunk to its request.
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        chunk:
+          type: string
+          description: A single LLM token or token sequence.
+          example: " databases"
+
+    ArcReasonerCompletionPayload:
+      type: object
+      required: [request_id, user_id, done, ttft_ms, latency_ms]
+      properties:
+        request_id:
+          type: string
+          description: Echoes the server-generated request_id from the stream subjects.
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        user_id:
+          type: string
+          description: Echoed from the original request.
+          example: "user-123"
+        done:
+          type: boolean
+          description: Always true — signals end of stream.
+          example: true
+        ttft_ms:
+          type: integer
+          description: Time from request receive to first token emitted (milliseconds).
+          example: 187
+          minimum: 0
+        latency_ms:
+          type: integer
+          description: Total end-to-end latency from request receive to completion signal.
+          example: 2340
+          minimum: 0
+
+    ArcReasonerErrorPayload:
+      type: object
+      required: [request_id, error, latency_ms]
+      properties:
+        request_id:
+          type: string
+          description: Server-generated UUID v4 for the failed request.
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        error:
+          type: string
+          description: Error message describing what went wrong.
+          example: "LLM API timeout"
+        latency_ms:
+          type: integer
+          description: Time from request receive to error (milliseconds).
+          example: 5100
+          minimum: 0
+
+    ArcIngestRequestPayload:
+      type: object
+      required: [user_id, source]
+      properties:
+        user_id:
+          type: string
+          description: Owner of the knowledge base being ingested into.
+          example: "user-123"
+          minLength: 1
+        source:
+          type: string
+          description: Source identifier (file path, URL, or storage reference).
+          example: "s3://bucket/document.pdf"
+          minLength: 1
+        kb_id:
+          type: string
+          description: Optional knowledge base ID. If absent, the default KB is used.
+          nullable: true
+
+    ArcIngestProgressPayload:
+      type: object
+      required: [ingest_id, stage, progress_pct]
+      properties:
+        ingest_id:
+          type: string
+          description: Server-generated UUID v4 for the ingestion job.
+          example: "550e8400-e29b-41d4-a716-446655440001"
+        stage:
+          type: string
+          description: Current pipeline stage.
+          enum: [parse, chunk, embed, store, done, error]
+          example: "embed"
+        progress_pct:
+          type: integer
+          description: Completion percentage (0–100).
+          example: 65
+          minimum: 0
+          maximum: 100
+        message:
+          type: string
+          description: Optional human-readable status message.
+          nullable: true
+
+    # ── Legacy schemas ────────────────────────────────────────────────────────
+
     ReasoningRequestPayload:
       type: object
       required:

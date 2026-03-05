@@ -93,6 +93,29 @@ class Settings(BaseSettings):
     )
     nats_v1_enabled: bool = Field(True, alias="SHERLOCK_NATS_V1_ENABLED")
 
+    # NATS arc.* subjects (Phase 1 — token streaming)
+    arc_nats_request_subject: str = Field(
+        "arc.reasoner.request", alias="SHERLOCK_ARC_NATS_REQUEST_SUBJECT"
+    )
+    arc_nats_stream_prefix: str = Field(
+        "arc.reasoner.stream", alias="SHERLOCK_ARC_NATS_STREAM_PREFIX"
+    )
+    arc_nats_result_subject: str = Field(
+        "arc.reasoner.result", alias="SHERLOCK_ARC_NATS_RESULT_SUBJECT"
+    )
+    arc_nats_error_subject: str = Field(
+        "arc.reasoner.error", alias="SHERLOCK_ARC_NATS_ERROR_SUBJECT"
+    )
+    arc_nats_ingest_request_subject: str = Field(
+        "arc.ingest.request", alias="SHERLOCK_ARC_NATS_INGEST_REQUEST_SUBJECT"
+    )
+    arc_nats_ingest_progress_prefix: str = Field(
+        "arc.ingest.progress", alias="SHERLOCK_ARC_NATS_INGEST_PROGRESS_PREFIX"
+    )
+
+    # Guardrail feature flag (Phase 3 — RoboCop pre/post checks, disabled until arc-guard exists)
+    guard_enabled: bool = Field(False, alias="SHERLOCK_GUARD_ENABLED")
+
     # AsyncAPI UI
     async_docs_enabled: bool = Field(True, alias="SHERLOCK_ASYNC_DOCS_ENABLED")
 

@@ -1,8 +1,8 @@
 """Unit tests for reasoner.openai_nats_handler.OpenAINATSHandler.
 
-Tests cover the _handle() dispatch logic: fire-and-forget semantics, request-reply
-dual publish, error responses, connection state, user_id derivation, and the
-invariant that no message content appears in log calls.
+Tests cover the _handle() streaming dispatch: token chunks published to stream
+subject, completion signal to result subject, TTFT recorded, error path, 
+fire-and-forget vs request-reply, and user_id derivation.
 
 asyncio_mode = "auto" from pyproject.toml — no explicit @pytest.mark.asyncio needed.
 """
@@ -14,9 +14,29 @@ import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from reasoner.config import Settings
-from reasoner.models_v1 import ChatCompletionResponse
 from reasoner.observability import SherlockMetrics
 from reasoner.openai_nats_handler import OpenAINATSHandler, _derive_user_id
+
+# ─── Async generator mocks ────────────────────────────────────────────────────
+
+
+async def _mock_stream_chunks(*args, **kwargs):
+    """Async generator yielding two token chunks."""
+    yield "Hello"
+    yield " world"
+
+
+async def _mock_stream_empty(*args, **kwargs):
+    """Async generator that yields nothing."""
+    return
+    yield  # make it a generator
+
+
+async def _mock_stream_error(*args, **kwargs):
+    """Async generator that raises immediately."""
+    raise RuntimeError("stream failed")
+    yield  # make it a generator
+
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -28,6 +48,9 @@ def _make_settings() -> MagicMock:
     s.nats_v1_result_subject = "reasoner.v1.result"
     s.nats_queue_group = "reasoner_workers"
     s.nats_v1_enabled = True
+    s.arc_nats_stream_prefix = "arc.reasoner.stream"
+    s.arc_nats_result_subject = "arc.reasoner.result"
+    s.arc_nats_error_subject = "arc.reasoner.error"
     return s
 
 
@@ -39,6 +62,8 @@ def _make_metrics() -> MagicMock:
     m.v1_errors_total.add = MagicMock()
     m.v1_latency = MagicMock()
     m.v1_latency.record = MagicMock()
+    m.ttft_seconds = MagicMock()
+    m.ttft_seconds.record = MagicMock()
     return m
 
 
@@ -50,7 +75,6 @@ def _make_handler() -> OpenAINATSHandler:
         settings=_make_settings(),
         metrics=_make_metrics(),
     )
-    # Inject a mock NATS client so _handle() can publish
     mock_nc = MagicMock()
     mock_nc.publish = AsyncMock()
     mock_nc.is_connected = True
@@ -73,6 +97,83 @@ def _make_msg(messages_data: list[dict], reply: str | None = None) -> MagicMock:
     return msg
 
 
+# ─── Token streaming ──────────────────────────────────────────────────────────
+
+
+async def test_token_chunks_published_to_stream_subject() -> None:
+    """Each yielded chunk is published to arc.reasoner.stream.{request_id}."""
+    handler = _make_handler()
+    msg = _make_msg([{"role": "user", "content": "hello"}], reply=None)
+
+    with patch("reasoner.openai_nats_handler.stream_graph", new=_mock_stream_chunks):
+        await handler._handle(msg)
+
+    # Two chunk publishes + one arc result + one v1 result = 4 publishes total
+    calls = handler._nc.publish.call_args_list
+    stream_calls = [c for c in calls if c.args[0].startswith("arc.reasoner.stream.")]
+    assert len(stream_calls) == 2
+
+    chunks = [json.loads(c.args[1])["chunk"] for c in stream_calls]
+    assert chunks == ["Hello", " world"]
+
+
+async def test_completion_signal_published_to_arc_result() -> None:
+    """Completion payload (done=True) is published to arc.reasoner.result."""
+    handler = _make_handler()
+    msg = _make_msg([{"role": "user", "content": "hello"}], reply=None)
+
+    with patch("reasoner.openai_nats_handler.stream_graph", new=_mock_stream_chunks):
+        await handler._handle(msg)
+
+    calls = handler._nc.publish.call_args_list
+    result_calls = [c for c in calls if c.args[0] == "arc.reasoner.result"]
+    assert len(result_calls) == 1
+
+    payload = json.loads(result_calls[0].args[1])
+    assert payload["done"] is True
+    assert "request_id" in payload
+    assert "ttft_ms" in payload
+    assert "latency_ms" in payload
+
+
+async def test_completion_also_published_to_legacy_v1_result() -> None:
+    """Completion is also published to reasoner.v1.result for backward compat."""
+    handler = _make_handler()
+    msg = _make_msg([{"role": "user", "content": "hello"}], reply=None)
+
+    with patch("reasoner.openai_nats_handler.stream_graph", new=_mock_stream_chunks):
+        await handler._handle(msg)
+
+    calls = handler._nc.publish.call_args_list
+    v1_result_calls = [c for c in calls if c.args[0] == "reasoner.v1.result"]
+    assert len(v1_result_calls) == 1
+
+
+async def test_ttft_recorded_on_first_token() -> None:
+    """ttft_seconds is recorded exactly once, on the first yielded chunk."""
+    handler = _make_handler()
+    msg = _make_msg([{"role": "user", "content": "hello"}], reply=None)
+
+    with patch("reasoner.openai_nats_handler.stream_graph", new=_mock_stream_chunks):
+        await handler._handle(msg)
+
+    handler._metrics.ttft_seconds.record.assert_called_once()
+    args = handler._metrics.ttft_seconds.record.call_args
+    # First arg is seconds value — must be non-negative
+    assert args.args[0] >= 0
+
+
+async def test_latency_recorded_after_completion() -> None:
+    """v1_latency is recorded once after the stream completes."""
+    handler = _make_handler()
+    msg = _make_msg([{"role": "user", "content": "hello"}], reply=None)
+
+    with patch("reasoner.openai_nats_handler.stream_graph", new=_mock_stream_chunks):
+        await handler._handle(msg)
+
+    handler._metrics.v1_latency.record.assert_called_once()
+
+
 # ─── Fire-and-forget (no reply) ───────────────────────────────────────────────
 
 
@@ -81,188 +182,122 @@ async def test_fire_and_forget_no_respond_called() -> None:
     handler = _make_handler()
     msg = _make_msg([{"role": "user", "content": "hello"}], reply=None)
 
-    with patch(
-        "reasoner.openai_nats_handler.invoke_graph",
-        new_callable=AsyncMock,
-        return_value="response text",
-    ):
+    with patch("reasoner.openai_nats_handler.stream_graph", new=_mock_stream_chunks):
         await handler._handle(msg)
 
     msg.respond.assert_not_called()
 
 
 async def test_fire_and_forget_result_published() -> None:
-    """Fire-and-forget: result is published to the result subject."""
+    """Fire-and-forget: result is published to arc result subject."""
     handler = _make_handler()
     msg = _make_msg([{"role": "user", "content": "hello"}], reply=None)
 
-    with patch(
-        "reasoner.openai_nats_handler.invoke_graph",
-        new_callable=AsyncMock,
-        return_value="response text",
-    ):
+    with patch("reasoner.openai_nats_handler.stream_graph", new=_mock_stream_chunks):
         await handler._handle(msg)
 
-    handler._nc.publish.assert_awaited_once_with(
-        "reasoner.v1.result",
-        handler._nc.publish.call_args.args[1],
-    )
+    calls = handler._nc.publish.call_args_list
+    result_calls = [c for c in calls if c.args[0] == "arc.reasoner.result"]
+    assert len(result_calls) == 1
 
 
 # ─── Request-reply ────────────────────────────────────────────────────────────
 
 
 async def test_request_reply_respond_called() -> None:
-    """When msg.reply is set, msg.respond() is called with the result bytes."""
+    """When msg.reply is set, msg.respond() is called with the completion bytes."""
     handler = _make_handler()
     msg = _make_msg([{"role": "user", "content": "hi"}], reply="INBOX.123")
 
-    with patch(
-        "reasoner.openai_nats_handler.invoke_graph",
-        new_callable=AsyncMock,
-        return_value="reply response",
-    ):
+    with patch("reasoner.openai_nats_handler.stream_graph", new=_mock_stream_chunks):
         await handler._handle(msg)
 
     msg.respond.assert_awaited_once()
+    raw = msg.respond.call_args.args[0]
+    payload = json.loads(raw)
+    assert payload["done"] is True
 
 
 async def test_request_reply_also_publishes_to_result_subject() -> None:
-    """Request-reply: result is ALSO published to result subject (dual publish)."""
+    """Request-reply: result is ALSO published to arc result subject (dual publish)."""
     handler = _make_handler()
     msg = _make_msg([{"role": "user", "content": "hi"}], reply="INBOX.123")
 
-    with patch(
-        "reasoner.openai_nats_handler.invoke_graph",
-        new_callable=AsyncMock,
-        return_value="dual publish response",
-    ):
+    with patch("reasoner.openai_nats_handler.stream_graph", new=_mock_stream_chunks):
         await handler._handle(msg)
 
     msg.respond.assert_awaited_once()
-    handler._nc.publish.assert_awaited_once_with(
-        "reasoner.v1.result",
-        handler._nc.publish.call_args.args[1],
-    )
-
-
-async def test_request_reply_respond_payload_is_valid_response() -> None:
-    """The bytes sent to msg.respond() decode as valid ChatCompletionResponse."""
-    handler = _make_handler()
-    msg = _make_msg([{"role": "user", "content": "hi"}], reply="INBOX.abc")
-
-    with patch(
-        "reasoner.openai_nats_handler.invoke_graph",
-        new_callable=AsyncMock,
-        return_value="the answer",
-    ):
-        await handler._handle(msg)
-
-    raw = msg.respond.call_args.args[0]
-    parsed = ChatCompletionResponse.model_validate_json(raw)
-    assert parsed.choices[0].message.content == "the answer"
-    assert parsed.model == "test-model"
-    assert parsed.object == "chat.completion"
+    calls = handler._nc.publish.call_args_list
+    result_calls = [c for c in calls if c.args[0] == "arc.reasoner.result"]
+    assert len(result_calls) == 1
 
 
 # ─── Missing user message ─────────────────────────────────────────────────────
 
 
 async def test_missing_user_message_publishes_error_no_crash() -> None:
-    """No user-role message → error response is published, handler does not raise."""
+    """No user-role message → error published to arc.reasoner.error, no raise."""
     handler = _make_handler()
-    # Only system message — no user role
     msg = _make_msg([{"role": "system", "content": "you are helpful"}], reply=None)
 
-    # Should not raise
     await handler._handle(msg)
 
-    # Error metrics incremented
     handler._metrics.v1_errors_total.add.assert_called_once()
+    calls = handler._nc.publish.call_args_list
+    error_calls = [c for c in calls if c.args[0] == "arc.reasoner.error"]
+    assert len(error_calls) == 1
 
-    # A response was still published
-    handler._nc.publish.assert_awaited_once()
-    raw = handler._nc.publish.call_args.args[1]
-    parsed = ChatCompletionResponse.model_validate_json(raw)
-    assert "Error" in parsed.choices[0].message.content
+    payload = json.loads(error_calls[0].args[1])
+    assert "error" in payload
 
 
 async def test_missing_user_message_with_reply_no_crash() -> None:
-    """No user message + reply set → error published, msg.respond() NOT called."""
+    """No user message + reply set → error published, msg.respond called with error."""
     handler = _make_handler()
     msg = _make_msg([{"role": "system", "content": "sys"}], reply="INBOX.err")
 
     await handler._handle(msg)
 
-    # respond is called only when msg.reply is set — error path still calls it
-    # because the result is built before the publish block
-    # (the reply is sent regardless of error or success)
-    handler._nc.publish.assert_awaited_once()
-    raw = handler._nc.publish.call_args.args[1]
-    parsed = ChatCompletionResponse.model_validate_json(raw)
-    assert "Error" in parsed.choices[0].message.content
+    calls = handler._nc.publish.call_args_list
+    error_calls = [c for c in calls if c.args[0] == "arc.reasoner.error"]
+    assert len(error_calls) == 1
+
+    payload = json.loads(error_calls[0].args[1])
+    assert "error" in payload
 
 
-# ─── invoke_graph exception ───────────────────────────────────────────────────
+# ─── stream_graph exception ───────────────────────────────────────────────────
 
 
-async def test_invoke_graph_exception_publishes_error() -> None:
-    """When invoke_graph raises, error response is published and no exception propagates."""
+async def test_stream_graph_exception_publishes_error() -> None:
+    """When stream_graph raises, error is published and no exception propagates."""
     handler = _make_handler()
     msg = _make_msg([{"role": "user", "content": "crash me"}], reply=None)
 
-    with patch(
-        "reasoner.openai_nats_handler.invoke_graph",
-        new_callable=AsyncMock,
-        side_effect=RuntimeError("graph exploded"),
-    ):
-        await handler._handle(msg)  # must not raise
+    with patch("reasoner.openai_nats_handler.stream_graph", new=_mock_stream_error):
+        await handler._handle(msg)
 
-    handler._nc.publish.assert_awaited_once()
-    raw = handler._nc.publish.call_args.args[1]
-    parsed = ChatCompletionResponse.model_validate_json(raw)
-    assert parsed.choices[0].message.content == "Error: internal server error"
+    calls = handler._nc.publish.call_args_list
+    error_calls = [c for c in calls if c.args[0] == "arc.reasoner.error"]
+    assert len(error_calls) == 1
+
+    payload = json.loads(error_calls[0].args[1])
+    assert "stream failed" in payload["error"]
     handler._metrics.v1_errors_total.add.assert_called_once()
 
 
-async def test_invoke_graph_exception_with_reply_responds() -> None:
-    """invoke_graph exception + reply set → error also sent to inbox."""
+async def test_stream_graph_exception_with_reply_responds() -> None:
+    """stream_graph exception + reply set → error also sent to inbox."""
     handler = _make_handler()
     msg = _make_msg([{"role": "user", "content": "boom"}], reply="INBOX.crash")
 
-    with patch(
-        "reasoner.openai_nats_handler.invoke_graph",
-        new_callable=AsyncMock,
-        side_effect=ValueError("bad value"),
-    ):
+    with patch("reasoner.openai_nats_handler.stream_graph", new=_mock_stream_error):
         await handler._handle(msg)
 
     msg.respond.assert_awaited_once()
     raw = msg.respond.call_args.args[0]
-    parsed = ChatCompletionResponse.model_validate_json(raw)
-    assert parsed.choices[0].message.content == "Error: internal server error"
-
-
-# ─── Valid ChatCompletionResponse JSON ────────────────────────────────────────
-
-
-async def test_result_bytes_are_valid_chat_completion_response() -> None:
-    """Published bytes (result subject) always decode as valid ChatCompletionResponse."""
-    handler = _make_handler()
-    msg = _make_msg([{"role": "user", "content": "valid?"}], reply=None)
-
-    with patch(
-        "reasoner.openai_nats_handler.invoke_graph",
-        new_callable=AsyncMock,
-        return_value="validated",
-    ):
-        await handler._handle(msg)
-
-    raw = handler._nc.publish.call_args.args[1]
-    parsed = ChatCompletionResponse.model_validate_json(raw)
-    assert parsed.object == "chat.completion"
-    assert len(parsed.choices) == 1
-    assert parsed.usage.total_tokens == 0
+    payload = json.loads(raw)
+    assert "stream failed" in payload["error"]
 
 
 # ─── No message content in logs ───────────────────────────────────────────────
@@ -281,20 +316,13 @@ async def test_no_message_content_in_debug_log() -> None:
         mock_log.debug = MagicMock(side_effect=lambda *a, **kw: debug_calls.append((a, kw)))
         mock_log.error = MagicMock(side_effect=lambda *a, **kw: error_calls.append((a, kw)))
 
-        with patch(
-            "reasoner.openai_nats_handler.invoke_graph",
-            new_callable=AsyncMock,
-            return_value="safe response",
-        ):
+        with patch("reasoner.openai_nats_handler.stream_graph", new=_mock_stream_chunks):
             await handler._handle(msg)
 
-    # Check no debug or error call contains the message content
     all_calls = debug_calls + error_calls
     for args, kwargs in all_calls:
         combined = str(args) + str(kwargs)
-        assert secret_text not in combined, (
-            f"Message content found in log call: {combined!r}"
-        )
+        assert secret_text not in combined, f"Message content found in log call: {combined!r}"
 
 
 async def test_no_message_content_in_error_log_on_exception() -> None:
@@ -309,18 +337,12 @@ async def test_no_message_content_in_error_log_on_exception() -> None:
         mock_log.debug = MagicMock()
         mock_log.error = MagicMock(side_effect=lambda *a, **kw: error_calls.append((a, kw)))
 
-        with patch(
-            "reasoner.openai_nats_handler.invoke_graph",
-            new_callable=AsyncMock,
-            side_effect=RuntimeError("some error"),
-        ):
+        with patch("reasoner.openai_nats_handler.stream_graph", new=_mock_stream_error):
             await handler._handle(msg)
 
     for args, kwargs in error_calls:
         combined = str(args) + str(kwargs)
-        assert secret_text not in combined, (
-            f"Message content found in error log: {combined!r}"
-        )
+        assert secret_text not in combined, f"Message content found in error log: {combined!r}"
 
 
 # ─── is_connected() ───────────────────────────────────────────────────────────
@@ -356,7 +378,6 @@ def test_is_connected_false_when_nc_none() -> None:
         settings=settings,
         metrics=_make_metrics(),
     )
-    # _nc starts as None
     assert handler.is_connected() is False
 
 
@@ -364,7 +385,7 @@ def test_is_connected_false_when_nc_none() -> None:
 
 
 async def test_user_id_uses_req_user_when_set() -> None:
-    """invoke_graph receives the user_id from req.user when explicitly provided."""
+    """stream_graph receives the user_id from req.user when explicitly provided."""
     handler = _make_handler()
     payload = {
         "model": "test-model",
@@ -380,11 +401,11 @@ async def test_user_id_uses_req_user_when_set() -> None:
 
     captured_user_id: list[str] = []
 
-    async def fake_invoke(graph, memory, user_id: str, text: str) -> str:
+    async def fake_stream(graph, memory, user_id: str, text: str):
         captured_user_id.append(user_id)
-        return "ok"
+        yield "ok"
 
-    with patch("reasoner.openai_nats_handler.invoke_graph", side_effect=fake_invoke):
+    with patch("reasoner.openai_nats_handler.stream_graph", new=fake_stream):
         await handler._handle(msg)
 
     assert captured_user_id == ["explicit-user-123"]
@@ -397,20 +418,18 @@ async def test_user_id_derives_uuid_v5_when_absent() -> None:
 
     captured_user_id: list[str] = []
 
-    async def fake_invoke(graph, memory, user_id: str, text: str) -> str:
+    async def fake_stream(graph, memory, user_id: str, text: str):
         captured_user_id.append(user_id)
-        return "ok"
+        yield "ok"
 
-    with patch("reasoner.openai_nats_handler.invoke_graph", side_effect=fake_invoke):
+    with patch("reasoner.openai_nats_handler.stream_graph", new=fake_stream):
         await handler._handle(msg)
 
     assert len(captured_user_id) == 1
     derived = captured_user_id[0]
-    # Must be a valid UUID
     parsed = uuid.UUID(derived)
     assert parsed.version == 5
 
-    # Deterministic: same content → same UUID
     expected = _derive_user_id(
         [type("M", (), {"role": "user", "content": "stable content"})()]  # type: ignore[arg-type]
     )
