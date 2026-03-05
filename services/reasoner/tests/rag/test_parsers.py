@@ -1,4 +1,4 @@
-"""Unit tests for sherlock.rag.parsers.*"""
+"""Unit tests for reasoner.rag.parsers.*"""
 from __future__ import annotations
 
 import csv
@@ -7,14 +7,14 @@ import json
 
 import pytest
 
-from sherlock.rag.parsers import (
+from reasoner.rag.parsers import (
     CsvParser,
     JsonParser,
     TextParser,
     UnsupportedFileTypeError,
     dispatch_parser,
 )
-from sherlock.rag.parsers.base import ParserPort
+from reasoner.rag.parsers.base import ParserPort
 
 
 # ─── TextParser ───────────────────────────────────────────────────────────────
@@ -116,7 +116,7 @@ class TestPdfParser:
         writer.write(buf)
         pdf_bytes = buf.getvalue()
 
-        from sherlock.rag.parsers.pdf_parser import PdfParser
+        from reasoner.rag.parsers.pdf_parser import PdfParser
 
         doc = PdfParser().parse(pdf_bytes)
         assert doc.metadata["type"] == "pdf"
@@ -131,7 +131,7 @@ class TestPdfParser:
         writer.add_blank_page(width=612, height=792)
         writer.write(buf)
 
-        from sherlock.rag.parsers.pdf_parser import PdfParser
+        from reasoner.rag.parsers.pdf_parser import PdfParser
 
         doc = PdfParser().parse(buf.getvalue())
         assert doc.metadata["type"] == "pdf"
@@ -152,14 +152,14 @@ class TestDocxParser:
         return buf.getvalue()
 
     def test_parse_single_paragraph(self) -> None:
-        from sherlock.rag.parsers.docx_parser import DocxParser
+        from reasoner.rag.parsers.docx_parser import DocxParser
 
         data = self._make_docx(["Hello from docx"])
         doc = DocxParser().parse(data)
         assert "Hello from docx" in doc.text
 
     def test_parse_multiple_paragraphs(self) -> None:
-        from sherlock.rag.parsers.docx_parser import DocxParser
+        from reasoner.rag.parsers.docx_parser import DocxParser
 
         data = self._make_docx(["First paragraph", "Second paragraph"])
         doc = DocxParser().parse(data)
@@ -167,7 +167,7 @@ class TestDocxParser:
         assert "Second paragraph" in doc.text
 
     def test_metadata_type_is_docx(self) -> None:
-        from sherlock.rag.parsers.docx_parser import DocxParser
+        from reasoner.rag.parsers.docx_parser import DocxParser
 
         data = self._make_docx(["test"])
         doc = DocxParser().parse(data)

@@ -1,4 +1,4 @@
-"""Unit tests for sherlock.nats_handler.NATSHandler.
+"""Unit tests for reasoner.nats_handler.NATSHandler.
 
 Tests cover the _handle() dispatch logic, fire-and-forget semantics, error
 response on exception, connection state, and AsyncAPI schema conformance.
@@ -17,9 +17,9 @@ import jsonschema
 import pytest
 import yaml
 
-from sherlock.config import Settings
-from sherlock.nats_handler import NATSHandler
-from sherlock.observability import SherlockMetrics
+from reasoner.config import Settings
+from reasoner.nats_handler import NATSHandler
+from reasoner.observability import SherlockMetrics
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -28,8 +28,8 @@ from sherlock.observability import SherlockMetrics
 def _make_settings() -> MagicMock:
     s = MagicMock(spec=Settings)
     s.nats_url = "nats://localhost:4222"
-    s.nats_subject = "sherlock.request"
-    s.nats_queue_group = "sherlock_workers"
+    s.nats_subject = "reasoner.request"
+    s.nats_queue_group = "reasoner_workers"
     s.nats_enabled = True
     return s
 
@@ -75,7 +75,7 @@ async def test_request_reply() -> None:
     )
 
     with patch(
-        "sherlock.nats_handler.invoke_graph",
+        "reasoner.nats_handler.invoke_graph",
         new_callable=AsyncMock,
         return_value="response text",
     ):
@@ -101,7 +101,7 @@ async def test_fire_and_forget() -> None:
     )
 
     with patch(
-        "sherlock.nats_handler.invoke_graph",
+        "reasoner.nats_handler.invoke_graph",
         new_callable=AsyncMock,
         return_value="response text",
     ):
@@ -122,7 +122,7 @@ async def test_error_response_on_exception() -> None:
     )
 
     with patch(
-        "sherlock.nats_handler.invoke_graph",
+        "reasoner.nats_handler.invoke_graph",
         new_callable=AsyncMock,
         side_effect=RuntimeError("oops"),
     ):

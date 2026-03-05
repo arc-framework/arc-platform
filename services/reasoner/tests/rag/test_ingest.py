@@ -1,4 +1,4 @@
-"""Unit tests for sherlock.rag.application.ingest.IngestPipeline."""
+"""Unit tests for reasoner.rag.application.ingest.IngestPipeline."""
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from sherlock.config import Settings
-from sherlock.rag.application.ingest import IngestPipeline
+from reasoner.config import Settings
+from reasoner.rag.application.ingest import IngestPipeline
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -93,12 +93,12 @@ class TestIngestPipelineSuccess:
 
         pipeline = _make_pipeline(file_store, vector_store, embedder, session_factory)
 
-        with patch("sherlock.rag.application.ingest.dispatch_parser") as mock_parser:
+        with patch("reasoner.rag.application.ingest.dispatch_parser") as mock_parser:
             mock_doc = MagicMock()
             mock_doc.text = "chunk1 chunk2 chunk3 chunk4 chunk5 chunk6 more words here"
             mock_parser.return_value = mock_doc
 
-            with patch("sherlock.rag.application.ingest.chunk_text") as mock_chunk:
+            with patch("reasoner.rag.application.ingest.chunk_text") as mock_chunk:
                 mock_chunk.return_value = ["chunk1", "chunk2", "chunk3"]
                 count = await pipeline.ingest("file-1", "vs-1")
 
@@ -115,9 +115,9 @@ class TestIngestPipelineSuccess:
         session_factory = _make_session_factory("notes.txt")
         pipeline = _make_pipeline(file_store, vector_store, embedder, session_factory)
 
-        with patch("sherlock.rag.application.ingest.dispatch_parser") as mock_parser:
+        with patch("reasoner.rag.application.ingest.dispatch_parser") as mock_parser:
             mock_parser.return_value = MagicMock(text="hello world text")
-            with patch("sherlock.rag.application.ingest.chunk_text") as mock_chunk:
+            with patch("reasoner.rag.application.ingest.chunk_text") as mock_chunk:
                 mock_chunk.return_value = ["hello world text"]
                 await pipeline.ingest("file-abc", "vs-xyz")
 
@@ -134,9 +134,9 @@ class TestIngestPipelineSuccess:
         session_factory = _make_session_factory("file.txt")
         pipeline = _make_pipeline(file_store, vector_store, embedder, session_factory)
 
-        with patch("sherlock.rag.application.ingest.dispatch_parser") as mock_parser:
+        with patch("reasoner.rag.application.ingest.dispatch_parser") as mock_parser:
             mock_parser.return_value = MagicMock(text="text")
-            with patch("sherlock.rag.application.ingest.chunk_text") as mock_chunk:
+            with patch("reasoner.rag.application.ingest.chunk_text") as mock_chunk:
                 mock_chunk.return_value = ["chunk-a", "chunk-b"]
                 await pipeline.ingest("f-1", "vs-1")
 
@@ -153,9 +153,9 @@ class TestIngestPipelineSuccess:
         session_factory = _make_session_factory("data.txt")
         pipeline = _make_pipeline(file_store, vector_store, embedder, session_factory)
 
-        with patch("sherlock.rag.application.ingest.dispatch_parser") as mock_parser:
+        with patch("reasoner.rag.application.ingest.dispatch_parser") as mock_parser:
             mock_parser.return_value = MagicMock(text="text")
-            with patch("sherlock.rag.application.ingest.chunk_text") as mock_chunk:
+            with patch("reasoner.rag.application.ingest.chunk_text") as mock_chunk:
                 mock_chunk.return_value = ["data chunk"]
                 await pipeline.ingest("file-2", "vs-2")
 
@@ -172,9 +172,9 @@ class TestIngestPipelineSuccess:
         session_factory = _make_session_factory("empty.txt")
         pipeline = _make_pipeline(file_store, vector_store, embedder, session_factory)
 
-        with patch("sherlock.rag.application.ingest.dispatch_parser") as mock_parser:
+        with patch("reasoner.rag.application.ingest.dispatch_parser") as mock_parser:
             mock_parser.return_value = MagicMock(text="   ")
-            with patch("sherlock.rag.application.ingest.chunk_text") as mock_chunk:
+            with patch("reasoner.rag.application.ingest.chunk_text") as mock_chunk:
                 mock_chunk.return_value = []
                 count = await pipeline.ingest("file-empty", "vs-1")
 
@@ -208,9 +208,9 @@ class TestIngestPipelineFailure:
         session_factory = _make_session_factory("file.xyz")
         pipeline = _make_pipeline(file_store, vector_store, embedder, session_factory)
 
-        from sherlock.rag.parsers import UnsupportedFileTypeError
+        from reasoner.rag.parsers import UnsupportedFileTypeError
 
-        with patch("sherlock.rag.application.ingest.dispatch_parser") as mock_parser:
+        with patch("reasoner.rag.application.ingest.dispatch_parser") as mock_parser:
             mock_parser.side_effect = UnsupportedFileTypeError("bad ext")
             with pytest.raises(UnsupportedFileTypeError):
                 await pipeline.ingest("file-3", "vs-3")
@@ -225,9 +225,9 @@ class TestIngestPipelineFailure:
         session_factory = _make_session_factory("notes.txt")
         pipeline = _make_pipeline(file_store, vector_store, embedder, session_factory)
 
-        with patch("sherlock.rag.application.ingest.dispatch_parser") as mock_parser:
+        with patch("reasoner.rag.application.ingest.dispatch_parser") as mock_parser:
             mock_parser.return_value = MagicMock(text="text content")
-            with patch("sherlock.rag.application.ingest.chunk_text") as mock_chunk:
+            with patch("reasoner.rag.application.ingest.chunk_text") as mock_chunk:
                 mock_chunk.return_value = ["chunk"]
                 with pytest.raises(RuntimeError, match="GPU OOM"):
                     await pipeline.ingest("file-4", "vs-4")

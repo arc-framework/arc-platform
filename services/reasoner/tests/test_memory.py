@@ -1,4 +1,4 @@
-"""Unit tests for sherlock.memory.SherlockMemory (pgvector backend).
+"""Unit tests for reasoner.memory.SherlockMemory (pgvector backend).
 
 All tests run without live PostgreSQL — every external call is mocked.
 asyncio_mode = "auto" is set in pyproject.toml so no explicit @pytest.mark.asyncio
@@ -10,8 +10,8 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from sherlock.config import Settings
-from sherlock.memory import SherlockMemory
+from reasoner.config import Settings
+from reasoner.memory import SherlockMemory
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -63,21 +63,21 @@ def _make_mock_session_factory(mock_session: AsyncMock) -> MagicMock:
 
 
 async def test_init_creates_schema() -> None:
-    """init() executes CREATE SCHEMA IF NOT EXISTS sherlock via the async engine."""
+    """init() executes CREATE SCHEMA IF NOT EXISTS reasoner via the async engine."""
     settings = _make_settings()
     mock_engine, mock_conn = _make_mock_engine()
 
     with (
-        patch("sherlock.memory.create_async_engine", return_value=mock_engine),
-        patch("sherlock.memory.SentenceTransformer"),
-        patch("sherlock.memory.sessionmaker"),
-        patch("sherlock.memory.event"),
+        patch("reasoner.memory.create_async_engine", return_value=mock_engine),
+        patch("reasoner.memory.SentenceTransformer"),
+        patch("reasoner.memory.sessionmaker"),
+        patch("reasoner.memory.event"),
     ):
         mem = SherlockMemory(settings)
         await mem.init()
 
     executed_stmts = [str(c.args[0]) for c in mock_conn.execute.call_args_list]
-    assert any("CREATE SCHEMA IF NOT EXISTS sherlock" in s for s in executed_stmts)
+    assert any("CREATE SCHEMA IF NOT EXISTS reasoner" in s for s in executed_stmts)
 
 
 async def test_init_idempotent() -> None:
@@ -86,10 +86,10 @@ async def test_init_idempotent() -> None:
     mock_engine, _ = _make_mock_engine()
 
     with (
-        patch("sherlock.memory.create_async_engine", return_value=mock_engine),
-        patch("sherlock.memory.SentenceTransformer"),
-        patch("sherlock.memory.sessionmaker"),
-        patch("sherlock.memory.event"),
+        patch("reasoner.memory.create_async_engine", return_value=mock_engine),
+        patch("reasoner.memory.SentenceTransformer"),
+        patch("reasoner.memory.sessionmaker"),
+        patch("reasoner.memory.event"),
     ):
         mem = SherlockMemory(settings)
         await mem.init()
@@ -102,10 +102,10 @@ async def test_init_creates_hnsw_index() -> None:
     mock_engine, mock_conn = _make_mock_engine()
 
     with (
-        patch("sherlock.memory.create_async_engine", return_value=mock_engine),
-        patch("sherlock.memory.SentenceTransformer"),
-        patch("sherlock.memory.sessionmaker"),
-        patch("sherlock.memory.event"),
+        patch("reasoner.memory.create_async_engine", return_value=mock_engine),
+        patch("reasoner.memory.SentenceTransformer"),
+        patch("reasoner.memory.sessionmaker"),
+        patch("reasoner.memory.event"),
     ):
         mem = SherlockMemory(settings)
         await mem.init()
@@ -120,10 +120,10 @@ async def test_init_calls_create_all() -> None:
     mock_engine, mock_conn = _make_mock_engine()
 
     with (
-        patch("sherlock.memory.create_async_engine", return_value=mock_engine),
-        patch("sherlock.memory.SentenceTransformer"),
-        patch("sherlock.memory.sessionmaker"),
-        patch("sherlock.memory.event"),
+        patch("reasoner.memory.create_async_engine", return_value=mock_engine),
+        patch("reasoner.memory.SentenceTransformer"),
+        patch("reasoner.memory.sessionmaker"),
+        patch("reasoner.memory.event"),
     ):
         mem = SherlockMemory(settings)
         await mem.init()
@@ -150,10 +150,10 @@ async def test_search_returns_list_of_strings() -> None:
     mock_encoder.encode.return_value = MagicMock(tolist=lambda: [0.1] * 384)
 
     with (
-        patch("sherlock.memory.create_async_engine", return_value=mock_engine),
-        patch("sherlock.memory.SentenceTransformer", return_value=mock_encoder),
-        patch("sherlock.memory.sessionmaker", return_value=_make_mock_session_factory(mock_session)),
-        patch("sherlock.memory.event"),
+        patch("reasoner.memory.create_async_engine", return_value=mock_engine),
+        patch("reasoner.memory.SentenceTransformer", return_value=mock_encoder),
+        patch("reasoner.memory.sessionmaker", return_value=_make_mock_session_factory(mock_session)),
+        patch("reasoner.memory.event"),
     ):
         mem = SherlockMemory(settings)
         result = await mem.search("user1", "test query")
@@ -177,10 +177,10 @@ async def test_search_applies_user_id_filter() -> None:
     mock_encoder.encode.return_value = MagicMock(tolist=lambda: [0.1] * 384)
 
     with (
-        patch("sherlock.memory.create_async_engine", return_value=mock_engine),
-        patch("sherlock.memory.SentenceTransformer", return_value=mock_encoder),
-        patch("sherlock.memory.sessionmaker", return_value=_make_mock_session_factory(mock_session)),
-        patch("sherlock.memory.event"),
+        patch("reasoner.memory.create_async_engine", return_value=mock_engine),
+        patch("reasoner.memory.SentenceTransformer", return_value=mock_encoder),
+        patch("reasoner.memory.sessionmaker", return_value=_make_mock_session_factory(mock_session)),
+        patch("reasoner.memory.event"),
     ):
         mem = SherlockMemory(settings)
         await mem.search("alice", "anything")
@@ -212,10 +212,10 @@ async def test_save_inserts_with_embedding() -> None:
     mock_encoder.encode.return_value = MagicMock(tolist=lambda: fake_vector)
 
     with (
-        patch("sherlock.memory.create_async_engine", return_value=mock_engine),
-        patch("sherlock.memory.SentenceTransformer", return_value=mock_encoder),
-        patch("sherlock.memory.sessionmaker", return_value=_make_mock_session_factory(mock_session)),
-        patch("sherlock.memory.event"),
+        patch("reasoner.memory.create_async_engine", return_value=mock_engine),
+        patch("reasoner.memory.SentenceTransformer", return_value=mock_encoder),
+        patch("reasoner.memory.sessionmaker", return_value=_make_mock_session_factory(mock_session)),
+        patch("reasoner.memory.event"),
     ):
         mem = SherlockMemory(settings)
         await mem.save("user1", "human", "hello world")
@@ -241,10 +241,10 @@ async def test_save_commits() -> None:
     mock_encoder.encode.return_value = MagicMock(tolist=lambda: [0.1] * 384)
 
     with (
-        patch("sherlock.memory.create_async_engine", return_value=mock_engine),
-        patch("sherlock.memory.SentenceTransformer", return_value=mock_encoder),
-        patch("sherlock.memory.sessionmaker", return_value=_make_mock_session_factory(mock_session)),
-        patch("sherlock.memory.event"),
+        patch("reasoner.memory.create_async_engine", return_value=mock_engine),
+        patch("reasoner.memory.SentenceTransformer", return_value=mock_encoder),
+        patch("reasoner.memory.sessionmaker", return_value=_make_mock_session_factory(mock_session)),
+        patch("reasoner.memory.event"),
     ):
         mem = SherlockMemory(settings)
         await mem.save("user1", "ai", "response")
@@ -262,10 +262,10 @@ async def test_health_check_postgres_ok() -> None:
     mock_conn.execute = AsyncMock()  # succeeds without raising
 
     with (
-        patch("sherlock.memory.create_async_engine", return_value=mock_engine),
-        patch("sherlock.memory.SentenceTransformer"),
-        patch("sherlock.memory.sessionmaker"),
-        patch("sherlock.memory.event"),
+        patch("reasoner.memory.create_async_engine", return_value=mock_engine),
+        patch("reasoner.memory.SentenceTransformer"),
+        patch("reasoner.memory.sessionmaker"),
+        patch("reasoner.memory.event"),
     ):
         mem = SherlockMemory(settings)
         result = await mem.health_check()
@@ -287,10 +287,10 @@ async def test_health_check_postgres_down() -> None:
     mock_engine.connect = _failing_connect
 
     with (
-        patch("sherlock.memory.create_async_engine", return_value=mock_engine),
-        patch("sherlock.memory.SentenceTransformer"),
-        patch("sherlock.memory.sessionmaker"),
-        patch("sherlock.memory.event"),
+        patch("reasoner.memory.create_async_engine", return_value=mock_engine),
+        patch("reasoner.memory.SentenceTransformer"),
+        patch("reasoner.memory.sessionmaker"),
+        patch("reasoner.memory.event"),
     ):
         mem = SherlockMemory(settings)
         result = await mem.health_check()
@@ -304,10 +304,10 @@ async def test_health_check_no_qdrant_key() -> None:
     mock_engine, _ = _make_mock_engine()
 
     with (
-        patch("sherlock.memory.create_async_engine", return_value=mock_engine),
-        patch("sherlock.memory.SentenceTransformer"),
-        patch("sherlock.memory.sessionmaker"),
-        patch("sherlock.memory.event"),
+        patch("reasoner.memory.create_async_engine", return_value=mock_engine),
+        patch("reasoner.memory.SentenceTransformer"),
+        patch("reasoner.memory.sessionmaker"),
+        patch("reasoner.memory.event"),
     ):
         mem = SherlockMemory(settings)
         result = await mem.health_check()

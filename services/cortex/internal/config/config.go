@@ -105,7 +105,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("bootstrap.retry_backoff", 2*time.Second)
 	v.SetDefault("bootstrap.timeout", 5*time.Minute)
 
-	v.SetDefault("bootstrap.postgres.host", "arc-oracle")
+	v.SetDefault("bootstrap.postgres.host", "arc-persistence")
 	v.SetDefault("bootstrap.postgres.port", 5432)
 	v.SetDefault("bootstrap.postgres.user", "arc")
 	v.SetDefault("bootstrap.postgres.password", "")
@@ -113,13 +113,13 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("bootstrap.postgres.ssl_mode", "disable")
 	v.SetDefault("bootstrap.postgres.max_conns", 25)
 
-	v.SetDefault("bootstrap.nats.url", "nats://arc-flash:4222")
+	v.SetDefault("bootstrap.nats.url", "nats://arc-messaging:4222")
 
-	v.SetDefault("bootstrap.pulsar.admin_url", "http://arc-strange:8080")
-	v.SetDefault("bootstrap.pulsar.service_url", "pulsar://arc-strange:6650")
+	v.SetDefault("bootstrap.pulsar.admin_url", "http://arc-streaming:8080")
+	v.SetDefault("bootstrap.pulsar.service_url", "pulsar://arc-streaming:6650")
 	v.SetDefault("bootstrap.pulsar.tenant", "arc-system")
 
-	v.SetDefault("bootstrap.redis.host", "arc-sonic")
+	v.SetDefault("bootstrap.redis.host", "arc-cache")
 	v.SetDefault("bootstrap.redis.port", 6379)
 	v.SetDefault("bootstrap.redis.db", 0)
 }

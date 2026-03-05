@@ -19,7 +19,7 @@ def test_content_tracing_default_false(monkeypatch: object) -> None:
     _os.environ.pop("SHERLOCK_CONTENT_TRACING", None)
 
     # Re-instantiate Settings to pick up clean env
-    from sherlock.config import Settings
+    from reasoner.config import Settings
 
     settings = Settings()
     assert settings.content_tracing is False, (
@@ -35,7 +35,7 @@ def test_content_tracing_env_override() -> None:
         os.environ["SHERLOCK_CONTENT_TRACING"] = "true"
 
         # Import Settings fresh after setting the env var
-        from sherlock.config import Settings
+        from reasoner.config import Settings
 
         settings = Settings()
         assert settings.content_tracing is True, (
@@ -55,7 +55,7 @@ def test_otel_span_no_content_when_disabled() -> None:
     Verifies that message content (potential PII) is never emitted to OTEL spans
     unless the operator explicitly enables content tracing.
     """
-    from sherlock.observability import add_span_content_attributes
+    from reasoner.observability import add_span_content_attributes
 
     mock_span = MagicMock()
 
@@ -74,7 +74,7 @@ def test_otel_span_no_content_when_disabled() -> None:
 
 def test_otel_span_content_when_enabled() -> None:
     """When content_tracing=True, message content is added to spans."""
-    from sherlock.observability import add_span_content_attributes
+    from reasoner.observability import add_span_content_attributes
 
     mock_span = MagicMock()
 

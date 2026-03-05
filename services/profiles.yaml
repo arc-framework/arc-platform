@@ -11,7 +11,7 @@ think:
     - cache
     - streaming
     - cortex
-    - sql-db
+    - persistence
     - gateway
     - friday-collector
     - reasoner
@@ -25,7 +25,7 @@ observe:
     - cache
     - streaming
     - cortex
-    - sql-db
+    - persistence
     - gateway
     - friday-collector
     - reasoner
@@ -40,7 +40,7 @@ reason:
     - cache
     - streaming
     - cortex
-    - sql-db
+    - persistence
     - gateway
     - friday-collector
     - reasoner

@@ -113,7 +113,7 @@ func TestProbe(t *testing.T) {
 
 			result := client.Probe(context.Background())
 
-			assert.Equal(t, "arc-oracle", result.Name)
+			assert.Equal(t, "arc-persistence", result.Name)
 			assert.Equal(t, tc.wantOK, result.OK)
 			if tc.wantErrSub != "" {
 				assert.Contains(t, result.Error, tc.wantErrSub)

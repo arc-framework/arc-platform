@@ -13,7 +13,7 @@ import (
 	"arc-framework/cortex/internal/orchestrator"
 )
 
-const natsProbeNameConst = "arc-flash"
+const natsProbeNameConst = "arc-messaging"
 
 // streamSpec describes a single JetStream stream to provision.
 type streamSpec struct {
@@ -55,7 +55,7 @@ type jsContext interface {
 }
 
 // NATSClient manages JetStream stream provisioning and health probing for the
-// arc-flash (NATS) dependency.
+// arc-messaging (NATS) dependency.
 type NATSClient struct {
 	url    string
 	cb     *gobreaker.CircuitBreaker

@@ -8,7 +8,7 @@ services:
     image: ghcr.io/arc-framework/arc-flags:latest
     container_name: arc-flags
     environment:
-      DATABASE_URL: postgresql://arc:arc@arc-sql-db:5432/unleash
+      DATABASE_URL: postgresql://arc:arc@arc-persistence:5432/unleash
       REDIS_HOST: arc-cache
       REDIS_PORT: 6379
     ports:

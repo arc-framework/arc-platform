@@ -1,17 +1,25 @@
 asyncapi: 3.0.0
 
 info:
-  title: Sherlock Reasoning Service — Async API
+  title: Reasoner Service — Async API
   version: 0.1.0
   description: |
-    Event-driven interfaces for Sherlock (`arc-sherlock`).
+    Event-driven interfaces for the Reasoner service (`arc-reasoner`).
 
     Two transports are documented here:
     - **NATS** (Flash, `arc-messaging:4222`): real-time request-reply and fire-and-forget
     - **Pulsar** (Dr. Strange, `arc-streaming:6650`): durable at-least-once async processing
 
-    Pulsar is opt-in — only active when `SHERLOCK_PULSAR_ENABLED=true`.
+    Pulsar is opt-in — only active when `REASONER_PULSAR_ENABLED=true`.
     For synchronous HTTP see `openapi.yaml`.
+
+x-deprecated-addresses:
+  - sherlock.request
+  - sherlock.result
+  - sherlock.v1.chat
+  - sherlock.v1.result
+  - sherlock-requests (Pulsar)
+  - sherlock-results (Pulsar)
 
 servers:
   nats:
@@ -19,8 +27,8 @@ servers:
     protocol: nats
     description: |
       Flash — NATS messaging broker. Real-time request-reply via ephemeral
-      `_INBOX` subjects. Queue group `sherlock_workers` distributes load
-      across multiple Sherlock replicas.
+      `_INBOX` subjects. Queue group `reasoner_workers` distributes load
+      across multiple Reasoner replicas.
     tags:
       - name: transport:nats
         description: Real-time low-latency messaging
@@ -30,50 +38,50 @@ servers:
     protocol: pulsar
     description: |
       Dr. Strange — Apache Pulsar streaming. Persistent topics with
-      at-least-once delivery. Durable reasoning tasks survive Sherlock restarts.
-      Requires `SHERLOCK_PULSAR_ENABLED=true`.
+      at-least-once delivery. Durable reasoning tasks survive Reasoner restarts.
+      Requires `REASONER_PULSAR_ENABLED=true`.
     tags:
       - name: transport:pulsar
         description: Durable async message streaming
 
 channels:
-  sherlockRequest:
-    address: sherlock.request
+  reasonerRequest:
+    address: reasoner.request
     servers:
       - $ref: '#/servers/nats'
     tags:
-      - name: sherlock-core
-        description: Legacy reasoning channels
+      - name: reasoner-core
+        description: Core reasoning channels
     description: |
       Inbound NATS subject for real-time reasoning requests.
 
       **Request-reply** (blocking caller):
         Caller sends with `nc.request()` which attaches an ephemeral `_INBOX.xxx`
-        reply subject. Sherlock responds via `msg.respond()` to that inbox.
+        reply subject. Reasoner responds via `msg.respond()` to that inbox.
 
       **Fire-and-forget** (non-blocking):
         Caller sends with `nc.publish()` — no reply subject set.
-        Sherlock processes the message but skips `msg.respond()`.
+        Reasoner processes the message but skips `msg.respond()`.
 
-      Queue group `sherlock_workers` ensures exactly one replica processes
+      Queue group `reasoner_workers` ensures exactly one replica processes
       each message, enabling horizontal scale-out.
     messages:
       ReasoningRequest:
         $ref: '#/components/messages/ReasoningRequest'
 
-  sherlockRequests:
-    address: persistent://public/default/sherlock-requests
+  reasonerRequests:
+    address: persistent://public/default/reasoner-requests
     servers:
       - $ref: '#/servers/pulsar'
     tags:
-      - name: sherlock-core
-        description: Legacy reasoning channels
+      - name: reasoner-core
+        description: Core reasoning channels
     description: |
       Inbound Pulsar topic for durable reasoning tasks.
-      Sherlock subscribes with subscription name `sherlock-workers`
+      Reasoner subscribes with subscription name `reasoner-workers`
       (Shared type — round-robin across replicas).
 
-      Requires `SHERLOCK_PULSAR_ENABLED=true` to be active.
+      Requires `REASONER_PULSAR_ENABLED=true` to be active.
       On successful processing the message is acknowledged.
       On any exception during `invoke_graph` a `negative_acknowledge`
       is issued — Pulsar redelivers to another available replica.
@@ -81,15 +89,15 @@ channels:
       DurableReasoningRequest:
         $ref: '#/components/messages/DurableReasoningRequest'
 
-  sherlockResults:
-    address: persistent://public/default/sherlock-results
+  reasonerResults:
+    address: persistent://public/default/reasoner-results
     servers:
       - $ref: '#/servers/pulsar'
     tags:
-      - name: sherlock-core
-        description: Legacy reasoning channels
+      - name: reasoner-core
+        description: Core reasoning channels
     description: |
-      Outbound Pulsar topic where Sherlock publishes results for durable requests.
+      Outbound Pulsar topic where Reasoner publishes results for durable requests.
       Callers correlate responses using the `request_id` echoed from the original request.
 
       Consumers should use a dedicated subscription per caller service.
@@ -99,37 +107,37 @@ channels:
       ReasoningResult:
         $ref: '#/components/messages/ReasoningResult'
 
-  sherlockV1Chat:
-    address: sherlock.v1.chat
+  reasonerV1Chat:
+    address: reasoner.v1.chat
     servers:
       - $ref: '#/servers/nats'
     tags:
-      - name: sherlock-v1
-        description: Sherlock Chat API v1 (OpenAI wire format)
+      - name: reasoner-v1
+        description: Reasoner Chat API v1 (OpenAI wire format)
     description: |
       Inbound NATS subject for v1 Chat API requests in OpenAI wire format.
 
       Callers publish a `ChatCompletionRequest` JSON payload.
-      Queue group `sherlock_workers` distributes messages across replicas.
+      Queue group `reasoner_workers` distributes messages across replicas.
 
-      **Request-reply** (blocking): caller uses `nc.request()` — Sherlock responds
-      to the ephemeral `_INBOX` subject AND publishes to `sherlock.v1.result`.
-      **Fire-and-forget**: caller uses `nc.publish()` — Sherlock only publishes
-      to `sherlock.v1.result`, skipping `msg.respond()`.
+      **Request-reply** (blocking): caller uses `nc.request()` — Reasoner responds
+      to the ephemeral `_INBOX` subject AND publishes to `reasoner.v1.result`.
+      **Fire-and-forget**: caller uses `nc.publish()` — Reasoner only publishes
+      to `reasoner.v1.result`, skipping `msg.respond()`.
     messages:
       V1ChatRequest:
         $ref: '#/components/messages/V1ChatRequest'
 
-  sherlockV1Result:
-    address: sherlock.v1.result
+  reasonerV1Result:
+    address: reasoner.v1.result
     servers:
       - $ref: '#/servers/nats'
     tags:
-      - name: sherlock-v1
-        description: Sherlock Chat API v1 (OpenAI wire format)
+      - name: reasoner-v1
+        description: Reasoner Chat API v1 (OpenAI wire format)
     description: |
-      Outbound NATS subject where Sherlock publishes `ChatCompletionResponse`
-      for every processed `sherlock.v1.chat` message.
+      Outbound NATS subject where Reasoner publishes `ChatCompletionResponse`
+      for every processed `reasoner.v1.chat` message.
 
       Callers subscribe here to receive async results.
       The `id` field in the response can be used for correlation.
@@ -141,14 +149,14 @@ operations:
   receiveNatsRequest:
     action: receive
     channel:
-      $ref: '#/channels/sherlockRequest'
+      $ref: '#/channels/reasonerRequest'
     tags:
-      - name: sherlock-core
-        description: Legacy reasoning channels
+      - name: reasoner-core
+        description: Core reasoning channels
     title: Receive NATS reasoning request
     summary: Real-time reasoning request via NATS
     description: |
-      Sherlock subscribes to `sherlock.request` in queue group `sherlock_workers`.
+      Reasoner subscribes to `reasoner.request` in queue group `reasoner_workers`.
 
       Processing flow:
       1. Decode JSON payload → `{user_id, text}`
@@ -158,19 +166,19 @@ operations:
 
       On exception: log error, respond with `{error: str, latency_ms: N}` if `msg.reply` set.
     messages:
-      - $ref: '#/channels/sherlockRequest/messages/ReasoningRequest'
+      - $ref: '#/channels/reasonerRequest/messages/ReasoningRequest'
 
   receivePulsarRequest:
     action: receive
     channel:
-      $ref: '#/channels/sherlockRequests'
+      $ref: '#/channels/reasonerRequests'
     tags:
-      - name: sherlock-core
-        description: Legacy reasoning channels
+      - name: reasoner-core
+        description: Core reasoning channels
     title: Consume Pulsar durable reasoning task
     summary: At-least-once durable reasoning via Pulsar
     description: |
-      Sherlock's PulsarHandler consumes from `sherlock-requests` (Shared subscription).
+      Reasoner's PulsarHandler consumes from `reasoner-requests` (Shared subscription).
 
       Processing flow:
       1. `consumer.receive(timeout_millis=5000)` via `asyncio.to_thread`
@@ -182,37 +190,37 @@ operations:
 
       The consume loop itself never blocks the asyncio event loop.
     messages:
-      - $ref: '#/channels/sherlockRequests/messages/DurableReasoningRequest'
+      - $ref: '#/channels/reasonerRequests/messages/DurableReasoningRequest'
 
   publishPulsarResult:
     action: send
     channel:
-      $ref: '#/channels/sherlockResults'
+      $ref: '#/channels/reasonerResults'
     tags:
-      - name: sherlock-core
-        description: Legacy reasoning channels
+      - name: reasoner-core
+        description: Core reasoning channels
     title: Publish reasoning result to Pulsar
     summary: Publish completed result for caller correlation
     description: |
-      After successful `invoke_graph`, Sherlock publishes to `sherlock-results`.
+      After successful `invoke_graph`, Reasoner publishes to `reasoner-results`.
       Callers match results to requests via `request_id`.
 
       Published via `asyncio.to_thread(producer.send, ...)` to avoid blocking.
       Not published if graph raises an exception (caller receives nack + redelivery).
     messages:
-      - $ref: '#/channels/sherlockResults/messages/ReasoningResult'
+      - $ref: '#/channels/reasonerResults/messages/ReasoningResult'
 
   receiveV1ChatRequest:
     action: receive
     channel:
-      $ref: '#/channels/sherlockV1Chat'
+      $ref: '#/channels/reasonerV1Chat'
     tags:
-      - name: sherlock-v1
-        description: Sherlock Chat API v1 (OpenAI wire format)
+      - name: reasoner-v1
+        description: Reasoner Chat API v1 (OpenAI wire format)
     title: Receive v1 Chat request via NATS
     summary: OpenAI-compatible chat request via NATS
     description: |
-      `OpenAINATSHandler` subscribes to `sherlock.v1.chat` in queue group `sherlock_workers`.
+      `OpenAINATSHandler` subscribes to `reasoner.v1.chat` in queue group `reasoner_workers`.
 
       Processing flow:
       1. Deserialize `ChatCompletionRequest` JSON
@@ -220,35 +228,35 @@ operations:
       3. Extract `text` from last user message in `messages[]`
       4. Call `invoke_graph(graph, memory, user_id, text)`
       5. Build `ChatCompletionResponse` with the response
-      6. If `msg.reply` set: respond to inbox AND publish to `sherlock.v1.result`
-      7. If fire-and-forget: publish to `sherlock.v1.result` only
+      6. If `msg.reply` set: respond to inbox AND publish to `reasoner.v1.result`
+      7. If fire-and-forget: publish to `reasoner.v1.result` only
 
       On exception: publish error `ChatCompletionResponse` (never crashes).
     messages:
-      - $ref: '#/channels/sherlockV1Chat/messages/V1ChatRequest'
+      - $ref: '#/channels/reasonerV1Chat/messages/V1ChatRequest'
 
   publishV1ChatResult:
     action: send
     channel:
-      $ref: '#/channels/sherlockV1Result'
+      $ref: '#/channels/reasonerV1Result'
     tags:
-      - name: sherlock-v1
-        description: Sherlock Chat API v1 (OpenAI wire format)
+      - name: reasoner-v1
+        description: Reasoner Chat API v1 (OpenAI wire format)
     title: Publish v1 Chat result via NATS
     summary: ChatCompletionResponse published for every processed v1 chat request
     description: |
-      Published to `sherlock.v1.result` after every `sherlock.v1.chat` message,
+      Published to `reasoner.v1.result` after every `reasoner.v1.chat` message,
       regardless of success or error. Error responses include the error in
       `choices[0].message.content` prefixed with "Error: ".
     messages:
-      - $ref: '#/channels/sherlockV1Result/messages/V1ChatResult'
+      - $ref: '#/channels/reasonerV1Result/messages/V1ChatResult'
 
 components:
   messages:
     ReasoningRequest:
       name: ReasoningRequest
       title: NATS Reasoning Request
-      summary: Real-time request for Sherlock to reason about
+      summary: Real-time request for the Reasoner to reason about
       contentType: application/json
       payload:
         $ref: '#/components/schemas/ReasoningRequestPayload'
@@ -388,7 +396,7 @@ components:
           type: string
           description: |
             Unique identifier for the user or agent session.
-            Used to scope Qdrant vector search and PostgreSQL history queries.
+            Used to scope pgvector search and PostgreSQL history queries.
           example: "user-123"
           minLength: 1
         text:
@@ -408,7 +416,7 @@ components:
           type: string
           description: |
             Caller-assigned unique correlation ID. Echoed verbatim in the result
-            published to `sherlock-results`. Must be unique per request to avoid
+            published to `reasoner-results`. Must be unique per request to avoid
             result correlation ambiguity.
           example: "req-abc-123"
           minLength: 1
@@ -443,7 +451,7 @@ components:
         text:
           type: string
           description: |
-            Sherlock's reasoned response. Present on success.
+            Reasoner's response. Present on success.
             Mutually exclusive with `error`.
           example: "Across the last 10 conversations, three recurring themes emerge..."
         error:
@@ -464,7 +472,7 @@ components:
       properties:
         model:
           type: string
-          description: The model ID to use. Must match SHERLOCK_LLM_MODEL.
+          description: The model ID to use. Must match REASONER_LLM_MODEL.
           example: "mistralai/mistral-7b-instruct-v0.3"
         messages:
           type: array

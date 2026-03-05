@@ -1,5 +1,5 @@
 basePath: /
-host: localhost:8081
+host: localhost:8801
 info:
   contact: {}
   description: Cortex bootstrap service — provisions Postgres, NATS, Pulsar, and Redis,

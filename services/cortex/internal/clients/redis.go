@@ -13,7 +13,7 @@ import (
 	"arc-framework/cortex/internal/orchestrator"
 )
 
-const redisProbeName = "arc-sonic"
+const redisProbeName = "arc-cache"
 
 // redisPinger is the interface used by RedisClient for health probing.
 // It is implemented by the real go-redis client and by test doubles.

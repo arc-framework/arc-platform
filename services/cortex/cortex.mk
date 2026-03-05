@@ -128,7 +128,7 @@ cortex-bootstrap-local: cortex-bin
 cortex-docker-up: cortex-build
 	@printf "$(COLOR_INFO)→$(COLOR_OFF) Starting arc-cortex in Docker...\n"
 	$(COMPOSE_CORTEX) up -d
-	@printf "$(COLOR_OK)✓$(COLOR_OFF) arc-cortex started — API on http://localhost:8081\n"
+	@printf "$(COLOR_OK)✓$(COLOR_OFF) arc-cortex started — API on http://localhost:8801\n"
 
 ## cortex-docker-down: Stop arc-cortex container
 cortex-docker-down:

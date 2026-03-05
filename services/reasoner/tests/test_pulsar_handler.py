@@ -1,4 +1,4 @@
-"""Unit tests for sherlock.pulsar_handler.PulsarHandler.
+"""Unit tests for reasoner.pulsar_handler.PulsarHandler.
 
 Tests cover the _process() dispatch logic, both ack paths (Path A: error string
 returned, Path B: exception raised), negative-ack on missing request_id,
@@ -19,10 +19,10 @@ import jsonschema
 import pytest
 import yaml
 
-from sherlock.config import Settings
-from sherlock.graph import GraphErrorResponse
-from sherlock.observability import SherlockMetrics
-from sherlock.pulsar_handler import PulsarHandler
+from reasoner.config import Settings
+from reasoner.graph import GraphErrorResponse
+from reasoner.observability import SherlockMetrics
+from reasoner.pulsar_handler import PulsarHandler
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -31,9 +31,9 @@ from sherlock.pulsar_handler import PulsarHandler
 def _make_settings() -> MagicMock:
     s = MagicMock(spec=Settings)
     s.pulsar_url = "pulsar://localhost:6650"
-    s.pulsar_request_topic = "persistent://public/default/sherlock-requests"
-    s.pulsar_result_topic = "persistent://public/default/sherlock-results"
-    s.pulsar_subscription = "sherlock-workers"
+    s.pulsar_request_topic = "persistent://public/default/reasoner-requests"
+    s.pulsar_result_topic = "persistent://public/default/reasoner-results"
+    s.pulsar_subscription = "reasoner-workers"
     return s
 
 
@@ -90,7 +90,7 @@ async def test_process_and_ack() -> None:
 
     with (
         patch(
-            "sherlock.pulsar_handler.invoke_graph",
+            "reasoner.pulsar_handler.invoke_graph",
             new_callable=AsyncMock,
             return_value="response",
         ),
@@ -138,7 +138,7 @@ async def test_error_handler_result_published_and_acked() -> None:
 
     with (
         patch(
-            "sherlock.pulsar_handler.invoke_graph",
+            "reasoner.pulsar_handler.invoke_graph",
             new_callable=AsyncMock,
             side_effect=GraphErrorResponse(error_msg),
         ),
@@ -181,7 +181,7 @@ async def test_unhandled_exception_triggers_negative_ack() -> None:
 
     with (
         patch(
-            "sherlock.pulsar_handler.invoke_graph",
+            "reasoner.pulsar_handler.invoke_graph",
             new_callable=AsyncMock,
             side_effect=RuntimeError("gpu oom"),
         ),
@@ -248,7 +248,7 @@ async def test_asyncio_to_thread_used_for_blocking_calls() -> None:
 
     with (
         patch(
-            "sherlock.pulsar_handler.invoke_graph",
+            "reasoner.pulsar_handler.invoke_graph",
             new_callable=AsyncMock,
             return_value="ok",
         ),
@@ -286,7 +286,7 @@ async def test_asyncio_to_thread_used_for_negative_ack() -> None:
 
     with (
         patch(
-            "sherlock.pulsar_handler.invoke_graph",
+            "reasoner.pulsar_handler.invoke_graph",
             new_callable=AsyncMock,
             side_effect=RuntimeError("boom"),
         ),

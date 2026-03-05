@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from sherlock.graph import build_graph, invoke_graph
+from reasoner.graph import build_graph, invoke_graph
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────

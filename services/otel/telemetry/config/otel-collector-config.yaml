@@ -12,7 +12,7 @@ receivers:
     collection_interval: 15s
 
   postgresql:
-    endpoint: arc-sql-db:5432
+    endpoint: arc-persistence:5432
     username: arc
     password: arc
     databases: [arc]

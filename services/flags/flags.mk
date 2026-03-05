@@ -16,7 +16,7 @@ FLAGS_IMAGE   := $(REGISTRY)/$(ORG)/arc-flags
 flags-help:
 	@printf "\033[1mMystique targets\033[0m\n\n"
 	@grep -h "^## flags-" $(MAKEFILE_LIST) | sed 's/^## /  /' | sort
-	@printf "\n  NOTE: Requires arc-sql-db and arc-cache to be running\n"
+	@printf "\n  NOTE: Requires arc-persistence and arc-cache to be running\n"
 	@printf "  State is stored in Oracle (Postgres) — no local volume.\n\n"
 
 ## flags-build: Build arc-flags image locally using cache (fast)
@@ -36,7 +36,7 @@ flags-build-fresh: flags-build
 flags-up:
 	@printf "$(COLOR_INFO)→$(COLOR_OFF) Starting arc-flags...\n"
 	$(COMPOSE_FLAGS) up -d
-	@printf "$(COLOR_OK)✓$(COLOR_OFF) arc-flags started — Unleash UI on :4242 (requires arc-sql-db + arc-cache)\n"
+	@printf "$(COLOR_OK)✓$(COLOR_OFF) arc-flags started — Unleash UI on :4242 (requires arc-persistence + arc-cache)\n"
 
 ## flags-down: Stop arc-flags container; no volume to preserve (stateless)
 flags-down:

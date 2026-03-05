@@ -1,4 +1,4 @@
-"""Unit tests for sherlock.rag.domain.models."""
+"""Unit tests for reasoner.rag.domain.models."""
 from __future__ import annotations
 
 import uuid
@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from sherlock.rag.domain.models import (
+from reasoner.rag.domain.models import (
     IngestJob,
     KnowledgeChunk,
     KnowledgeFile,

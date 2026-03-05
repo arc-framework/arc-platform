@@ -14,7 +14,7 @@ import (
 	"arc-framework/cortex/internal/orchestrator"
 )
 
-const pulsarProbeName = "arc-strange"
+const pulsarProbeName = "arc-streaming"
 
 // topicSpec describes a single partitioned topic to provision.
 type topicSpec struct {
@@ -99,7 +99,7 @@ func (c *PulsarClient) Probe(ctx context.Context) orchestrator.ProbeResult {
 		if err != nil {
 			return nil, fmt.Errorf("probe request: %w", err)
 		}
-		defer resp.Body.Close()
+		defer resp.Body.Close() //nolint:errcheck
 
 		if resp.StatusCode != http.StatusOK {
 			return nil, fmt.Errorf("probe returned HTTP %d", resp.StatusCode)
@@ -179,7 +179,7 @@ func (c *PulsarClient) putResource(ctx context.Context, url string, body []byte,
 	if err != nil {
 		return fmt.Errorf("PUT %s: %w", label, err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	switch resp.StatusCode {
 	case http.StatusNoContent, http.StatusConflict:

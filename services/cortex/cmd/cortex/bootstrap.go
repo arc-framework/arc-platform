@@ -60,7 +60,7 @@ func printBootstrapResult(result *orchestrator.BootstrapResult) {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(result); err != nil {
-		fmt.Fprintf(os.Stdout, `{"status":%q}`+"\n", result.Status)
+		fmt.Fprintf(os.Stdout, `{"status":%q}`+"\n", result.Status) //nolint:errcheck
 	}
 }
 
@@ -74,6 +74,6 @@ func printResult(status, errMsg string) {
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(result); err != nil {
 		// Fallback to plain text if JSON encoding somehow fails.
-		fmt.Fprintf(os.Stdout, `{"status":%q}`+"\n", status)
+		fmt.Fprintf(os.Stdout, `{"status":%q}`+"\n", status) //nolint:errcheck
 	}
 }

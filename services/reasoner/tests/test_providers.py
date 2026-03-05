@@ -7,13 +7,13 @@ from unittest.mock import patch
 
 import pytest
 
-from sherlock.config import Settings
-from sherlock.providers.anthropic_provider import AnthropicProvider
-from sherlock.providers.base import LLMProviderPort
-from sherlock.providers.compatible_provider import CompatibleProvider
-from sherlock.providers.factory import create_provider
-from sherlock.providers.google_provider import GoogleProvider
-from sherlock.providers.openai_provider import OpenAIProvider
+from reasoner.config import Settings
+from reasoner.providers.anthropic_provider import AnthropicProvider
+from reasoner.providers.base import LLMProviderPort
+from reasoner.providers.compatible_provider import CompatibleProvider
+from reasoner.providers.factory import create_provider
+from reasoner.providers.google_provider import GoogleProvider
+from reasoner.providers.openai_provider import OpenAIProvider
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
