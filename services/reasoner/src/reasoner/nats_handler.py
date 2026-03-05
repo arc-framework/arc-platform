@@ -132,7 +132,6 @@ class NATSHandler:
                     await asyncio.sleep(backoffs[attempt])
 
                 try:
-                    first_token = True
                     ttft_ms = 0
                     accumulated: list[str] = []
 
@@ -161,7 +160,11 @@ class NATSHandler:
                     response_text = "".join(accumulated)
 
                     # T032: Guard post-check — before sending completion signal
-                    if self._settings.guard_enabled and _UNSAFE_OUTPUT_PATTERNS.search(response_text):
+                    unsafe = (
+                        self._settings.guard_enabled
+                        and _UNSAFE_OUTPUT_PATTERNS.search(response_text)
+                    )
+                    if unsafe:
                         guard_payload = json.dumps({
                             "request_id": request_id,
                             "reason": "unsafe_output_detected",
@@ -190,7 +193,7 @@ class NATSHandler:
                         await msg.respond(completion_payload.encode())
                     return  # success
 
-                except (asyncio.TimeoutError, StopAsyncIteration):
+                except (TimeoutError, StopAsyncIteration):
                     if attempt == 0 and self._nc is not None:
                         # First timeout: queue to durable subject for async processing
                         durable_payload = json.dumps({
