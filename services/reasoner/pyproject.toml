@@ -49,6 +49,12 @@ dependencies = [
     "sse-starlette>=2.1",
     "tiktoken>=0.7",
 
+    # RAG
+    "minio>=7.2",
+    "python-multipart>=0.0.12",
+    "pypdf>=4.0",
+    "python-docx>=1.1",
+
     # Dev helpers (mounted only when SHERLOCK_DEV_MODE=true)
     "faker>=28.0",
 ]
@@ -92,3 +98,20 @@ plugins = ["pydantic.mypy"]
 [[tool.mypy.overrides]]
 module = ["sherlock.pulsar_handler"]
 disable_error_code = ["union-attr"]
+
+# minio SDK ships no type stubs — intentional suppression, same pattern as pulsar_handler above.
+[[tool.mypy.overrides]]
+module = ["sherlock.rag.adapters.minio"]
+ignore_missing_imports = true
+
+# FastAPI route decorators (router.post / router.get etc.) are untyped in the FastAPI stubs.
+# Suppress untyped-decorator for all router modules — same false-positive as openai_router.
+[[tool.mypy.overrides]]
+module = [
+    "sherlock.openai_router",
+    "sherlock.models_router",
+    "sherlock.files_router",
+    "sherlock.vector_stores_router",
+    "sherlock.embeddings_router",
+]
+disable_error_code = ["untyped-decorator"]

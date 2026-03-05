@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import time
 from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -12,7 +13,9 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, field_validator
 
 from sherlock.config import Settings
+from sherlock.embeddings_router import router as embeddings_router
 from sherlock.fake_router import dev_router
+from sherlock.files_router import build_files_router
 from sherlock.graph import GraphErrorResponse, build_graph, invoke_graph
 from sherlock.llm_factory import create_llm
 from sherlock.memory import SherlockMemory
@@ -27,7 +30,10 @@ from sherlock.observability import (
 from sherlock.openai_nats_handler import OpenAINATSHandler
 from sherlock.openai_router import build_openai_router
 from sherlock.pulsar_handler import PulsarHandler
+from sherlock.rag.nats_handler import RAGNATSHandler
+from sherlock.rag.store import RAGInfra, build_rag_infra
 from sherlock.streaming import GraphStreamingAdapter
+from sherlock.vector_stores_router import build_vector_stores_router
 
 logger = structlog.get_logger(__name__)
 
@@ -76,6 +82,41 @@ class AppState:
     pulsar: PulsarHandler | None = field(default=None)
     openai_nats: OpenAINATSHandler | None = field(default=None)
     model_registry: StaticModelRegistry | None = field(default=None)
+    rag: RAGInfra | None = field(default=None)
+
+
+# ─── Background health probe ──────────────────────────────────────────────────
+
+async def _health_probe_loop(
+    memory: SherlockMemory,
+    nats: NATSHandler,
+    rag: RAGInfra | None,
+    interval_s: int = 30,
+) -> None:
+    """Probe all dependencies on a timer and log the result.
+
+    Mirrors Cortex's RunDeepHealth pattern — health is visible in logs even
+    when no HTTP request hits /health/deep.
+    """
+    _probe_log = structlog.get_logger("sherlock.health_probe")
+    while True:
+        await asyncio.sleep(interval_s)
+        try:
+            dep_health = await memory.health_check()
+            components: dict[str, bool] = {
+                "postgres": dep_health.get("postgres", False),
+                "nats": nats.is_connected(),
+            }
+            if rag is not None:
+                minio_health = await rag.file_store.health_check()
+                components["minio"] = minio_health.get("minio", False)
+            all_ok = all(components.values())
+            if all_ok:
+                _probe_log.info("health_probe.ok", **components)
+            else:
+                _probe_log.warning("health_probe.degraded", **components)
+        except Exception as exc:
+            _probe_log.error("health_probe.error", error=str(exc))
 
 
 # ─── Lifespan ─────────────────────────────────────────────────────────────────
@@ -118,6 +159,35 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         pulsar_handler = PulsarHandler(graph, memory, settings, metrics)
         await pulsar_handler.start()
 
+    # RAGInfra — Universal RAG engine (feature 013); only in reason/ultra-instinct profiles
+    rag_infra: RAGInfra | None = None
+    rag_nats_handler: RAGNATSHandler | None = None
+    if settings.rag_enabled:
+        try:
+            rag_infra = await build_rag_infra(settings, memory._engine, memory._encoder)
+        except Exception:
+            log.warning(
+                "rag.startup.failed",
+                reason="Unexpected error during RAG initialisation — running without RAG",
+                exc_info=True,
+            )
+        if rag_infra is not None:
+            if settings.nats_enabled:
+                rag_nats_handler = RAGNATSHandler(rag_infra, graph, memory, settings)
+                await rag_nats_handler.connect()
+                await rag_nats_handler.subscribe()
+        else:
+            log.warning(
+                "rag.disabled",
+                reason=(
+                    "RAG was requested (SHERLOCK_RAG_ENABLED=true) but dependencies are"
+                    " unavailable — all /v1/files, /v1/vector_stores, /v1/embeddings"
+                    " routes will return 503"
+                ),
+            )
+    else:
+        log.info("rag.disabled", rag_enabled=False)
+
     # StaticModelRegistry — registered model for /v1/models
     model_registry = StaticModelRegistry(settings)
 
@@ -133,6 +203,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     app.include_router(build_openai_router(model_registry, streaming_adapter), prefix="/v1")
     app.include_router(build_models_router(model_registry), prefix="/v1")
+    if settings.rag_enabled:
+        app.include_router(build_files_router(), prefix="/v1")
+        app.include_router(build_vector_stores_router(), prefix="/v1")
+        app.include_router(embeddings_router, prefix="/v1")
 
     if settings.async_docs_enabled:
         import os
@@ -164,6 +238,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         pulsar=pulsar_handler,
         openai_nats=openai_nats_handler,
         model_registry=model_registry,
+        rag=rag_infra,
+    )
+
+    probe_task = asyncio.create_task(
+        _health_probe_loop(memory, nats_handler, rag_infra)
     )
 
     log.info("ready", port=8000)
@@ -171,11 +250,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     # ── Shutdown ──
     log.info("shutting_down")
+    probe_task.cancel()
+    with suppress(asyncio.CancelledError):
+        await probe_task
     await nats_handler.close()
     if pulsar_handler is not None:
         await pulsar_handler.close()
     if openai_nats_handler is not None:
         await openai_nats_handler.close()
+    if rag_nats_handler is not None:
+        await rag_nats_handler.close()
 
 
 # ─── Application ──────────────────────────────────────────────────────────────
@@ -295,10 +379,13 @@ async def health_deep(request: Request) -> DeepHealthResponse:
         )
 
     dep_health = await state.memory.health_check()
-    components = {
+    components: dict[str, bool] = {
         "postgres": dep_health.get("postgres", False),
         "nats": state.nats.is_connected(),
     }
+    if state.rag is not None:
+        minio_health = await state.rag.file_store.health_check()
+        components["minio"] = minio_health.get("minio", False)
 
     all_healthy = all(components.values())
     status_code = 200 if all_healthy else 503

@@ -13,6 +13,10 @@ WORKDIR /build
 # Stub package init allows setuptools to resolve the package name during dep resolution.
 COPY pyproject.toml .
 RUN mkdir -p src/sherlock && touch src/sherlock/__init__.py
+# Install CPU-only PyTorch first — prevents pip from pulling the CUDA variant (~2.5 GB).
+# This single line reduces cold build time from ~20 min to ~2 min.
+RUN pip install --prefix=/install --no-cache-dir \
+    torch --index-url https://download.pytorch.org/whl/cpu
 RUN pip install --prefix=/install --no-cache-dir ".[dev]"
 
 # Copy actual source after deps are cached — source changes hit only the fast install below.
@@ -23,8 +27,9 @@ RUN pip install --prefix=/install --no-cache-dir "." --no-deps
 # AsyncAPI HTML docs are NOT generated at build time — the npx download adds 10+ minutes
 # to every CI build for an optional feature. The service falls back to a 404 JSON when
 # /app/async-docs does not exist (see main.py lifespan). To serve the docs locally,
-# run: npx @asyncapi/cli generate fromTemplate contracts/asyncapi.yaml
+# run: npx @asyncapi/generator@1 contracts/asyncapi.yaml
 #          @asyncapi/html-template@2 -o async-docs --force-write --no-interactive
+# Note: @asyncapi/cli v2+ bundles generator v3 which is incompatible with html-template@2.
 FROM python:3.13-slim
 
 # Non-root user (constitution VIII — security by default)

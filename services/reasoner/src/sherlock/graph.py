@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
-from typing import Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any
 
 import structlog
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
@@ -12,6 +12,9 @@ from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
 
 from sherlock.memory import SherlockMemory
+
+if TYPE_CHECKING:
+    from sherlock.rag.application.retrieve import HybridRetriever
 
 _log = structlog.get_logger(__name__)
 
@@ -184,8 +187,19 @@ async def invoke_graph(
     memory: SherlockMemory,
     user_id: str,
     text: str,
+    *,
+    retriever: HybridRetriever | None = None,
+    vector_store_ids: list[str] | None = None,
+    hybrid_alpha: float | None = None,
 ) -> str:
     """Run the compiled graph and persist both turns. Returns response string.
+
+    When ``retriever`` is provided and ``vector_store_ids`` is non-empty, a RAG
+    retrieval step runs before the graph: relevant chunks are prepended as a
+    system message so the LLM has knowledge context during generation.
+
+    When ``retriever`` is None or ``vector_store_ids`` is absent/empty, behaviour
+    is identical to pre-RAG (all existing tests pass unchanged).
 
     Raises:
         GraphErrorResponse: when error_handler exhausted retries (graceful failure).
@@ -193,8 +207,37 @@ async def invoke_graph(
         RuntimeError: when an unhandled exception escapes the graph entirely.
             Callers should NACK / redeliver (Path B).
     """
+    initial_messages: list[BaseMessage] = []
+
+    # RAG retrieve — only when a retriever and at least one vector_store_id are given
+    if retriever is not None and vector_store_ids:
+        alpha = hybrid_alpha if hybrid_alpha is not None else 0.5
+        try:
+            results = await retriever.search(
+                query=text,
+                vs_ids=vector_store_ids,
+                alpha=alpha,
+                candidate_k=20,
+                top_k=5,
+            )
+        except Exception as exc:
+            _log.warning(
+                "rag_retrieve failed — continuing without RAG context",
+                event_type="exception",
+                error=str(exc),
+                handler="invoke_graph",
+            )
+            results = []
+
+        if results:
+            chunks = "\n---\n".join(r.content for r in results)
+            context_text = f"Retrieved knowledge context:\n---\n{chunks}\n---"
+            initial_messages.append(SystemMessage(content=context_text))
+
+    initial_messages.append(HumanMessage(content=text))
+
     initial_state: AgentState = {
-        "messages": [HumanMessage(content=text)],
+        "messages": initial_messages,
         "user_id": user_id,
         "context": None,
         "final_response": None,

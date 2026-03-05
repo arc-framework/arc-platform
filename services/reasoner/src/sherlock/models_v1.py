@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 import uuid
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -37,6 +37,7 @@ class ChatCompletionRequest(BaseModel):
     user: str | None = None
     # n=1 only — multi-completion not supported; Field(le=1) enforces the limit
     n: int = Field(1, ge=1, le=1)
+    tools: list[dict[str, Any]] | None = None
 
 
 # ─── POST /v1/chat/completions — Sync Response ────────────────────────────────

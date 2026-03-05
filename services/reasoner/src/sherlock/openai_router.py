@@ -5,6 +5,7 @@ import uuid
 from collections.abc import AsyncGenerator
 
 import structlog
+import tiktoken
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from sse_starlette.sse import EventSourceResponse
@@ -26,6 +27,32 @@ from sherlock.models_v1 import (
 )
 
 _log = structlog.get_logger(__name__)
+
+
+def _count_tokens(model: str, text: str) -> int:
+    """Count tokens for *text* using the model's encoding, falling back to cl100k_base."""
+    try:
+        enc = tiktoken.encoding_for_model(model)
+    except KeyError:
+        enc = tiktoken.get_encoding("cl100k_base")
+    return len(enc.encode(text))
+
+
+def _extract_file_search(
+    tools: list[dict[str, object]] | None,
+) -> tuple[list[str] | None, float | None]:
+    """Return (vector_store_ids, hybrid_alpha) from the first file_search tool entry."""
+    if not tools:
+        return None, None
+    for tool in tools:
+        if tool.get("type") == "file_search":
+            vs_ids = tool.get("vector_store_ids")
+            alpha = tool.get("hybrid_alpha")
+            return (
+                vs_ids if isinstance(vs_ids, list) else None,
+                float(alpha) if isinstance(alpha, (int, float)) else None,
+            )
+    return None, None
 
 
 def _derive_user_id(messages: list[ChatMessage]) -> str:
@@ -93,11 +120,25 @@ def build_openai_router(
             (m.content or "" for m in reversed(req.messages) if m.role == "user"),
             "",
         )
+        prompt_tokens = _count_tokens(req.model, text)
+
+        vs_ids, hybrid_alpha = _extract_file_search(req.tools)
+        retriever = state.rag.retriever if (vs_ids and getattr(state, "rag", None)) else None
+
         start = time.monotonic()
         try:
-            response_text = await invoke_graph(graph, memory, user_id, text)
+            response_text = await invoke_graph(
+                graph,
+                memory,
+                user_id,
+                text,
+                retriever=retriever,
+                vector_store_ids=vs_ids,
+                hybrid_alpha=hybrid_alpha,
+            )
             latency_ms = int((time.monotonic() - start) * 1000)
             metrics.v1_latency.record(latency_ms, {"transport": "http"})
+            completion_tokens = _count_tokens(req.model, response_text)
             _log.debug(
                 "v1 chat done",
                 event_type="service_call",
@@ -108,7 +149,11 @@ def build_openai_router(
             return ChatCompletionResponse(
                 model=req.model,
                 choices=[Choice(message=ChatMessage(role="assistant", content=response_text))],
-                usage=UsageInfo(prompt_tokens=0, completion_tokens=0, total_tokens=0),
+                usage=UsageInfo(
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    total_tokens=prompt_tokens + completion_tokens,
+                ),
             )
         except Exception as exc:
             exc_type = type(exc).__name__
@@ -155,6 +200,7 @@ def build_openai_router(
                 "",
             )
 
+        input_tokens = _count_tokens(req.model, text)
         start = time.monotonic()
         metrics.v1_requests_total.add(1, {"transport": "http", "stream": "false"})
 
@@ -162,6 +208,7 @@ def build_openai_router(
             response_text = await invoke_graph(graph, memory, user_id, text)
             latency_ms = int((time.monotonic() - start) * 1000)
             metrics.v1_latency.record(latency_ms, {"transport": "http"})
+            output_tokens = _count_tokens(req.model, response_text)
             return ResponsesResponse(
                 model=req.model,
                 output=[
@@ -169,7 +216,11 @@ def build_openai_router(
                         content=[ResponseOutputContent(text=response_text)]
                     )
                 ],
-                usage=ResponsesUsage(input_tokens=0, output_tokens=0, total_tokens=0),
+                usage=ResponsesUsage(
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    total_tokens=input_tokens + output_tokens,
+                ),
                 instructions=req.instructions,
             )
         except Exception as exc:

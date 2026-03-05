@@ -1,0 +1,851 @@
+asyncapi: 3.0.0
+
+info:
+  title: Sherlock Reasoning Service — RAG Async API
+  version: 0.3.0
+  description: |
+    NATS message contracts for the RAG (Retrieval-Augmented Generation) subjects
+    added in feature 013.
+
+    Four request/result channel pairs are documented:
+
+    | Request subject                   | Result subject                    | Purpose              |
+    |-----------------------------------|-----------------------------------|----------------------|
+    | `sherlock.v1.rag.ingest.request`  | `sherlock.v1.rag.ingest.result`   | Document ingestion   |
+    | `sherlock.v1.rag.search.request`  | `sherlock.v1.rag.search.result`   | Hybrid search        |
+    | `sherlock.v1.rag.embed.request`   | `sherlock.v1.rag.embed.result`    | Text embedding       |
+    | `sherlock.v1.rag.chat.request`    | `sherlock.v1.rag.chat.result`     | RAG-augmented chat   |
+
+    All subjects require `SHERLOCK_RAG_ENABLED=true` (active in the `reason` profile).
+    When RAG is disabled, the NATS handler is not started and messages are not consumed.
+
+    For base chat and legacy reasoning subjects see
+    `services/reasoner/contracts/asyncapi.yaml`.
+
+    For HTTP equivalents see `specs/013-sherlock-rag-api/contracts/openapi.yaml`.
+  contact:
+    name: A.R.C. Platform
+    url: https://github.com/arc-framework/arc-platform
+
+servers:
+  nats:
+    host: arc-messaging:4222
+    protocol: nats
+    description: |
+      Flash — NATS messaging broker.
+      Queue group `sherlock_workers` distributes RAG messages across replicas.
+      Callers use `nc.request()` for blocking request-reply or `nc.publish()`
+      for fire-and-forget (result is still published to the result subject).
+    tags:
+      - name: transport:nats
+        description: Real-time low-latency messaging
+
+channels:
+
+  # ── Ingest ──────────────────────────────────────────────────────────────────
+
+  ragIngestRequest:
+    address: sherlock.v1.rag.ingest.request
+    servers:
+      - $ref: '#/servers/nats'
+    tags:
+      - name: sherlock-rag
+        description: RAG pipeline subjects (013)
+    description: |
+      Trigger document ingestion for a file already uploaded via `POST /v1/files`.
+
+      Sherlock subscribes in queue group `sherlock_workers`. On receipt it:
+      1. Downloads the file bytes from MinIO
+      2. Dispatches the appropriate parser (txt/md/pdf/docx/json/csv/code)
+      3. Chunks the parsed text (512-token chunks, 50-token overlap)
+      4. Embeds each chunk via `SentenceTransformer` (384-dim)
+      5. Batch-inserts `knowledge_chunks` rows (content + embedding + fts_vector)
+      6. Updates `vector_store_files.status` to `completed` or `failed`
+      7. Publishes result to `sherlock.v1.rag.ingest.result`
+
+      If the file or vector store does not exist, or if parsing fails,
+      `status=failed` is set in the DB and echoed in the result payload.
+    messages:
+      RAGIngestRequest:
+        $ref: '#/components/messages/RAGIngestRequest'
+
+  ragIngestResult:
+    address: sherlock.v1.rag.ingest.result
+    servers:
+      - $ref: '#/servers/nats'
+    tags:
+      - name: sherlock-rag
+        description: RAG pipeline subjects (013)
+    description: |
+      Published after every `sherlock.v1.rag.ingest.request` message is processed,
+      regardless of success or failure.
+
+      Callers correlate using `file_id` + `vector_store_id` echoed from the request.
+      On `status=failed`, `error_message` describes the cause.
+    messages:
+      RAGIngestResult:
+        $ref: '#/components/messages/RAGIngestResult'
+
+  # ── Search ──────────────────────────────────────────────────────────────────
+
+  ragSearchRequest:
+    address: sherlock.v1.rag.search.request
+    servers:
+      - $ref: '#/servers/nats'
+    tags:
+      - name: sherlock-rag
+        description: RAG pipeline subjects (013)
+    description: |
+      Run a hybrid (dense + FTS) search across one or more vector stores without
+      triggering a full chat completion.
+
+      Sherlock:
+      1. Encodes `query` → 384-dim vector
+      2. Runs the single-SQL hybrid query against all `vector_store_ids`
+         (scoring: `alpha * cosine_sim + (1-alpha) * ts_rank`, LIMIT 50)
+      3. Cross-encoder reranks candidates → `top_k` results
+      4. Publishes result to `sherlock.v1.rag.search.result`
+
+      Non-existent `vector_store_ids` return empty results for that store;
+      the remaining stores are still searched.
+    messages:
+      RAGSearchRequest:
+        $ref: '#/components/messages/RAGSearchRequest'
+
+  ragSearchResult:
+    address: sherlock.v1.rag.search.result
+    servers:
+      - $ref: '#/servers/nats'
+    tags:
+      - name: sherlock-rag
+        description: RAG pipeline subjects (013)
+    description: |
+      Published after every `sherlock.v1.rag.search.request`.
+      On error, `results` is an empty list and `error` is populated.
+    messages:
+      RAGSearchResult:
+        $ref: '#/components/messages/RAGSearchResult'
+
+  # ── Embed ───────────────────────────────────────────────────────────────────
+
+  ragEmbedRequest:
+    address: sherlock.v1.rag.embed.request
+    servers:
+      - $ref: '#/servers/nats'
+    tags:
+      - name: sherlock-rag
+        description: RAG pipeline subjects (013)
+    description: |
+      Encode one or more text strings using the shared `SentenceTransformer`
+      (384-dimensional `all-MiniLM-L6-v2` model).
+
+      Equivalent to `POST /v1/embeddings` over HTTP. The same model instance
+      used for ingestion is reused — no second model load.
+
+      `input` can be a single string or an array of strings.
+    messages:
+      RAGEmbedRequest:
+        $ref: '#/components/messages/RAGEmbedRequest'
+
+  ragEmbedResult:
+    address: sherlock.v1.rag.embed.result
+    servers:
+      - $ref: '#/servers/nats'
+    tags:
+      - name: sherlock-rag
+        description: RAG pipeline subjects (013)
+    description: |
+      Published after every `sherlock.v1.rag.embed.request`.
+      `embeddings` is a list of 384-dimensional float vectors, one per input string.
+      On error, `embeddings` is empty and `error` is populated.
+    messages:
+      RAGEmbedResult:
+        $ref: '#/components/messages/RAGEmbedResult'
+
+  # ── RAG Chat ─────────────────────────────────────────────────────────────────
+
+  ragChatRequest:
+    address: sherlock.v1.rag.chat.request
+    servers:
+      - $ref: '#/servers/nats'
+    tags:
+      - name: sherlock-rag
+        description: RAG pipeline subjects (013)
+    description: |
+      RAG-augmented chat completion over NATS. Equivalent to
+      `POST /v1/chat/completions` with `tools: [{ type: "file_search", vector_store_ids: [...] }]`.
+
+      Sherlock:
+      1. Retrieves conversation context from pgvector
+      2. Runs `HybridRetriever.search(query, vector_store_ids, hybrid_alpha)` → top-5 chunks
+      3. Builds prompt: system + conversation ctx + knowledge ctx + user message
+      4. Calls the configured LLM provider
+      5. Publishes `ChatCompletionResponse` to `sherlock.v1.rag.chat.result`
+
+      When `vector_store_ids` is empty, RAG retrieval is skipped and the request
+      behaves identically to the standard `sherlock.v1.chat` subject.
+
+      Queue group `sherlock_workers` ensures exactly one replica processes each message.
+    messages:
+      RAGChatRequest:
+        $ref: '#/components/messages/RAGChatRequest'
+
+  ragChatResult:
+    address: sherlock.v1.rag.chat.result
+    servers:
+      - $ref: '#/servers/nats'
+    tags:
+      - name: sherlock-rag
+        description: RAG pipeline subjects (013)
+    description: |
+      Published after every `sherlock.v1.rag.chat.request`.
+      Payload is an OpenAI-compatible `ChatCompletionResponse`.
+      On error, the response contains the error text in `choices[0].message.content`.
+    messages:
+      RAGChatResult:
+        $ref: '#/components/messages/RAGChatResult'
+
+operations:
+
+  # ── Ingest ──────────────────────────────────────────────────────────────────
+
+  receiveRAGIngestRequest:
+    action: receive
+    channel:
+      $ref: '#/channels/ragIngestRequest'
+    tags:
+      - name: sherlock-rag
+        description: RAG pipeline subjects (013)
+    title: Receive RAG ingest request
+    summary: Trigger document ingestion pipeline via NATS
+    description: |
+      `RAGNATSHandler` subscribes to `sherlock.v1.rag.ingest.request` in queue group
+      `sherlock_workers`.
+
+      Processing flow:
+      1. Deserialize `RAGIngestRequestPayload`
+      2. Call `IngestPipeline.ingest(file_id, vector_store_id)`
+      3. On success: publish `{ status: "completed", chunk_count: N }` to result subject
+      4. On exception: set `status=failed` in DB, publish error result
+
+      If `msg.reply` is set (request-reply mode), also responds to the ephemeral inbox.
+    messages:
+      - $ref: '#/channels/ragIngestRequest/messages/RAGIngestRequest'
+
+  publishRAGIngestResult:
+    action: send
+    channel:
+      $ref: '#/channels/ragIngestResult'
+    tags:
+      - name: sherlock-rag
+        description: RAG pipeline subjects (013)
+    title: Publish RAG ingest result
+    summary: Publish ingestion completion or failure
+    description: |
+      Published to `sherlock.v1.rag.ingest.result` after every ingest message.
+      Always published — callers must handle both `completed` and `failed` statuses.
+    messages:
+      - $ref: '#/channels/ragIngestResult/messages/RAGIngestResult'
+
+  # ── Search ──────────────────────────────────────────────────────────────────
+
+  receiveRAGSearchRequest:
+    action: receive
+    channel:
+      $ref: '#/channels/ragSearchRequest'
+    tags:
+      - name: sherlock-rag
+        description: RAG pipeline subjects (013)
+    title: Receive RAG search request
+    summary: Run hybrid search across vector stores via NATS
+    description: |
+      `RAGNATSHandler` subscribes to `sherlock.v1.rag.search.request`.
+
+      Processing flow:
+      1. Deserialize `RAGSearchRequestPayload`
+      2. Call `HybridRetriever.search(query, vector_store_ids, alpha, top_k)`
+      3. Publish ranked results to `sherlock.v1.rag.search.result`
+
+      On exception: publish empty `results` list with `error` field populated.
+    messages:
+      - $ref: '#/channels/ragSearchRequest/messages/RAGSearchRequest'
+
+  publishRAGSearchResult:
+    action: send
+    channel:
+      $ref: '#/channels/ragSearchResult'
+    tags:
+      - name: sherlock-rag
+        description: RAG pipeline subjects (013)
+    title: Publish RAG search result
+    summary: Publish ranked search results
+    description: |
+      Published to `sherlock.v1.rag.search.result` after every search message.
+    messages:
+      - $ref: '#/channels/ragSearchResult/messages/RAGSearchResult'
+
+  # ── Embed ───────────────────────────────────────────────────────────────────
+
+  receiveRAGEmbedRequest:
+    action: receive
+    channel:
+      $ref: '#/channels/ragEmbedRequest'
+    tags:
+      - name: sherlock-rag
+        description: RAG pipeline subjects (013)
+    title: Receive RAG embed request
+    summary: Encode text to 384-dim vectors via NATS
+    description: |
+      `RAGNATSHandler` subscribes to `sherlock.v1.rag.embed.request`.
+
+      Processing flow:
+      1. Deserialize `RAGEmbedRequestPayload`
+      2. Normalise `input` to `list[str]` (handle string or list)
+      3. Call `EmbedderAdapter.encode(texts)` → `list[list[float]]`
+      4. Publish result to `sherlock.v1.rag.embed.result`
+
+      On exception: publish empty `embeddings` list with `error` populated.
+    messages:
+      - $ref: '#/channels/ragEmbedRequest/messages/RAGEmbedRequest'
+
+  publishRAGEmbedResult:
+    action: send
+    channel:
+      $ref: '#/channels/ragEmbedResult'
+    tags:
+      - name: sherlock-rag
+        description: RAG pipeline subjects (013)
+    title: Publish RAG embed result
+    summary: Publish 384-dim embeddings
+    description: |
+      Published to `sherlock.v1.rag.embed.result` after every embed message.
+    messages:
+      - $ref: '#/channels/ragEmbedResult/messages/RAGEmbedResult'
+
+  # ── RAG Chat ─────────────────────────────────────────────────────────────────
+
+  receiveRAGChatRequest:
+    action: receive
+    channel:
+      $ref: '#/channels/ragChatRequest'
+    tags:
+      - name: sherlock-rag
+        description: RAG pipeline subjects (013)
+    title: Receive RAG chat request
+    summary: RAG-augmented chat completion via NATS
+    description: |
+      `RAGNATSHandler` subscribes to `sherlock.v1.rag.chat.request` in queue group
+      `sherlock_workers`.
+
+      Processing flow:
+      1. Deserialize `RAGChatRequestPayload`
+      2. Call `invoke_graph(graph, memory, user_id, text, vector_store_ids, hybrid_alpha)`
+      3. Graph runs: conv memory retrieval → RAG retrieval (if vs_ids non-empty) → LLM
+      4. Build `ChatCompletionResponse`
+      5. If `msg.reply` set: respond to inbox AND publish to result subject
+      6. If fire-and-forget: publish to result subject only
+
+      On exception: publish error `ChatCompletionResponse` (never crashes the handler).
+    messages:
+      - $ref: '#/channels/ragChatRequest/messages/RAGChatRequest'
+
+  publishRAGChatResult:
+    action: send
+    channel:
+      $ref: '#/channels/ragChatResult'
+    tags:
+      - name: sherlock-rag
+        description: RAG pipeline subjects (013)
+    title: Publish RAG chat result
+    summary: Publish RAG-augmented ChatCompletionResponse
+    description: |
+      Published to `sherlock.v1.rag.chat.result` after every chat message.
+      Always published — callers must handle error responses in `choices[0].message.content`.
+    messages:
+      - $ref: '#/channels/ragChatResult/messages/RAGChatResult'
+
+components:
+
+  messages:
+
+    RAGIngestRequest:
+      name: RAGIngestRequest
+      title: RAG Ingest Request
+      summary: Trigger ingestion of an uploaded file into a vector store
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/RAGIngestRequestPayload'
+      examples:
+        - name: basic_ingest
+          summary: Ingest a plain-text file
+          payload:
+            file_id: "file-a1b2c3"
+            vector_store_id: "vs-d4e5f6"
+
+    RAGIngestResult:
+      name: RAGIngestResult
+      title: RAG Ingest Result
+      summary: Ingestion completion or failure status
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/RAGIngestResultPayload'
+      examples:
+        - name: completed
+          summary: Successful ingestion
+          payload:
+            file_id: "file-a1b2c3"
+            vector_store_id: "vs-d4e5f6"
+            status: completed
+            chunk_count: 12
+        - name: failed
+          summary: Parse failure
+          payload:
+            file_id: "file-a1b2c3"
+            vector_store_id: "vs-d4e5f6"
+            status: failed
+            chunk_count: 0
+            error: "PDF parse error: encrypted document"
+
+    RAGSearchRequest:
+      name: RAGSearchRequest
+      title: RAG Search Request
+      summary: Hybrid search across one or more vector stores
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/RAGSearchRequestPayload'
+      examples:
+        - name: hybrid_search
+          summary: Hybrid search with default alpha
+          payload:
+            query: "quarterly revenue growth"
+            vector_store_ids:
+              - "vs-d4e5f6"
+            top_k: 5
+        - name: keyword_search
+          summary: Keyword-biased search across two stores
+          payload:
+            query: "EBITDA margin"
+            vector_store_ids:
+              - "vs-d4e5f6"
+              - "vs-g7h8i9"
+            alpha: 0.2
+            top_k: 10
+
+    RAGSearchResult:
+      name: RAGSearchResult
+      title: RAG Search Result
+      summary: Ranked search results from hybrid retrieval + reranking
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/RAGSearchResultPayload'
+      examples:
+        - name: results
+          summary: Successful search with two results
+          payload:
+            query: "quarterly revenue growth"
+            results:
+              - content: "Q4 revenue grew 12% YoY..."
+                score: 0.87
+                file_id: "file-a1b2c3"
+                chunk_index: 3
+              - content: "Revenue growth was driven by enterprise..."
+                score: 0.72
+                file_id: "file-a1b2c3"
+                chunk_index: 5
+        - name: empty
+          summary: No matching chunks found
+          payload:
+            query: "unrelated topic"
+            results: []
+        - name: error
+          summary: Search failed
+          payload:
+            query: "quarterly revenue growth"
+            results: []
+            error: "pgvector unavailable"
+
+    RAGEmbedRequest:
+      name: RAGEmbedRequest
+      title: RAG Embed Request
+      summary: Encode text string(s) to 384-dimensional vectors
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/RAGEmbedRequestPayload'
+      examples:
+        - name: single_string
+          summary: Single text input
+          payload:
+            input: "Hello world"
+            model: "sentence-transformers/all-MiniLM-L6-v2"
+        - name: batch
+          summary: Batch of strings
+          payload:
+            input:
+              - "Hello world"
+              - "The quick brown fox"
+            model: "sentence-transformers/all-MiniLM-L6-v2"
+
+    RAGEmbedResult:
+      name: RAGEmbedResult
+      title: RAG Embed Result
+      summary: 384-dimensional embeddings for each input string
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/RAGEmbedResultPayload'
+      examples:
+        - name: success
+          summary: Two embeddings returned
+          payload:
+            model: "sentence-transformers/all-MiniLM-L6-v2"
+            embeddings:
+              - [0.012, -0.034, 0.091]
+              - [0.055, 0.021, -0.043]
+        - name: error
+          summary: Encode failed
+          payload:
+            model: "sentence-transformers/all-MiniLM-L6-v2"
+            embeddings: []
+            error: "Encoder unavailable"
+
+    RAGChatRequest:
+      name: RAGChatRequest
+      title: RAG Chat Request
+      summary: RAG-augmented chat completion with optional vector store grounding
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/RAGChatRequestPayload'
+      examples:
+        - name: rag_chat
+          summary: Chat grounded in a vector store
+          payload:
+            user_id: "user-123"
+            text: "What were the Q4 revenue highlights?"
+            vector_store_ids:
+              - "vs-d4e5f6"
+            hybrid_alpha: 0.7
+        - name: no_rag
+          summary: Plain chat (no vector stores — behaves like sherlock.v1.chat)
+          payload:
+            user_id: "user-123"
+            text: "What is the capital of France?"
+            vector_store_ids: []
+
+    RAGChatResult:
+      name: RAGChatResult
+      title: RAG Chat Result
+      summary: OpenAI-compatible ChatCompletionResponse, optionally grounded in documents
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/RAGChatResultPayload'
+      examples:
+        - name: grounded_response
+          summary: Answer grounded in uploaded document
+          payload:
+            id: "chatcmpl-rag001"
+            object: chat.completion
+            created: 1741001000
+            model: "mistralai/mistral-7b-instruct-v0.3"
+            choices:
+              - index: 0
+                message:
+                  role: assistant
+                  content: "Q4 revenue grew 12% YoY, driven primarily by enterprise deals in EMEA..."
+                finish_reason: stop
+            usage:
+              prompt_tokens: 312
+              completion_tokens: 48
+              total_tokens: 360
+        - name: error_response
+          summary: RAG retrieval failed gracefully — responded from conversation memory only
+          payload:
+            id: "chatcmpl-rag002"
+            object: chat.completion
+            created: 1741001001
+            model: "mistralai/mistral-7b-instruct-v0.3"
+            choices:
+              - index: 0
+                message:
+                  role: assistant
+                  content: "I couldn't retrieve documents for that query, but based on our conversation..."
+                finish_reason: stop
+            usage:
+              prompt_tokens: 45
+              completion_tokens: 32
+              total_tokens: 77
+
+  schemas:
+
+    # ── Ingest ───────────────────────────────────────────────────────────────
+
+    RAGIngestRequestPayload:
+      type: object
+      required: [file_id, vector_store_id]
+      properties:
+        file_id:
+          type: string
+          description: |
+            Identifier of a file already uploaded via `POST /v1/files`.
+            Must exist in `sherlock.knowledge_files`.
+          example: "file-a1b2c3"
+          minLength: 1
+        vector_store_id:
+          type: string
+          description: |
+            Identifier of the target vector store.
+            Must exist in `sherlock.vector_stores`.
+          example: "vs-d4e5f6"
+          minLength: 1
+
+    RAGIngestResultPayload:
+      type: object
+      required: [file_id, vector_store_id, status]
+      properties:
+        file_id:
+          type: string
+          description: Echoed from the request.
+          example: "file-a1b2c3"
+        vector_store_id:
+          type: string
+          description: Echoed from the request.
+          example: "vs-d4e5f6"
+        status:
+          type: string
+          description: Ingestion outcome.
+          enum: [completed, failed]
+          example: completed
+        chunk_count:
+          type: integer
+          description: Number of chunks indexed. Present when `status=completed`.
+          minimum: 0
+          example: 12
+        error:
+          type: string
+          description: Human-readable failure description. Present when `status=failed`.
+          example: "PDF parse error: encrypted document"
+
+    # ── Search ───────────────────────────────────────────────────────────────
+
+    RAGSearchRequestPayload:
+      type: object
+      required: [query, vector_store_ids]
+      properties:
+        query:
+          type: string
+          description: The search query text.
+          minLength: 1
+          example: "quarterly revenue growth"
+        vector_store_ids:
+          type: array
+          description: |
+            One or more vector store IDs to search.
+            Non-existent IDs return empty results without raising an error.
+          items:
+            type: string
+          minItems: 1
+          example: ["vs-d4e5f6"]
+        alpha:
+          type: number
+          description: |
+            Hybrid blend factor. `1.0` = pure dense, `0.0` = pure keyword.
+            Defaults to `SHERLOCK_HYBRID_ALPHA` (0.7) when omitted.
+          minimum: 0.0
+          maximum: 1.0
+          example: 0.7
+        top_k:
+          type: integer
+          description: Maximum results to return after reranking.
+          minimum: 1
+          maximum: 100
+          default: 5
+          example: 5
+
+    SearchResultItem:
+      type: object
+      required: [content, score, file_id, chunk_index]
+      properties:
+        content:
+          type: string
+          description: Chunk text content.
+          example: "Q4 revenue grew 12% YoY driven by enterprise deals..."
+        score:
+          type: number
+          description: Reranker score — higher is more relevant.
+          example: 0.87
+        file_id:
+          type: string
+          description: Source file identifier.
+          example: "file-a1b2c3"
+        chunk_index:
+          type: integer
+          description: Zero-based position within the source file.
+          minimum: 0
+          example: 3
+
+    RAGSearchResultPayload:
+      type: object
+      required: [query, results]
+      properties:
+        query:
+          type: string
+          description: Echoed from the request.
+          example: "quarterly revenue growth"
+        results:
+          type: array
+          description: Ranked search results. Empty list when no matches or on error.
+          items:
+            $ref: '#/components/schemas/SearchResultItem'
+        error:
+          type: string
+          description: |
+            Human-readable error description. Present only when the search failed.
+            `results` will be an empty list.
+          example: "pgvector unavailable"
+
+    # ── Embed ────────────────────────────────────────────────────────────────
+
+    RAGEmbedRequestPayload:
+      type: object
+      required: [input]
+      properties:
+        input:
+          description: |
+            One string or a list of strings to embed.
+            Normalised to `list[str]` internally before encoding.
+          oneOf:
+            - type: string
+              example: "Hello world"
+            - type: array
+              items:
+                type: string
+              example: ["Hello world", "The quick brown fox"]
+        model:
+          type: string
+          description: |
+            Encoder model name. Currently only the configured
+            `SentenceTransformer` model is accepted.
+          example: "sentence-transformers/all-MiniLM-L6-v2"
+
+    RAGEmbedResultPayload:
+      type: object
+      required: [embeddings]
+      properties:
+        model:
+          type: string
+          description: The encoder model used.
+          example: "sentence-transformers/all-MiniLM-L6-v2"
+        embeddings:
+          type: array
+          description: |
+            One 384-dimensional float vector per input string, in the same order
+            as the request `input`. Empty list on error.
+          items:
+            type: array
+            items:
+              type: number
+            minItems: 384
+            maxItems: 384
+          example: [[0.012, -0.034, 0.091]]
+        error:
+          type: string
+          description: |
+            Human-readable error description. Present only when encoding failed.
+          example: "Encoder unavailable"
+
+    # ── RAG Chat ─────────────────────────────────────────────────────────────
+
+    RAGChatRequestPayload:
+      type: object
+      required: [user_id, text]
+      properties:
+        user_id:
+          type: string
+          description: |
+            Unique identifier for the user or agent session.
+            Scopes conversation memory retrieval.
+          minLength: 1
+          example: "user-123"
+        text:
+          type: string
+          description: The user's message text.
+          minLength: 1
+          example: "What were the Q4 revenue highlights?"
+        vector_store_ids:
+          type: array
+          description: |
+            Vector store IDs to search for grounding context.
+            When empty or omitted, RAG retrieval is skipped and the request
+            behaves identically to `sherlock.v1.chat`.
+          items:
+            type: string
+          default: []
+          example: ["vs-d4e5f6"]
+        hybrid_alpha:
+          type: number
+          description: |
+            Per-request hybrid blend override. Defaults to `SHERLOCK_HYBRID_ALPHA`
+            (0.7) when omitted.
+          minimum: 0.0
+          maximum: 1.0
+          example: 0.7
+
+    RAGChatResultPayload:
+      type: object
+      required: [id, object, created, model, choices, usage]
+      properties:
+        id:
+          type: string
+          description: Unique response identifier.
+          example: "chatcmpl-rag001"
+        object:
+          type: string
+          enum: [chat.completion]
+          example: chat.completion
+        created:
+          type: integer
+          description: Unix timestamp of response creation.
+          example: 1741001000
+        model:
+          type: string
+          description: LLM model used for generation.
+          example: "mistralai/mistral-7b-instruct-v0.3"
+        choices:
+          type: array
+          description: One element for non-streaming responses.
+          items:
+            type: object
+            required: [index, message]
+            properties:
+              index:
+                type: integer
+                example: 0
+              message:
+                type: object
+                required: [role, content]
+                properties:
+                  role:
+                    type: string
+                    enum: [assistant]
+                  content:
+                    type: string
+                    description: |
+                      The generated response. On error, prefixed with "Error: ".
+                    example: "Q4 revenue grew 12% YoY, driven by enterprise deals..."
+              finish_reason:
+                type: string
+                nullable: true
+                enum: [stop, length, content_filter, tool_calls]
+                example: stop
+        usage:
+          type: object
+          required: [prompt_tokens, completion_tokens, total_tokens]
+          description: Token counts populated via tiktoken (non-zero).
+          properties:
+            prompt_tokens:
+              type: integer
+              example: 312
+            completion_tokens:
+              type: integer
+              example: 48
+            total_tokens:
+              type: integer
+              example: 360

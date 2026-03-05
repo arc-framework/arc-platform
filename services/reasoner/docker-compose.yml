@@ -37,6 +37,12 @@ services:
       OTEL_LOG_LEVEL: "warn"
       # LM Studio runs on the host — host.docker.internal resolves to the Mac from inside the container
       SHERLOCK_LLM_BASE_URL: "http://host.docker.internal:1234/v1"
+      # RAG (feature 013) — enabled by default; requires arc-storage (MinIO)
+      SHERLOCK_RAG_ENABLED: "true"
+      SHERLOCK_MINIO_ENDPOINT: "arc-storage:9000"
+      SHERLOCK_MINIO_ACCESS_KEY: "arc"
+      SHERLOCK_MINIO_SECRET_KEY: "arc-minio-dev"
+      SHERLOCK_MINIO_BUCKET: "sherlock-files"
       # SHERLOCK_LLM_SUPPORTS_SYSTEM_ROLE — omitted: auto-detected from model name.
       # Set to true/false explicitly only when the heuristic is wrong (e.g. ChatML Llama fine-tune).
       # SHERLOCK_SYSTEM_PROMPT — omitted: uses the default Sherlock persona.
@@ -50,7 +56,7 @@ services:
       - "traefik.http.routers.reasoner.middlewares=strip-reasoner"
       - "traefik.http.services.reasoner.loadbalancer.server.port=8000"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/health || exit 1"]
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
       interval: 15s
       timeout: 5s
       retries: 5
