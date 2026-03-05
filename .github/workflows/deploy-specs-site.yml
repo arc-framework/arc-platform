@@ -14,6 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      deployments: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -37,7 +38,22 @@ jobs:
           publish_dir: docs/specs/.vitepress/dist
           destination_dir: specs-site
 
-      - name: Summary
+      - name: Register deployment URL
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          deployment_id=$(gh api repos/${{ github.repository }}/deployments \
+            --method POST \
+            --field ref=${{ github.sha }} \
+            --field environment=specs-site \
+            --field description="Specs site deploy" \
+            --field auto_merge=false \
+            --field required_contexts='[]' \
+            --jq '.id')
+          gh api repos/${{ github.repository }}/deployments/$deployment_id/statuses \
+            --method POST \
+            --field state=success \
+            --field environment_url=https://arc-framework.github.io/arc-platform/specs-site/ \
+            --field description="Specs site is live"
           echo "### Specs Site Deployed" >> $GITHUB_STEP_SUMMARY
           echo "[https://arc-framework.github.io/arc-platform/specs-site/](https://arc-framework.github.io/arc-platform/specs-site/)" >> $GITHUB_STEP_SUMMARY
