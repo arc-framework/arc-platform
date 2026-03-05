@@ -185,6 +185,8 @@ async def test_search_applies_user_id_filter() -> None:
         patch("reasoner.memory.event"),
     ):
         mem = SherlockMemory(settings)
+        # Bypass Redis so the pgvector path is always exercised (this test is about SQL filtering)
+        mem._redis_failed = True
         await mem.search("alice", "anything")
 
     # One query is executed per search() call

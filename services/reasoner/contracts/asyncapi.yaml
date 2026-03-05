@@ -148,6 +148,115 @@ channels:
       ArcIngestProgress:
         $ref: '#/components/messages/ArcIngestProgress'
 
+  # ── Phase 3: Pulsar event backbone ──────────────────────────────────────────
+
+  pulsarRequestReceived:
+    address: persistent://arc/default/reasoner-request-received
+    servers:
+      - $ref: '#/servers/pulsar'
+    tags:
+      - name: arc-reasoner-events
+        description: Phase 3 Pulsar event backbone
+    description: |
+      Pulsar topic where Reasoner publishes `RequestReceivedEvent` immediately
+      upon receiving a durable request — before inference starts (TASK-031).
+
+      Fire-and-forget via `asyncio.create_task(_publish_event(...))`. Best-effort;
+      failures are swallowed and never affect inference or acknowledgement.
+    messages:
+      RequestReceivedEvent:
+        $ref: '#/components/messages/RequestReceivedEvent'
+
+  pulsarInferenceCompleted:
+    address: persistent://arc/default/reasoner-inference-completed
+    servers:
+      - $ref: '#/servers/pulsar'
+    tags:
+      - name: arc-reasoner-events
+        description: Phase 3 Pulsar event backbone
+    description: |
+      Pulsar topic where Reasoner publishes `InferenceCompletedEvent` after
+      successful inference with token usage statistics (TASK-033).
+
+      Carries `usage.input_tokens`, `usage.output_tokens`, `usage.total_tokens`
+      estimated from word-count heuristics. Fire-and-forget — never blocks ack.
+    messages:
+      InferenceCompletedEvent:
+        $ref: '#/components/messages/InferenceCompletedEvent'
+
+  # ── Phase 3: RoboCop guard hooks (NATS) ─────────────────────────────────────
+
+  arcReasonerGuardRejected:
+    address: arc.reasoner.guard.rejected
+    servers:
+      - $ref: '#/servers/nats'
+    tags:
+      - name: arc-reasoner-guard
+        description: Phase 3 RoboCop guard hooks
+    description: |
+      NATS subject where Reasoner publishes a guard event when the pre-check
+      detects an injection pattern in the input (TASK-032).
+
+      Only active when `SHERLOCK_GUARD_ENABLED=true` (default: false).
+      Processing stops — stream_graph() is never called.
+    messages:
+      GuardRejectedEvent:
+        $ref: '#/components/messages/GuardRejectedEvent'
+
+  arcReasonerGuardIntercepted:
+    address: arc.reasoner.guard.intercepted
+    servers:
+      - $ref: '#/servers/nats'
+    tags:
+      - name: arc-reasoner-guard
+        description: Phase 3 RoboCop guard hooks
+    description: |
+      NATS subject where Reasoner publishes a guard event when the post-check
+      detects unsafe content in the LLM output (TASK-032).
+
+      Only active when `SHERLOCK_GUARD_ENABLED=true` (default: false).
+      The completion signal is suppressed — clients receive no result.
+    messages:
+      GuardInterceptedEvent:
+        $ref: '#/components/messages/GuardInterceptedEvent'
+
+  # ── Phase 3: NATS → Pulsar fallback + DLQ ───────────────────────────────────
+
+  arcReasonerRequestsDurable:
+    address: arc.reasoner.requests.durable
+    servers:
+      - $ref: '#/servers/nats'
+    tags:
+      - name: arc-reasoner-fallback
+        description: Phase 3 NATS → Pulsar fallback
+    description: |
+      NATS subject used as the Pulsar fallback queue (TASK-034). Published when
+      the NATS first-token timeout (`SHERLOCK_NATS_TTFT_TIMEOUT`, default 0.5s)
+      fires on the first attempt.
+
+      A PulsarHandler consumer picks up these messages for durable reprocessing.
+      Exponential backoff is applied between retries (100ms → 1s → 10s).
+    messages:
+      DurableRequeueRequest:
+        $ref: '#/components/messages/DurableRequeueRequest'
+
+  arcReasonerRequestsFailed:
+    address: arc.reasoner.requests.failed
+    servers:
+      - $ref: '#/servers/nats'
+    tags:
+      - name: arc-reasoner-fallback
+        description: Phase 3 NATS → Pulsar fallback
+    description: |
+      Dead Letter Queue (DLQ) NATS subject (TASK-034). Published after all retries
+      are exhausted (`SHERLOCK_NATS_MAX_RETRIES`, default 3 retries total).
+
+      Consumers should alert on messages here — they represent requests that
+      could not be processed by any NATS replica within the retry budget.
+    messages:
+      DLQFailedRequest:
+        $ref: '#/components/messages/DLQFailedRequest'
+
   # ── Legacy NATS subjects (kept for backward compatibility) ───────────────────
 
   reasonerRequest:
@@ -417,6 +526,90 @@ operations:
     messages:
       - $ref: '#/channels/reasonerV1Result/messages/V1ChatResult'
 
+  # ── Phase 3: Pulsar event backbone operations ────────────────────────────────
+
+  publishRequestReceivedEvent:
+    action: send
+    channel:
+      $ref: '#/channels/pulsarRequestReceived'
+    tags:
+      - name: arc-reasoner-events
+    title: Publish request.received event to Pulsar
+    summary: Fire-and-forget event published before inference starts (TASK-031)
+    description: |
+      Published immediately after parsing the inbound DurableReasoningRequest,
+      before calling invoke_graph(). Carries event_id, request_id, user_id,
+      subject (source topic), and timestamp_ms.
+
+      Consumers use this to track request arrival latency and build audit trails.
+    messages:
+      - $ref: '#/channels/pulsarRequestReceived/messages/RequestReceivedEvent'
+
+  publishInferenceCompletedEvent:
+    action: send
+    channel:
+      $ref: '#/channels/pulsarInferenceCompleted'
+    tags:
+      - name: arc-reasoner-events
+    title: Publish inference.completed event to Pulsar
+    summary: Fire-and-forget event with token usage after successful inference (TASK-033)
+    description: |
+      Published after invoke_graph() returns successfully, after the result has
+      been sent to the caller. Carries model, latency_ms, guard_status, cache_hit,
+      and usage (input_tokens, output_tokens, total_tokens).
+
+      Billing and observability consumers subscribe here to track usage per model.
+    messages:
+      - $ref: '#/channels/pulsarInferenceCompleted/messages/InferenceCompletedEvent'
+
+  # ── Phase 3: Guard hook operations ───────────────────────────────────────────
+
+  publishGuardRejected:
+    action: send
+    channel:
+      $ref: '#/channels/arcReasonerGuardRejected'
+    tags:
+      - name: arc-reasoner-guard
+    title: Publish guard.rejected event to NATS
+    summary: Pre-check injection detection; stream_graph never called (TASK-032)
+    messages:
+      - $ref: '#/channels/arcReasonerGuardRejected/messages/GuardRejectedEvent'
+
+  publishGuardIntercepted:
+    action: send
+    channel:
+      $ref: '#/channels/arcReasonerGuardIntercepted'
+    tags:
+      - name: arc-reasoner-guard
+    title: Publish guard.intercepted event to NATS
+    summary: Post-check unsafe output detection; completion signal suppressed (TASK-032)
+    messages:
+      - $ref: '#/channels/arcReasonerGuardIntercepted/messages/GuardInterceptedEvent'
+
+  # ── Phase 3: Fallback + DLQ operations ───────────────────────────────────────
+
+  publishDurableRequeue:
+    action: send
+    channel:
+      $ref: '#/channels/arcReasonerRequestsDurable'
+    tags:
+      - name: arc-reasoner-fallback
+    title: Requeue to durable subject on TTFT timeout
+    summary: First timeout fires → enqueue for Pulsar fallback (TASK-034)
+    messages:
+      - $ref: '#/channels/arcReasonerRequestsDurable/messages/DurableRequeueRequest'
+
+  publishDLQFailed:
+    action: send
+    channel:
+      $ref: '#/channels/arcReasonerRequestsFailed'
+    tags:
+      - name: arc-reasoner-fallback
+    title: Publish to DLQ after all retries exhausted
+    summary: Max retries reached → dead letter queue (TASK-034)
+    messages:
+      - $ref: '#/channels/arcReasonerRequestsFailed/messages/DLQFailedRequest'
+
 components:
   messages:
     # ── arc.* streaming messages (Phase 1) ──────────────────────────────────
@@ -492,6 +685,111 @@ components:
       contentType: application/json
       payload:
         $ref: '#/components/schemas/ArcIngestProgressPayload'
+
+    # ── Phase 3: Pulsar event backbone messages ──────────────────────────────
+
+    RequestReceivedEvent:
+      name: RequestReceivedEvent
+      title: Request Received Event
+      summary: Published to Pulsar when a durable request arrives (before inference)
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/RequestReceivedEventPayload'
+      examples:
+        - name: request_received
+          payload:
+            event_id: "550e8400-e29b-41d4-a716-446655440000"
+            request_id: "req-abc-123"
+            user_id: "agent-researcher-7"
+            subject: "persistent://arc/default/reasoner-requests"
+            timestamp_ms: 1741000000000
+
+    InferenceCompletedEvent:
+      name: InferenceCompletedEvent
+      title: Inference Completed Event
+      summary: Published to Pulsar after successful inference with token usage
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/InferenceCompletedEventPayload'
+      examples:
+        - name: completed_success
+          payload:
+            event_id: "550e8400-e29b-41d4-a716-446655440001"
+            request_id: "req-abc-123"
+            user_id: "agent-researcher-7"
+            model: "mistralai/mistral-7b-instruct-v0.3"
+            ttft_ms: 0
+            latency_ms: 3750
+            guard_status: "pass"
+            cache_hit: false
+            usage:
+              input_tokens: 12
+              output_tokens: 47
+              total_tokens: 59
+
+    # ── Phase 3: Guard hook messages ─────────────────────────────────────────
+
+    GuardRejectedEvent:
+      name: GuardRejectedEvent
+      title: Guard Pre-check Rejection Event
+      summary: Input was blocked by injection detection before stream_graph ran
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/GuardRejectedEventPayload'
+      examples:
+        - name: injection_blocked
+          payload:
+            request_id: "req-xyz-789"
+            user_id: "u1"
+            reason: "injection_detected"
+            input_preview: "ignore previous instructions..."
+
+    GuardInterceptedEvent:
+      name: GuardInterceptedEvent
+      title: Guard Post-check Interception Event
+      summary: LLM output was blocked by unsafe content detection; completion suppressed
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/GuardInterceptedEventPayload'
+      examples:
+        - name: unsafe_output
+          payload:
+            request_id: "req-xyz-790"
+            user_id: "u1"
+            reason: "unsafe_output_detected"
+            output_preview: "CONFIDENTIAL: ..."
+
+    # ── Phase 3: NATS → Pulsar fallback + DLQ messages ───────────────────────
+
+    DurableRequeueRequest:
+      name: DurableRequeueRequest
+      title: Durable Requeue Request
+      summary: Original request requeued to durable subject after NATS TTFT timeout
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/DurableRequeueRequestPayload'
+      examples:
+        - name: requeued_request
+          payload:
+            request_id: "req-timeout-001"
+            user_id: "u1"
+            text: "Analyze this document"
+
+    DLQFailedRequest:
+      name: DLQFailedRequest
+      title: DLQ Failed Request
+      summary: Request that exhausted all NATS retries; requires manual intervention
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/DLQFailedRequestPayload'
+      examples:
+        - name: dlq_entry
+          payload:
+            request_id: "req-timeout-001"
+            user_id: "u1"
+            text: "Analyze this document"
+            reason: "max_retries_exhausted"
+            attempts: 4
 
     # ── Legacy messages ────────────────────────────────────────────────────────
 
@@ -745,6 +1043,210 @@ components:
           type: string
           description: Optional human-readable status message.
           nullable: true
+
+    # ── Phase 3: Pulsar event backbone schemas ───────────────────────────────
+
+    TokenUsagePayload:
+      type: object
+      description: Estimated token usage for a single inference call.
+      properties:
+        input_tokens:
+          type: integer
+          description: Estimated input (prompt) token count.
+          example: 12
+          minimum: 0
+          default: 0
+        output_tokens:
+          type: integer
+          description: Estimated output (completion) token count.
+          example: 47
+          minimum: 0
+          default: 0
+        total_tokens:
+          type: integer
+          description: Sum of input_tokens + output_tokens.
+          example: 59
+          minimum: 0
+          default: 0
+
+    RequestReceivedEventPayload:
+      type: object
+      required: [event_id, request_id, user_id, subject, timestamp_ms]
+      description: |
+        Published to `persistent://arc/default/reasoner-request-received`
+        immediately on receiving a durable request (TASK-031). Matches the
+        `RequestReceivedEvent` Pydantic model in `models_v1.py`.
+      properties:
+        event_id:
+          type: string
+          description: Server-generated UUID v4 unique to this event.
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        request_id:
+          type: string
+          description: Echoed from the inbound DurableReasoningRequest.
+          example: "req-abc-123"
+        user_id:
+          type: string
+          description: Echoed from the inbound DurableReasoningRequest.
+          example: "agent-researcher-7"
+        subject:
+          type: string
+          description: Source Pulsar topic address (the inbound topic).
+          example: "persistent://arc/default/reasoner-requests"
+        timestamp_ms:
+          type: integer
+          description: Unix epoch milliseconds when the event was created.
+          example: 1741000000000
+
+    InferenceCompletedEventPayload:
+      type: object
+      required: [event_id, request_id, user_id, model, latency_ms]
+      description: |
+        Published to `persistent://arc/default/reasoner-inference-completed`
+        after successful inference (TASK-033). Matches the
+        `InferenceCompletedEvent` Pydantic model in `models_v1.py`.
+      properties:
+        event_id:
+          type: string
+          description: Server-generated UUID v4 unique to this event.
+          example: "550e8400-e29b-41d4-a716-446655440001"
+        request_id:
+          type: string
+          description: Echoed from the original request.
+          example: "req-abc-123"
+        user_id:
+          type: string
+          description: Echoed from the original request.
+          example: "agent-researcher-7"
+        model:
+          type: string
+          description: LLM model ID used for inference (`SHERLOCK_LLM_MODEL`).
+          example: "mistralai/mistral-7b-instruct-v0.3"
+        ttft_ms:
+          type: integer
+          description: Time to first token in milliseconds. 0 for Pulsar path.
+          example: 0
+          minimum: 0
+          default: 0
+        latency_ms:
+          type: integer
+          description: Total inference latency in milliseconds.
+          example: 3750
+          minimum: 0
+        guard_status:
+          type: string
+          description: Result of RoboCop guard checks.
+          enum: [pass, rejected, intercepted]
+          default: pass
+        cache_hit:
+          type: boolean
+          description: Whether the Redis context cache was hit for this request.
+          default: false
+        usage:
+          $ref: '#/components/schemas/TokenUsagePayload'
+
+    # ── Phase 3: Guard hook schemas ──────────────────────────────────────────
+
+    GuardRejectedEventPayload:
+      type: object
+      required: [request_id, user_id, reason]
+      description: |
+        Published to `arc.reasoner.guard.rejected` when the pre-check detects
+        an injection pattern in the input (TASK-032).
+      properties:
+        request_id:
+          type: string
+          description: Request ID of the blocked request.
+          example: "req-xyz-789"
+        user_id:
+          type: string
+          description: User ID of the blocked request.
+          example: "u1"
+        reason:
+          type: string
+          description: Guard rejection reason code.
+          enum: [injection_detected]
+        input_preview:
+          type: string
+          description: Truncated input text for audit (first 100 chars).
+          nullable: true
+
+    GuardInterceptedEventPayload:
+      type: object
+      required: [request_id, user_id, reason]
+      description: |
+        Published to `arc.reasoner.guard.intercepted` when the post-check detects
+        unsafe content in the LLM output (TASK-032).
+      properties:
+        request_id:
+          type: string
+          description: Request ID of the intercepted request.
+          example: "req-xyz-790"
+        user_id:
+          type: string
+          description: User ID of the intercepted request.
+          example: "u1"
+        reason:
+          type: string
+          description: Guard interception reason code.
+          enum: [unsafe_output_detected]
+        output_preview:
+          type: string
+          description: Truncated output text for audit (first 100 chars).
+          nullable: true
+
+    # ── Phase 3: NATS → Pulsar fallback + DLQ schemas ────────────────────────
+
+    DurableRequeueRequestPayload:
+      type: object
+      required: [request_id, user_id, text]
+      description: |
+        Published to `arc.reasoner.requests.durable` when NATS TTFT timeout fires
+        on the first attempt (TASK-034). Contains the full original request so
+        the PulsarHandler consumer can process it without data loss.
+      properties:
+        request_id:
+          type: string
+          description: Original request ID (preserved for correlation).
+          example: "req-timeout-001"
+        user_id:
+          type: string
+          description: Original user ID.
+          example: "u1"
+        text:
+          type: string
+          description: Original request text.
+          example: "Analyze this document"
+
+    DLQFailedRequestPayload:
+      type: object
+      required: [request_id, user_id, text, reason]
+      description: |
+        Published to `arc.reasoner.requests.failed` (DLQ) when all NATS retries
+        are exhausted (`SHERLOCK_NATS_MAX_RETRIES`, default 3). Requires manual
+        intervention or a DLQ consumer for recovery (TASK-034).
+      properties:
+        request_id:
+          type: string
+          description: Original request ID.
+          example: "req-timeout-001"
+        user_id:
+          type: string
+          description: Original user ID.
+          example: "u1"
+        text:
+          type: string
+          description: Original request text.
+          example: "Analyze this document"
+        reason:
+          type: string
+          description: DLQ reason code.
+          enum: [max_retries_exhausted]
+        attempts:
+          type: integer
+          description: Total number of attempts made (including the initial one).
+          example: 4
+          minimum: 1
 
     # ── Legacy schemas ────────────────────────────────────────────────────────
 

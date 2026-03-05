@@ -1,4 +1,6 @@
+import asyncio
 import json
+import re
 import time
 import uuid
 from typing import Any
@@ -13,6 +15,17 @@ from reasoner.graph import stream_graph
 from reasoner.observability import SherlockMetrics
 
 _log = structlog.get_logger(__name__)
+
+# ─── Guard patterns ───────────────────────────────────────────────────────────
+
+_INJECTION_PATTERNS = re.compile(
+    r"ignore (previous|all|prior) (instructions?|prompts?|system)",
+    re.IGNORECASE,
+)
+_UNSAFE_OUTPUT_PATTERNS = re.compile(
+    r"\b(CONFIDENTIAL|SECRET|PASSWORD|API_KEY)\b",
+    re.IGNORECASE,
+)
 
 
 class NATSHandler:
@@ -67,6 +80,14 @@ class NATSHandler:
     async def _handle(self, msg: Msg) -> None:
         """Process an incoming NATS message using stream_graph() for token streaming.
 
+        Guard (T032): when SHERLOCK_GUARD_ENABLED, runs pre-check before stream_graph
+        and post-check on the accumulated response before sending the completion signal.
+
+        Fallback (T034): wraps stream_graph in asyncio.wait_for with TTFT timeout.
+        On TimeoutError, retries up to nats_max_retries times with exponential backoff
+        (100ms → 1s → 10s). After all retries exhausted, queues to durable subject and
+        then to DLQ.
+
         Publishes token chunks to arc.reasoner.stream.{request_id} as they arrive.
         Sends a completion signal to arc.reasoner.result when the stream ends.
         Records ttft_seconds from request receive to first token emitted.
@@ -87,40 +108,114 @@ class NATSHandler:
             user_id: str = payload["user_id"]
             text: str = payload["text"]
 
-            stream_subject = f"{self._settings.arc_nats_stream_prefix}.{request_id}"
-            first_token = True
-            ttft_ms = 0
-            latency_ms = 0
+            # T032: Guard pre-check (fail-open when disabled)
+            if self._settings.guard_enabled and _INJECTION_PATTERNS.search(text):
+                guard_payload = json.dumps({
+                    "request_id": request_id,
+                    "reason": "injection_detected",
+                })
+                if self._nc is not None:
+                    await self._nc.publish(
+                        self._settings.arc_nats_guard_rejected_subject,
+                        guard_payload.encode(),
+                    )
+                if msg.reply:
+                    await msg.respond(guard_payload.encode())
+                return
 
-            async for chunk in stream_graph(self._graph, self._memory, user_id, text):
-                if first_token:
+            stream_subject = f"{self._settings.arc_nats_stream_prefix}.{request_id}"
+            backoffs = [0.0, 0.1, 1.0, 10.0]
+            attempt = 0
+
+            while attempt <= self._settings.nats_max_retries:
+                if attempt > 0 and attempt < len(backoffs):
+                    await asyncio.sleep(backoffs[attempt])
+
+                try:
+                    first_token = True
+                    ttft_ms = 0
+                    accumulated: list[str] = []
+
+                    gen = stream_graph(self._graph, self._memory, user_id, text)
+                    # TTFT timeout gate: first token must arrive within nats_ttft_timeout
+                    first_chunk: str = await asyncio.wait_for(
+                        gen.__anext__(), timeout=self._settings.nats_ttft_timeout
+                    )
                     ttft_ms = int((time.monotonic() - start) * 1000)
                     self._metrics.ttft_seconds.record(ttft_ms / 1000, {"transport": "nats"})
-                    first_token = False
+                    accumulated.append(first_chunk)
 
-                chunk_payload = json.dumps({"request_id": request_id, "chunk": chunk})
-                if self._nc is not None:
-                    await self._nc.publish(stream_subject, chunk_payload.encode())
+                    chunk_payload = json.dumps({"request_id": request_id, "chunk": first_chunk})
+                    if self._nc is not None:
+                        await self._nc.publish(stream_subject, chunk_payload.encode())
 
-            latency_ms = int((time.monotonic() - start) * 1000)
-            self._metrics.latency.record(latency_ms, {"transport": "nats"})
+                    # Stream remaining chunks
+                    async for chunk in gen:
+                        accumulated.append(chunk)
+                        chunk_payload = json.dumps({"request_id": request_id, "chunk": chunk})
+                        if self._nc is not None:
+                            await self._nc.publish(stream_subject, chunk_payload.encode())
 
-            completion_payload = json.dumps({
-                "request_id": request_id,
-                "user_id": user_id,
-                "done": True,
-                "ttft_ms": ttft_ms,
-                "latency_ms": latency_ms,
-            })
+                    latency_ms = int((time.monotonic() - start) * 1000)
+                    self._metrics.latency.record(latency_ms, {"transport": "nats"})
+                    response_text = "".join(accumulated)
+
+                    # T032: Guard post-check — before sending completion signal
+                    if self._settings.guard_enabled and _UNSAFE_OUTPUT_PATTERNS.search(response_text):
+                        guard_payload = json.dumps({
+                            "request_id": request_id,
+                            "reason": "unsafe_output_detected",
+                        })
+                        if self._nc is not None:
+                            await self._nc.publish(
+                                self._settings.arc_nats_guard_intercepted_subject,
+                                guard_payload.encode(),
+                            )
+                        return
+
+                    completion_payload = json.dumps({
+                        "request_id": request_id,
+                        "user_id": user_id,
+                        "done": True,
+                        "ttft_ms": ttft_ms,
+                        "latency_ms": latency_ms,
+                    })
+                    if self._nc is not None:
+                        await self._nc.publish(
+                            self._settings.arc_nats_result_subject,
+                            completion_payload.encode(),
+                        )
+
+                    if msg.reply:
+                        await msg.respond(completion_payload.encode())
+                    return  # success
+
+                except (asyncio.TimeoutError, StopAsyncIteration):
+                    if attempt == 0 and self._nc is not None:
+                        # First timeout: queue to durable subject for async processing
+                        durable_payload = json.dumps({
+                            "request_id": request_id,
+                            "user_id": user_id,
+                            "text": text,
+                        })
+                        await self._nc.publish(
+                            self._settings.arc_nats_durable_subject,
+                            durable_payload.encode(),
+                        )
+                    attempt += 1
+
+            # All retries exhausted → DLQ
             if self._nc is not None:
+                dlq_payload = json.dumps({
+                    "request_id": request_id,
+                    "user_id": user_id,
+                    "text": text,
+                    "reason": "max_retries_exhausted",
+                })
                 await self._nc.publish(
-                    self._settings.arc_nats_result_subject,
-                    completion_payload.encode(),
+                    self._settings.arc_nats_dlq_subject,
+                    dlq_payload.encode(),
                 )
-
-            # Legacy request-reply support: respond directly if reply subject set
-            if msg.reply:
-                await msg.respond(completion_payload.encode())
 
         except Exception as exc:
             self._metrics.errors_total.add(1, {"transport": "nats"})
