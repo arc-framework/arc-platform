@@ -24,6 +24,8 @@ def _make_settings() -> MagicMock:
     s.embedding_model = "sentence-transformers/all-MiniLM-L6-v2"
     s.context_top_k = 5
     s.embedding_dim = 384
+    s.sonic_url = "redis://localhost:6379"
+    s.context_cache_ttl = 300
     return s
 
 
@@ -313,3 +315,139 @@ async def test_health_check_no_qdrant_key() -> None:
         result = await mem.health_check()
 
     assert "qdrant" not in result
+
+
+# ─── Redis cache ───────────────────────────────────────────────────────────────
+
+
+async def test_cache_hit_skips_vector_search() -> None:
+    """When Redis has a cached result, session.execute() is NOT called (cache hit)."""
+    import json as _json
+    settings = _make_settings()
+    mock_engine, _ = _make_mock_engine()
+
+    mock_session = AsyncMock()
+    mock_encoder = MagicMock()
+    mock_encoder.encode.return_value = MagicMock(tolist=lambda: [0.1] * 384)
+
+    # Inject a mock Redis client that returns a cache hit
+    mock_redis = AsyncMock()
+    mock_redis.get = AsyncMock(return_value=_json.dumps(["cached context"]))
+
+    with (
+        patch("reasoner.memory.create_async_engine", return_value=mock_engine),
+        patch("reasoner.memory.SentenceTransformer", return_value=mock_encoder),
+        patch("reasoner.memory.sessionmaker", return_value=_make_mock_session_factory(mock_session)),
+        patch("reasoner.memory.event"),
+    ):
+        mem = SherlockMemory(settings)
+        mem._redis = mock_redis  # inject pre-connected mock
+
+        result = await mem.search("user1", "test query")
+
+    assert result == ["cached context"]
+    mock_session.execute.assert_not_called()
+
+
+async def test_cache_invalidated_on_new_message() -> None:
+    """After save(), Redis cache keys for the user are deleted (invalidated)."""
+    settings = _make_settings()
+    mock_engine, _ = _make_mock_engine()
+
+    mock_session = AsyncMock()
+    mock_session.add = MagicMock()
+    mock_session.commit = AsyncMock()
+
+    mock_encoder = MagicMock()
+    mock_encoder.encode.return_value = MagicMock(tolist=lambda: [0.1] * 384)
+
+    deleted_keys: list[str] = []
+
+    async def _scan_iter(pattern: str):
+        yield f"arc:ctx:user1:abc123"
+
+    mock_redis = AsyncMock()
+    mock_redis.scan_iter = _scan_iter
+    mock_redis.delete = AsyncMock(side_effect=lambda k: deleted_keys.append(k))
+
+    with (
+        patch("reasoner.memory.create_async_engine", return_value=mock_engine),
+        patch("reasoner.memory.SentenceTransformer", return_value=mock_encoder),
+        patch("reasoner.memory.sessionmaker", return_value=_make_mock_session_factory(mock_session)),
+        patch("reasoner.memory.event"),
+    ):
+        mem = SherlockMemory(settings)
+        mem._redis = mock_redis
+
+        await mem.save("user1", "human", "new message")
+
+    assert "arc:ctx:user1:abc123" in deleted_keys
+
+
+async def test_cache_miss_populates_redis() -> None:
+    """When Redis misses, the pgvector result is stored in Redis with TTL."""
+    import json as _json
+    settings = _make_settings()
+    mock_engine, _ = _make_mock_engine()
+
+    mock_session = AsyncMock()
+    scalars_mock = MagicMock()
+    scalars_mock.all.return_value = ["db result"]
+    result_mock = MagicMock()
+    result_mock.scalars.return_value = scalars_mock
+    mock_session.execute = AsyncMock(return_value=result_mock)
+
+    mock_encoder = MagicMock()
+    mock_encoder.encode.return_value = MagicMock(tolist=lambda: [0.1] * 384)
+
+    mock_redis = AsyncMock()
+    mock_redis.get = AsyncMock(return_value=None)  # cache miss
+    mock_redis.setex = AsyncMock()
+
+    with (
+        patch("reasoner.memory.create_async_engine", return_value=mock_engine),
+        patch("reasoner.memory.SentenceTransformer", return_value=mock_encoder),
+        patch("reasoner.memory.sessionmaker", return_value=_make_mock_session_factory(mock_session)),
+        patch("reasoner.memory.event"),
+    ):
+        mem = SherlockMemory(settings)
+        mem._redis = mock_redis
+
+        result = await mem.search("user1", "query")
+
+    assert result == ["db result"]
+    mock_redis.setex.assert_called_once()
+    call_args = mock_redis.setex.call_args
+    assert call_args.args[1] == 300  # TTL = context_cache_ttl
+    assert _json.loads(call_args.args[2]) == ["db result"]
+
+
+async def test_redis_unavailable_falls_through_to_pgvector() -> None:
+    """When Redis is unavailable (fail-open), search() still returns pgvector results."""
+    settings = _make_settings()
+    mock_engine, _ = _make_mock_engine()
+
+    mock_session = AsyncMock()
+    scalars_mock = MagicMock()
+    scalars_mock.all.return_value = ["pg result"]
+    result_mock = MagicMock()
+    result_mock.scalars.return_value = scalars_mock
+    mock_session.execute = AsyncMock(return_value=result_mock)
+
+    mock_encoder = MagicMock()
+    mock_encoder.encode.return_value = MagicMock(tolist=lambda: [0.1] * 384)
+
+    with (
+        patch("reasoner.memory.create_async_engine", return_value=mock_engine),
+        patch("reasoner.memory.SentenceTransformer", return_value=mock_encoder),
+        patch("reasoner.memory.sessionmaker", return_value=_make_mock_session_factory(mock_session)),
+        patch("reasoner.memory.event"),
+        patch("reasoner.memory.aioredis") as mock_aioredis,
+    ):
+        mock_aioredis.from_url.return_value.ping = AsyncMock(
+            side_effect=ConnectionRefusedError("Redis down")
+        )
+        mem = SherlockMemory(settings)
+        result = await mem.search("user1", "query")
+
+    assert result == ["pg result"]

@@ -52,6 +52,9 @@ class AgentState(TypedDict):
 
 def _make_retrieve_context(memory: SherlockMemory) -> Any:
     async def retrieve_context(state: AgentState) -> dict[str, Any]:
+        # Context pre-fetched by stream_graph() — skip retrieval to avoid duplicate work
+        if state.get("context") is not None:
+            return {}
         try:
             last = state["messages"][-1]
             query = last.content if isinstance(last.content, str) else ""
@@ -288,14 +291,23 @@ async def stream_graph(
 ) -> AsyncIterator[str]:
     """Yield text tokens from the LLM via astream_events(version="v2").
 
+    Pre-fetches context from memory before the graph starts so retrieval runs
+    concurrently with graph initialisation rather than sequentially inside a node.
+    The retrieve_context node skips if context is already set in the initial state.
+
     Filters on_chat_model_stream events only — all other LangGraph events
     (node start/end, graph lifecycle) are skipped. After the stream ends,
     both turns are persisted best-effort (same pattern as invoke_graph).
     """
+    # Pre-fetch context; asyncio.gather() leaves room to add parallel tasks here
+    [context] = await asyncio.gather(
+        memory.search(user_id, text),
+    )
+
     initial_state: AgentState = {
         "messages": [HumanMessage(content=text)],
         "user_id": user_id,
-        "context": None,
+        "context": context,
         "final_response": None,
         "error_count": 0,
         "is_error": False,

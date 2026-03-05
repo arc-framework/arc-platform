@@ -113,6 +113,10 @@ class Settings(BaseSettings):
         "arc.ingest.progress", alias="SHERLOCK_ARC_NATS_INGEST_PROGRESS_PREFIX"
     )
 
+    # Redis (Sonic — context cache, Phase 2)
+    sonic_url: str = Field("redis://arc-cache:6379", alias="SHERLOCK_SONIC_URL")
+    context_cache_ttl: int = Field(300, alias="SHERLOCK_CONTEXT_CACHE_TTL")
+
     # Guardrail feature flag (Phase 3 — RoboCop pre/post checks, disabled until arc-guard exists)
     guard_enabled: bool = Field(False, alias="SHERLOCK_GUARD_ENABLED")
 
