@@ -14,9 +14,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    environment:
-      name: github-pages
-      url: https://arc-framework.github.io/arc-platform/specs-site/
     steps:
       - uses: actions/checkout@v4
         with:
@@ -39,3 +36,8 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: docs/specs/.vitepress/dist
           destination_dir: specs-site
+
+      - name: Summary
+        run: |
+          echo "### Specs Site Deployed" >> $GITHUB_STEP_SUMMARY
+          echo "[https://arc-framework.github.io/arc-platform/specs-site/](https://arc-framework.github.io/arc-platform/specs-site/)" >> $GITHUB_STEP_SUMMARY
