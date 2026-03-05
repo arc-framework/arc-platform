@@ -1,6 +1,7 @@
 # Feature: nervous-system
 
 > Spec folder will be: `specs/NNN-nervous-system/`
+> HLD: `docs/ard/NERVOUS-SYSTEM-HLD.md`
 
 ## Concept
 
@@ -11,6 +12,17 @@ NATS    = fast nerves    — real-time impulse delivery, ephemeral, request-repl
 Pulsar  = spinal cord    — durable pathways, fan-out, replay, backpressure
 Redis   = muscle memory  — cached context, hot state
 ```
+
+## Role in the Broader ARC Infrastructure
+
+The nervous system is the **foundation layer** of ARC as AI infrastructure. Every higher-level capability depends on it:
+
+- Speed goal (sub-200ms TTFT) is only achievable with NATS token streaming (Phase 1)
+- The Resource + Event pattern (REST mutation → Pulsar topic) requires Phase 3 Pulsar fan-out
+- The accuracy loop (arc-guard (RoboCop / Guardrails), arc-critic (Gordon Ramsay / Critic), arc-gym (Ivan Drago / Trainer)) subscribes to Pulsar topics produced in Phase 3
+- Voice (arc-voice-agent (Scarlett / Voice)) consumes inference streams from Pulsar
+
+Phase 3 completion unlocks the full ARC infrastructure vision. Phases 1 and 2 are Sherlock-internal; Phase 3 is the platform-wide event backbone.
 
 ## Current Bottleneck Chain
 
@@ -112,29 +124,29 @@ Client               │           NERVOUS SYSTEM               │
 ## Key Files
 
 ```
-services/reasoner/src/sherlock/graph.py             # invoke_graph, stream_graph, node definitions
-services/reasoner/src/sherlock/streaming.py         # GraphStreamingAdapter — reuse for NATS
-services/reasoner/src/sherlock/nats_handler.py      # replace invoke_graph → stream_graph
-services/reasoner/src/sherlock/openai_nats_handler.py
-services/reasoner/src/sherlock/pulsar_handler.py    # add token-level publish
-services/reasoner/src/sherlock/memory.py            # embedding threadpool + Redis cache layer
-services/reasoner/src/sherlock/observability.py     # add ttft_seconds histogram
-services/reasoner/src/sherlock/config.py            # NATS subjects, Pulsar topics, Redis URL
-services/reasoner/contracts/asyncapi.yaml           # add stream subject definitions
-services/messaging/service.yaml                     # NATS (Flash) — already deployed
-services/cache/service.yaml                         # Redis (Sonic) — already deployed
-services/streaming/service.yaml                     # Pulsar (Dr. Strange) — reason profile
+services/reasoner/src/reasoner/graph.py             # invoke_graph, stream_graph, node definitions
+services/reasoner/src/reasoner/streaming.py         # GraphStreamingAdapter — reuse for NATS
+services/reasoner/src/reasoner/nats_handler.py      # replace invoke_graph → stream_graph
+services/reasoner/src/reasoner/openai_nats_handler.py
+services/reasoner/src/reasoner/pulsar_handler.py    # add token-level publish + Resource+Event topics
+services/reasoner/src/reasoner/memory.py            # embedding threadpool + Redis cache layer
+services/reasoner/src/reasoner/observability.py     # add ttft_seconds histogram
+services/reasoner/src/reasoner/config.py            # NATS subjects, Pulsar topics, Redis URL
+services/reasoner/contracts/asyncapi.yaml           # add stream subject + Pulsar topic definitions
+services/messaging/service.yaml                     # arc-pulse (Flash / NATS) — already deployed
+services/cache/service.yaml                         # arc-db-cache (Sonic / Redis) — already deployed
+services/streaming/service.yaml                     # arc-stream (Dr. Strange / Pulsar) — reason profile
 ```
 
 ## Dependencies
 
-- `decouple-service-codenames` must land first — all NATS subjects and module paths should use functional names before building new messaging contracts on top
-- Sonic (Redis) must be verified healthy in `think` profile before Phase 2 cache work
-- Pulsar (`reason` profile) must be verified healthy before Phase 3
+- `decouple-service-codenames` must land first — in progress on current branch
+- arc-db-cache (Sonic / Redis) must be verified healthy in `think` profile before Phase 2 cache work
+- arc-stream (Dr. Strange / Pulsar) must be verified healthy in `reason` profile before Phase 3
 
-## Open Questions
+## Decisions (resolved)
 
-1. Should NATS token streaming use a dedicated subject (`reasoner.stream.{id}`) or chunked reply messages to the original reply-to inbox?
-2. For the Redis cache — invalidation strategy when conversation history changes?
-3. Voice pipeline (Scarlett) — does it consume from NATS or Pulsar? Affects which streaming path to prioritize.
-4. Should `stream_graph()` be the default path for all transports, with buffering as opt-in?
+1. NATS token streaming uses dedicated subject `reasoner.stream.{request_id}` — not reply-to inbox. Cleaner fan-out, client subscribes explicitly.
+2. Redis cache invalidation: TTL-based (5min default) + explicit invalidation when conversation history changes (new message appended resets key).
+3. Voice pipeline (arc-voice-agent (Scarlett / Voice)) consumes from Pulsar (durable, async) — not NATS. NATS is for real-time client streaming only.
+4. `stream_graph()` is the default path for all transports. Buffering (`invoke_graph`) is opt-in only.
