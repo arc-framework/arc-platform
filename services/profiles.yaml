@@ -49,6 +49,7 @@ reason:
     - vault
     - flags
     - realtime
+    - voice
 
 # ─── ultra-instinct ─────────────────────────────────────────────
 # Everything — voice, real-time, chaos testing, the full roster

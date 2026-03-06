@@ -3,7 +3,6 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 # REGISTRY, ORG, BUILD_FLAGS, COLOR_* macros inherited from root Makefile
-# docker-compose.yml is created in TASK-070; voice-up/down/logs targets require it.
 COMPOSE_VOICE  := docker compose -f services/voice/docker-compose.yml
 VOICE_IMAGE    := $(REGISTRY)/$(ORG)/arc-voice-agent
 VOICE_VERSION ?= latest

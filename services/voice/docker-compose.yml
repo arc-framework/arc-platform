@@ -1,0 +1,55 @@
+name: arc-platform
+
+services:
+
+  # ── Scarlett: Voice Agent — LiveKit room handler, faster-whisper STT, piper TTS ──
+  # Networks:
+  #   arc_platform_net — reaches arc-messaging, arc-streaming, arc-realtime, arc-cache
+  #   arc_otel_net     — reaches arc-friday-collector for OTLP telemetry
+  #
+  # No depends_on — orchestration handled by resolve-deps.sh using service.yaml
+  arc-voice-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/arc-framework/arc-voice-agent:latest
+    container_name: arc-voice-agent
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8803:8803"
+    environment:
+      VOICE_NATS_URL: nats://arc-messaging:4222
+      VOICE_PULSAR_URL: pulsar://arc-streaming:6650
+      VOICE_LIVEKIT_URL: ws://arc-realtime:7880
+      VOICE_LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-devkey}
+      VOICE_LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-devsecret}
+      VOICE_BRIDGE_NATS_SUBJECT: arc.reasoner.request
+      VOICE_BRIDGE_TIMEOUT_MS: "10000"
+      VOICE_OTEL_ENDPOINT: ${OTEL_ENDPOINT:-http://arc-friday-collector:4317}
+      VOICE_WHISPER_MODEL: tiny
+      VOICE_WHISPER_DEVICE: cpu
+      VOICE_PIPER_BIN: /usr/local/bin/piper
+      VOICE_LOG_LEVEL: INFO
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=arc_platform_net"
+      - "traefik.http.routers.voice.rule=PathPrefix(`/api/voice`)"
+      - "traefik.http.routers.voice.entrypoints=web"
+      - "traefik.http.middlewares.strip-voice.stripprefix.prefixes=/api/voice"
+      - "traefik.http.routers.voice.middlewares=strip-voice"
+      - "traefik.http.services.voice.loadbalancer.server.port=8803"
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8803/health')\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - arc_platform_net
+      - arc_otel_net
+
+networks:
+  arc_platform_net:
+    external: true   # created by the platform infra stack (make dev)
+  arc_otel_net:
+    external: true   # created by: make otel-up
