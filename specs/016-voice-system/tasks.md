@@ -119,7 +119,7 @@ graph TD
   - Module: `services/voice/src/voice/providers/stt_whisper.py`, `services/voice/src/voice/stt_router.py`, `tests/test_stt_router.py`, `tests/test_providers/test_stt_whisper.py`
   - Acceptance: `WhisperSTTAdapter` implements `STTPort`; `POST /v1/audio/transcriptions` accepts multipart `file` field; returns JSON `{text, language, duration}`; rejects unsupported MIME types with typed 400; provider failure returns typed 502; OTEL span wraps transcription; tests pass with mocked Whisper model; `ruff` + `mypy` clean
 
-- [ ] [TASK-021] [P] [VOICE] [P1] Implement piper TTS adapter and `POST /v1/audio/speech` router
+- [x] [TASK-021] [P] [VOICE] [P1] Implement piper TTS adapter and `POST /v1/audio/speech` router
   - Dependencies: TASK-010, TASK-011, TASK-012, TASK-023
   - Module: `services/voice/src/voice/providers/tts_piper.py`, `services/voice/src/voice/tts_router.py`, `tests/test_tts_router.py`, `tests/test_providers/test_tts_piper.py`
   - Acceptance: `PiperTTSAdapter` implements `TTSPort`; `POST /v1/audio/speech` accepts JSON `{input, voice, model}`; returns `StreamingResponse` with `Content-Type: audio/wav`, `X-Duration-Seconds`, `X-Sample-Rate` headers; empty `input` returns 400; provider failure returns typed 502; OTEL span wraps synthesis; tests pass with mocked piper binary; `ruff` + `mypy` clean
