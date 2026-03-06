@@ -91,3 +91,10 @@
 - [Tasks: decouple-service-codenames](/arc-platform/specs-site/014-decouple-service-codenames/tasks.md)
 - [Analysis Report: 014-decouple-service-codenames](/arc-platform/specs-site/014-decouple-service-codenames/analysis-report.md)
 
+### 015 — Nervous System
+
+- [Feature: Nervous System](/arc-platform/specs-site/015-nervous-system/spec.md)
+- [Implementation Plan: Nervous System](/arc-platform/specs-site/015-nervous-system/plan.md)
+- [Tasks: Nervous System](/arc-platform/specs-site/015-nervous-system/tasks.md)
+- [Pre-Implementation Audit: 015-Nervous System](/arc-platform/specs-site/015-nervous-system/analysis-report.md)
+
