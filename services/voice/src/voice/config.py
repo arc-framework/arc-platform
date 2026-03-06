@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     whisper_model: str = "tiny"
     whisper_device: str = "cpu"
 
+    # Pulsar event bus
+    pulsar_url: str = "pulsar://arc-streaming:6650"
+
     # LiveKit worker settings
     livekit_room_name: str = "arc-voice"
     vad_threshold: float = 500.0
