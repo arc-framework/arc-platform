@@ -1,86 +1,145 @@
-# Feature: decouple-service-codenames
+# Service Naming Decoupling
 
-> **Status: Implemented** — spec `specs/014-decouple-service-codenames/` (branch `014-decouple-service-codenames`)
-
+> Status: Implemented
 > Spec folder: `specs/014-decouple-service-codenames/`
+> Source of truth: [Makefile](../../Makefile) and `services/*/service.yaml`
 
-## Problem
+## Decision
 
-Codenames (Sherlock, Flash, Sonic, Oracle, etc.) are a fun-factor identifier — they must NOT be coupled into source code, wire protocols, or config defaults. Currently they leak into four tiers of coupling.
+Codenames are fun metadata. They are not service identity.
 
-## Scope — What Changes
+From this point forward, the platform uses functional service names and `arc-*` image names as the primary references in:
 
-### Tier 1 — Python Package Name (Deepest)
-The entire reasoner service lives under `src/sherlock/`. Every internal import is `from sherlock.xxx import ...`.
+- architecture docs
+- specifications and plans
+- config defaults
+- wire contracts
+- operational runbooks
+- service maps
 
-| What | Current | Target |
-|------|---------|--------|
-| Python package directory | `services/reasoner/src/sherlock/` | `services/reasoner/src/reasoner/` |
-| All internal imports | `from sherlock.xxx import` | `from reasoner.xxx import` |
-| Dockerfile CMD / entrypoint | references `sherlock` module | references `reasoner` module |
-| `pyproject.toml` package name | `arc-sherlock` | `arc-reasoner` |
+Codenames may still appear in metadata fields and narrative docs, but only as secondary labels.
 
-### Tier 2 — Wire Protocol (NATS Subjects + Pulsar Topics + DB Schema)
-Public-facing contracts. Any external subscriber breaks without a migration period.
+## Naming Hierarchy
 
-| What | Current | Target |
-|------|---------|--------|
-| NATS legacy subject | `sherlock.request` | `reasoner.request` |
-| NATS v1 chat | `sherlock.v1.chat` | `reasoner.v1.chat` |
-| NATS v1 result | `sherlock.v1.result` | `reasoner.v1.result` |
-| NATS RAG subjects | `sherlock.v1.rag.*` | `reasoner.v1.rag.*` |
-| Pulsar request topic | `sherlock-requests` | `reasoner-requests` |
-| Pulsar result topic | `sherlock-results` | `reasoner-results` |
-| Postgres schema | `sherlock.vector_stores` | `reasoner.vector_stores` |
+When there is any ambiguity, use this order:
 
-**Migration strategy:** support both old + new subjects for one release cycle, then drop old.
+1. Root [Makefile](../../Makefile) target name
+2. `service.yaml` `name`
+3. GHCR image name
+4. Service directory under `services/`
+5. `codename` field
 
-### Tier 3 — Config Defaults in Go (Cortex)
-Cortex hardcodes codename-based DNS hostnames in defaults.
+## What Changed
 
-| File | What | Current | Target |
-|------|------|---------|--------|
-| `services/cortex/internal/config/config.go:108` | Postgres host | `arc-oracle` | `arc-persistence` |
-| `services/cortex/internal/config/config.go:116` | NATS URL | `nats://arc-flash:4222` | `nats://arc-messaging:4222` |
-| `services/cortex/internal/config/config.go:122` | Redis host | `arc-sonic` | `arc-cache` |
-| `services/cortex/internal/clients/postgres.go:16` | probe name | `arc-oracle` | `arc-persistence` |
-| `services/cortex/internal/clients/nats.go:16` | probe name | `arc-flash` | `arc-messaging` |
-| `services/cortex/internal/clients/redis.go:16` | probe name | `arc-sonic` | `arc-cache` |
+### Primary references now use service names
 
-Note: Docker container names in compose already use functional names (`arc-messaging`, `arc-cache`, `arc-persistence`). Cortex defaults just need to match.
+Use:
 
-### Tier 4 — Observability Names
-| What | Current | Target |
-|------|---------|--------|
-| OTEL meter name | `arc-sherlock` | `arc-reasoner` |
-| OTEL tracer service name | `arc-sherlock` | `arc-reasoner` |
-| `config.py` `service_name` default | `arc-sherlock` | `arc-reasoner` |
+- `arc-reasoner`
+- `arc-messaging`
+- `arc-streaming`
+- `arc-cache`
+- `arc-persistence`
+- `arc-storage`
+- `arc-realtime`
+- `arc-gateway`
+- `arc-vault`
+- `arc-flags`
+- `arc-cortex`
+- `arc-friday`
+- `arc-friday-collector`
 
-## What Does NOT Change
-- `service.yaml` `codename:` field — it's metadata, not code
-- Docker volume names (`flash-jetstream`, `strange-data`) — internal to compose, not referenced in app code
-- `arc-friday-collector` DNS — OTEL collector is a proper name, not a codename reference in logic
-- Go module path `arc-framework/cortex` — `cortex` is a functional name (bootstrap orchestrator)
-- CLI probe display names that show codenames to users — that's the fun-factor working as intended
+### Codenames are now secondary only
 
-## Key Files
-```
-services/reasoner/src/sherlock/           # entire package to rename
-services/reasoner/src/sherlock/config.py  # NATS/Pulsar subjects, service_name
-services/reasoner/src/sherlock/nats_handler.py
-services/reasoner/src/sherlock/openai_nats_handler.py
-services/reasoner/src/sherlock/pulsar_handler.py
-services/reasoner/src/sherlock/observability.py
-services/reasoner/src/sherlock/memory.py  # schema references
-services/reasoner/contracts/asyncapi.yaml # subject definitions
-services/cortex/internal/config/config.go
-services/cortex/internal/clients/postgres.go
-services/cortex/internal/clients/nats.go
-services/cortex/internal/clients/redis.go
-```
+Allowed:
 
-## Risks
-- NATS subject rename is a breaking change for any subscriber — needs migration window
-- Python package rename requires touching every file in the package (100+ imports)
-- DB schema rename requires a migration SQL script
-- Cortex hostname defaults must match docker-compose container names exactly
+- `codename:` metadata in `service.yaml`
+- optional secondary mention in prose
+- sidecar annotations where useful for historical continuity
+
+Not allowed as primary identifiers:
+
+- package names
+- config defaults
+- DNS/container assumptions
+- NATS subjects
+- Pulsar topics
+- service maps
+- spec titles and main architecture references
+
+## Authoritative Service Mapping
+
+Derived from [Makefile](../../Makefile) includes and the current `service.yaml` files.
+
+| Make target        | Primary runtime name   | Directory               | Image                                               | Codename metadata |
+| ------------------ | ---------------------- | ----------------------- | --------------------------------------------------- | ----------------- |
+| `gateway`          | `arc-gateway`          | `services/gateway/`     | `ghcr.io/arc-framework/arc-gateway:latest`          | Heimdall          |
+| `flags`            | `arc-flags`            | `services/flags/`       | `ghcr.io/arc-framework/arc-flags:latest`            | Mystique          |
+| `vault`            | `arc-vault`            | `services/secrets/`     | `ghcr.io/arc-framework/arc-vault:latest`            | Nick Fury         |
+| `messaging`        | `arc-messaging`        | `services/messaging/`   | `ghcr.io/arc-framework/arc-messaging:latest`        | Flash             |
+| `streaming`        | `arc-streaming`        | `services/streaming/`   | `ghcr.io/arc-framework/arc-streaming:latest`        | Strange           |
+| `cache`            | `arc-cache`            | `services/cache/`       | `ghcr.io/arc-framework/arc-cache:latest`            | Sonic             |
+| `persistence`      | `arc-persistence`      | `services/persistence/` | `ghcr.io/arc-framework/arc-persistence:latest`      | Oracle            |
+| `storage`          | `arc-storage`          | `services/storage/`     | `ghcr.io/arc-framework/arc-storage:latest`          | Tardis            |
+| `realtime`         | `arc-realtime`         | `services/realtime/`    | `ghcr.io/arc-framework/arc-realtime:latest`         | Daredevil         |
+| `reasoner`         | `arc-reasoner`         | `services/reasoner/`    | `ghcr.io/arc-framework/arc-reasoner:latest`         | Sherlock          |
+| `cortex`           | `arc-cortex`           | `services/cortex/`      | `ghcr.io/arc-framework/arc-cortex:latest`           | Cortex            |
+| `otel`             | `arc-friday`           | `services/otel/`        | `ghcr.io/arc-framework/arc-friday:latest`           | Friday            |
+| `friday-collector` | `arc-friday-collector` | `services/otel/`        | `ghcr.io/arc-framework/arc-friday-collector:latest` | Friday Collector  |
+
+## Planned Services
+
+Planned services should be documented, but they must not be mixed into the authoritative runtime map until they exist in [Makefile](../../Makefile) or have a concrete `service.yaml`.
+
+Use a separate planned section for items such as:
+
+- `arc-voice-agent`
+- `arc-guard`
+- `arc-critic`
+- `arc-gym`
+- `arc-billing`
+- `arc-db-vector`
+- `arc-identity`
+- `arc-chaos`
+
+That keeps documentation honest:
+
+- **implemented** = operable now
+- **planned** = architectural intent
+
+## Realtime Sidecars
+
+The `realtime` target is the operator-facing unit, but the runtime stack also includes:
+
+| Runtime service        | Image                                               | Purpose          | Codename metadata |
+| ---------------------- | --------------------------------------------------- | ---------------- | ----------------- |
+| `arc-realtime-ingress` | `ghcr.io/arc-framework/arc-realtime-ingress:latest` | RTMP ingest      | Sentry            |
+| `arc-realtime-egress`  | `ghcr.io/arc-framework/arc-realtime-egress:latest`  | Recording/export | Scribe            |
+
+## Operational Guidance
+
+Prefer these forms in all new docs:
+
+- `arc-reasoner` instead of a codename-first label
+- `arc-messaging` instead of a codename-first label
+- `arc-streaming` instead of a codename-first label
+- `arc-cache` instead of a codename-first label
+- `arc-realtime` instead of a codename-first label
+
+If a codename is included for readability, format it as secondary metadata, for example:
+
+`arc-reasoner` (codename: Sherlock)
+
+Not the other way around.
+
+## Impact
+
+This keeps naming stable across:
+
+- implementation
+- deployment
+- contracts
+- diagrams
+- future service additions
+
+It also removes the mismatch between historical codename-heavy docs and the actual operational model exposed by [Makefile](../../Makefile).
