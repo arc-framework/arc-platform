@@ -1,334 +1,290 @@
-# Voice Platform — High-Level Design
+# Voice System — High-Level Design
 
-> **Codename:** Scarlett
-> **Status:** Research / Story Grooming
-> **Related Spec:** `specs/007-voice-stack/`
+> Date: 2026-03-06
+> Spec: `docs/ard/VOICE-SYSTEM.md`
+> Feature spec: `specs/016-voice-system/`
+> Framework: `docs/ard/ARC-ENTERPRISE-AI-FRAMEWORK.md`
 
----
+## Design Intent
 
-## Overview
+Scarlett is ARC's speech orchestration layer. It must make voice a first-class modality without creating a second reasoning system. The design follows the enterprise framework directly:
 
-This document covers the high-level design for bringing voice capabilities to the A.R.C. platform. Three modes are in scope:
+- **Daredevil** remains the realtime media transport.
+- **Scarlett** handles turn orchestration, speech providers, and room participation.
+- **Sherlock** remains the only reasoning engine.
+- **Flash** is used internally for low-latency turn exchange.
+- **Dr. Strange** is the durable async contract for voice lifecycle events.
 
-| Mode | Protocol | Description |
-|------|----------|-------------|
-| **STT** | REST | Audio file → transcript text |
-| **TTS** | REST | Text → audio stream |
-| **Audio-to-Audio** | WebSocket (LiveKit room) | Real-time voice conversation via AI agent |
+This keeps voice aligned with the framework's central rule: ARC services expose stable REST and async contracts, while low-latency internals stay implementation details.
 
----
+## System Context
 
-## What Already Exists
+```mermaid
+graph TD
+    Client[Browser / Phone / Enterprise App] -->|REST STT| STT[Scarlett REST API]
+    Client -->|REST TTS| TTS[Scarlett REST API]
+    Client -->|WebRTC room| DK[Daredevil / LiveKit]
 
-### Infrastructure (deployed in `services/`)
+    DK --> Agent[Scarlett LiveKit Worker]
+    Agent --> VAD[VAD / turn detection]
+    VAD --> Whisper[STT provider]
+    Whisper --> Bridge[Scarlett → Sherlock bridge]
+    Bridge --> NATS[Flash / NATS]
+    NATS --> SH[Sherlock / Reasoner]
+    SH --> NATS
+    NATS --> Piper[TTS provider]
+    Piper --> Agent
+    Agent --> DK
 
-| Service | Codename | Role | Port(s) |
-|---------|----------|------|---------|
-| `services/realtime/` | Daredevil | LiveKit WebRTC SFU | 7880 HTTP/WS, 7881 gRPC, 7882 TURN, 50100–50200 UDP |
-| `services/realtime/` | Sentry | LiveKit Ingress — RTMP ingest | 1935, 7888 |
-| `services/realtime/` | Scribe | LiveKit Egress — recordings → MinIO | 7889 |
-| `services/cache/` | Sonic | Redis — LiveKit distributed state | 6379 |
-| `services/storage/` | Tardis | MinIO — recording storage (`recordings` bucket) | 9000 |
-| `services/messaging/` | Flash | NATS — Scarlett ↔ Sherlock bridge | 4222 |
-
-> Daredevil depends on Sonic. Scribe writes to Tardis. All are in the `reason` profile.
-
-### Voice Agent Proof-of-Concept (`platform-spike`)
-
-A full working pipeline exists at `platform-spike/services/arc-scarlett-voice/`. Not yet migrated to `arc-platform`.
-
-```
-User audio
-    │
-    ▼
-Daredevil (WebRTC SFU)
-    │
-    ▼
-Scarlett Agent (livekit-agents SDK)
-    ├── Silero VAD         — detects speech end
-    ├── Whisper STT        — audio → text  (~200–400ms)
-    ├── SherlockLLM plugin — NATS → reasoner.request  (~500–800ms)
-    ├── Piper TTS          — text → audio  (~100–300ms)
-    └── audio back to room
+    STT --> Pulsar[Dr. Strange / Pulsar]
+    TTS --> Pulsar
+    Agent --> Pulsar
+    Agent --> Redis[Sonic / Redis]
+    DK --> Scribe[Scribe → Tardis recordings]
 ```
 
-Key spike files to reference during implementation:
+## Current Foundation
 
-| File | Purpose |
-|------|---------|
-| `platform-spike/services/arc-scarlett-voice/src/agent.py` | VoiceAssistant pipeline |
-| `platform-spike/services/arc-scarlett-voice/src/plugins/sherlock_llm.py` | NATS bridge to Sherlock |
-| `platform-spike/services/arc-scarlett-voice/src/plugins/piper_tts.py` | Local ONNX TTS plugin |
-| `platform-spike/services/arc-scarlett-voice/src/observability.py` | OTEL metrics + traces |
-| `platform-spike/services/arc-piper-tts/src/main.py` | Standalone TTS FastAPI service |
+### Already in the platform
 
----
+| Service               | Role                        | Why it matters                                     |
+| --------------------- | --------------------------- | -------------------------------------------------- |
+| `services/realtime/`  | Daredevil / Sentry / Scribe | Realtime room transport, ingest, and recordings    |
+| `services/reasoner/`  | Sherlock                    | Text reasoning, prompt orchestration, tool calling |
+| `services/messaging/` | Flash                       | Internal low-latency request/reply path            |
+| `services/streaming/` | Dr. Strange                 | Durable async topics for analytics and compliance  |
+| `services/cache/`     | Sonic                       | Hot room/session state                             |
+| `services/storage/`   | Tardis                      | Recording and artifact storage                     |
 
-## Technology Decisions
+### Proven spike
 
-### LiveKit — No Change
+The spike at `platform-spike/services/arc-scarlett-voice/` proves the core room loop works:
 
-LiveKit handles WebRTC SFU, NAT traversal (STUN/TURN), RTP/RTCP routing, room lifecycle, and provides the Python Agents SDK with pluggable STT/LLM/TTS. No OSS alternative (Janus, mediasoup) provides all of this. Janus/mediasoup require hand-rolling the agent layer. Hosted options (Daily, Agora) are not open-source. **LiveKit stays.**
-
-### No Pipecat
-
-Pipecat introduces its own transport and pipeline abstraction that conflicts with the LiveKit-native approach. The spike already uses `livekit-agents` directly with custom plugins — proven working, simpler dependency tree. Pipecat is excluded.
-
-### Dependency Versions
-
-The spike used old pinned versions. Target latest stable for the migration:
-
-| Package | Spike Version | Target |
-|---------|--------------|--------|
-| `livekit-agents` | 0.8.0 | latest (~1.x) |
-| `livekit` | 0.11.0 | latest |
-| `faster-whisper` | 0.10.0 | latest |
-| `onnxruntime` | 1.16.3 | latest CPU |
-| `nats-py` | 2.6.0 | `>=2.9` (match Sherlock) |
-
-### NATS Subject Alignment
-
-The spike used `brain.request` / `brain.response`. Arc-platform Sherlock uses `reasoner.request`. Scarlett must align to the Reasoner's subjects.
-
----
-
-## Proposed Service: `services/voice/`
-
-### Identity
-
+```text
+User audio → Daredevil → Scarlett worker
+            → VAD → STT → Sherlock bridge → TTS → room audio
 ```
+
+The missing step is not feasibility. It is productionizing the capability in `services/voice/` with contracts, health, observability, profile wiring, and a durable async story.
+
+## Service Boundary
+
+### Public interfaces
+
+Scarlett exposes two stable service contracts:
+
+1. **REST**
+   - `POST /v1/audio/transcriptions`
+   - `POST /v1/audio/speech`
+   - `GET /health`
+   - `GET /health/deep`
+2. **Pulsar topics**
+   - `arc.voice.session.started`
+   - `arc.voice.session.ended`
+   - `arc.voice.turn.completed`
+   - `arc.voice.turn.failed`
+
+### Realtime transport
+
+Audio-to-audio is delivered through Daredevil's WebRTC room transport. This is not a separate Scarlett API surface; it is the media substrate Scarlett joins as a worker.
+
+### Internal speed path
+
+Scarlett sends text turns to Sherlock over Flash. Default subject is `reasoner.request` to match current deployment, but the subject is configuration-driven so Scarlett can adopt `arc.reasoner.request` when naming converges.
+
+## Proposed Service
+
+```text
 Codename : Scarlett
 Role     : voice
-Port     : 8084  (HTTP — health + REST API only, no raw audio)
+Port     : 8084
 Image    : ghcr.io/arc-framework/arc-scarlett:latest
-Tech     : FastAPI + livekit-agents + faster-whisper + piper-tts
+Tech     : FastAPI + livekit-agents + faster-whisper + piper
+Profile  : reason
 ```
 
-### Directory Layout
+### Directory layout
 
-Follows the same conventions as `services/reasoner/`.
-
-```
+```text
 services/voice/
 ├── service.yaml
-├── Dockerfile                    # multi-stage, non-root user
-├── pyproject.toml                # ruff + mypy + pytest
+├── Dockerfile
+├── pyproject.toml
 ├── contracts/
-│   ├── openapi.yaml              # STT + TTS REST endpoints
-│   └── asyncapi.yaml             # NATS session events
+│   ├── openapi.yaml
+│   └── asyncapi.yaml
 └── src/scarlett/
-    ├── main.py                   # FastAPI app + lifespan + LiveKit worker start
-    ├── config.py                 # Pydantic BaseSettings (SCARLETT_ prefix)
-    ├── interfaces.py             # Protocol-based DI (STTPort, TTSPort, LLMPort)
-    ├── stt_router.py             # POST /v1/audio/transcriptions
-    ├── tts_router.py             # POST /v1/audio/speech
-    ├── agent.py                  # LiveKit VoiceAssistant pipeline
-    ├── observability.py          # OTEL meter + tracer setup
+    ├── main.py
+    ├── config.py
+    ├── interfaces.py
+    ├── health.py
+    ├── stt_router.py
+    ├── tts_router.py
+    ├── agent.py
+    ├── observability.py
     └── plugins/
-        ├── whisper_stt.py        # faster-whisper STT adapter
-        ├── piper_tts.py          # Piper ONNX TTS adapter
-        └── sherlock_llm.py       # NATS → reasoner.request LLM adapter
+        ├── whisper_stt.py
+        ├── piper_tts.py
+        └── sherlock_bridge.py
 ```
 
----
+## Request Flows
 
-## HTTP API (OpenAI-Compatible)
+### STT and TTS REST flow
 
-Same patterns as Sherlock's routers. Mirrors OpenAI audio API shapes so existing clients work without changes.
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant S as Scarlett REST API
+    participant P as Speech Provider
+    participant D as Dr. Strange
 
-### STT — `POST /v1/audio/transcriptions`
-
-```
-Content-Type: multipart/form-data
-
-Fields:
-  file     — audio file (wav, mp3, m4a, webm, ogg)
-  model    — "whisper" (default)
-  language — ISO 639-1 code, optional
-
-Response 200:
-{
-  "text": "Hello, how are you?",
-  "language": "en",
-  "duration": 3.2
-}
+    C->>S: POST /v1/audio/transcriptions or /v1/audio/speech
+    S->>P: transcribe() / synthesize()
+    P-->>S: result
+    S->>D: publish turn/session event
+    S-->>C: JSON transcript or WAV stream
 ```
 
-### TTS — `POST /v1/audio/speech`
+### Room-based audio-to-audio flow
 
-```
-Content-Type: application/json
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant D as Daredevil
+    participant A as Scarlett Worker
+    participant N as Flash
+    participant R as Sherlock
+    participant P as Dr. Strange
 
-{
-  "model": "piper",
-  "input": "Hello, how can I help you?",
-  "voice": "lessac"
-}
-
-Response 200: audio/wav stream
-Headers: X-Audio-Duration, X-Sample-Rate
-```
-
-### Health
-
-```
-GET /health       — shallow: process alive + LiveKit reachable
-GET /health/deep  — probes LiveKit + NATS connectivity
-```
-
----
-
-## Audio-to-Audio Pipeline (Room-Based)
-
-Not HTTP. The client connects to a Daredevil room via WebSocket. Scarlett's LiveKit worker auto-joins the room and runs the voice loop.
-
-```
-Client              Daredevil (7880)        Scarlett Agent
-  │── JOIN room ───►│                            │
-  │                 │──── worker joins ──────────►│
-  │── speak ────────►│                            │
-  │                 │──── audio track ───────────►│
-  │                 │              │ Silero VAD: speech end
-  │                 │              │ Whisper: audio → text
-  │                 │              │ NATS publish → reasoner.request
-  │                 │              │ Sherlock: text → response
-  │                 │              │ Piper: text → audio
-  │◄── AI audio ────◄│◄────────────│
+    C->>D: join room + publish audio
+    A->>D: join room as worker
+    D-->>A: audio track
+    A->>A: VAD + STT
+    A->>N: request reasoning
+    N->>R: text turn
+    R-->>N: text response
+    N-->>A: response
+    A->>A: TTS
+    A-->>D: audio response
+    A->>P: publish turn/session event
 ```
 
-NATS subject used: `reasoner.request` (Reasoner's queue group: `reasoner_workers`).
+## Speech Provider Strategy
 
----
+### Offline-first defaults
 
-## STT — Provider Strategy
+| Capability | Default                 | Why                                          |
+| ---------- | ----------------------- | -------------------------------------------- |
+| STT        | `faster-whisper`        | Local, multilingual, no external account     |
+| TTS        | `piper`                 | Local, CPU-friendly, deterministic packaging |
+| VAD        | Silero / LiveKit-native | Fast speech boundary detection               |
 
-### Default (local, offline, zero-cost)
+### Cloud-ready adapters
 
-- **faster-whisper** — optimized CTranslate2 backend
-- Multilingual out of the box
-- Model sizes: `tiny` (39 MB, ~150ms) → `base` (74 MB, ~300ms) → `small` (244 MB, ~600ms)
-- Configured via `SCARLETT_WHISPER_MODEL=tiny|base|small|medium`
+All providers stay behind protocol interfaces:
 
-### Cloud-Ready (pluggable, opt-in)
+- `STTPort`
+- `TTSPort`
+- `LLMBridgePort`
 
-Behind the `STTPort` protocol — drop-in replacements, no pipeline changes:
+This allows Deepgram, Azure, ElevenLabs, or OpenAI to be enabled without changing routing, health, or contracts.
 
-| Provider | Env Var Value | Notes |
-|----------|--------------|-------|
-| Deepgram | `deepgram` | Streaming, very low latency |
-| Google Speech | `google` | High accuracy, broad language support |
-| Azure Cognitive | `azure` | Enterprise SLA |
-| OpenAI Whisper API | `openai` | Cloud-hosted Whisper |
+## Latency Budget
 
-Config: `SCARLETT_STT_PROVIDER=whisper` (default)
+| Stage                    | Target           |
+| ------------------------ | ---------------- |
+| VAD speech end detection | ~20 ms           |
+| STT                      | 200–400 ms       |
+| Sherlock round trip      | 400–800 ms       |
+| TTS                      | 100–300 ms       |
+| WebRTC delivery          | ~20 ms           |
+| **End-to-end turn**      | **~750–1550 ms** |
 
----
-
-## TTS — Provider Strategy
-
-### Default (local, offline, zero-cost)
-
-- **Piper ONNX** — neural TTS, CPU-only inference
-- Default voice: `en_US-lessac-medium` (22050 Hz, WAV 16-bit mono)
-- Model baked into Docker image at build time (HuggingFace download)
-- Latency: 100–300ms
-
-### Cloud-Ready (pluggable, opt-in)
-
-Behind the `TTSPort` protocol:
-
-| Provider | Env Var Value | Notes |
-|----------|--------------|-------|
-| ElevenLabs | `elevenlabs` | High quality, streaming |
-| Cartesia | `cartesia` | Low latency, streaming |
-| OpenAI TTS | `openai` | Multiple voices |
-| Azure TTS | `azure` | Enterprise SLA, SSML support |
-
-Config: `SCARLETT_TTS_PROVIDER=piper` (default)
-
----
-
-## Latency Budget (Audio-to-Audio)
-
-| Stage | Component | Target |
-|-------|-----------|--------|
-| VAD — speech end detection | Silero | ~20 ms |
-| STT — audio to text | Whisper `base` | 200–400 ms |
-| NATS round-trip overhead | Flash | 1–5 ms |
-| LLM — text to response | Sherlock | 400–800 ms |
-| TTS — text to audio | Piper | 100–300 ms |
-| WebRTC delivery | Daredevil | ~20 ms |
-| **Total** | | **~750–1550 ms** |
-
-Sub-1s is achievable with `tiny` Whisper + a fast/small Sherlock model config.
-
----
-
-## Infra Dependencies
-
-Scarlett consumes existing infra — **no new services needed**.
-
-| Infra | Codename | Used for |
-|-------|----------|---------|
-| LiveKit Server | Daredevil | WebRTC room + media routing |
-| Redis | Sonic | LiveKit distributed room state |
-| NATS | Flash | Scarlett → Sherlock LLM request-reply |
-| MinIO | Tardis | Session recordings (via Scribe) |
-| OTEL Collector | Friday Collector | Metrics + traces |
-
-`service.yaml` depends_on: `realtime`, `messaging`, `cache`
-
-### Profile Addition
-
-```yaml
-# services/profiles.yaml
-reason:
-  services:
-    - ...
-    - voice    # Scarlett added here — too heavy for think
-```
-
----
+Sub-second turns remain achievable with smaller local models and fast Sherlock configurations.
 
 ## Observability
 
-OTEL instrumentation following the same patterns as Sherlock and the spike's `observability.py`.
+Scarlett follows the same OTEL pattern as Sherlock.
 
 ### Metrics
 
-```
-scarlett.sessions.total        counter    — LiveKit sessions started
-scarlett.utterances.total      counter    — VAD-detected speech turns
-scarlett.stt.latency           histogram  — ms, Whisper processing time
-scarlett.llm.latency           histogram  — ms, NATS round-trip to Sherlock
-scarlett.tts.latency           histogram  — ms, Piper synthesis time
-scarlett.pipeline.latency      histogram  — ms, end-to-end per utterance
-scarlett.errors.total          counter    — by stage label (stt/llm/tts/room)
+```text
+scarlett.sessions.total
+scarlett.utterances.total
+scarlett.stt.latency
+scarlett.llm.latency
+scarlett.tts.latency
+scarlett.pipeline.latency
+scarlett.errors.total
 ```
 
 ### Traces
 
-- Span per utterance: `scarlett.utterance` with child spans for STT, LLM, TTS
-- NATS context propagation to Sherlock traces
+- Root span per voice turn
+- Child spans for VAD, STT, Sherlock bridge, and TTS
+- Trace propagation into Sherlock where possible
 
-### Structured Logging
+### Logging
 
-- `structlog` JSON, same event pattern as Sherlock: `_log.info("event_name", event_type="...", field=value)`
-- Service name: `arc-scarlett`
+- Structured JSON logs via `structlog`
+- No transcript bodies or secrets in logs by default
 
----
+## Security and Resilience
+
+- Offline-first providers reduce external dependency and credential exposure.
+- `GET /health` is shallow; `GET /health/deep` probes Daredevil, Flash, and provider readiness.
+- Room failures publish `arc.voice.turn.failed` rather than silently dropping turns.
+- Scarlett must fail gracefully when Sonic or Tardis are unavailable; REST APIs still boot.
+- Container runs non-root and follows the same service conventions as Sherlock.
+
+## Delivery Plan
+
+### Phase 1 — Foundation
+
+- scaffold `services/voice/`
+- define contracts and settings
+- boot FastAPI with health probes
+
+### Phase 2 — REST speech APIs
+
+- implement STT endpoint
+- implement TTS endpoint
+- validate OpenAI-compatible payloads
+
+### Phase 3 — Realtime agent
+
+- start LiveKit worker in lifespan
+- join rooms and run VAD → STT → Sherlock → TTS loop
+- emit session and turn events
+
+### Phase 4 — Hardening
+
+- add CI/release workflows
+- add profile integration
+- add OTEL dashboards, failure tests, and docs updates
+
+## Resolved Decisions
+
+1. **LiveKit stays** — no Janus, mediasoup, or Pipecat abstraction layer.
+2. **Scarlett does not own reasoning** — Sherlock remains the only reasoning engine.
+3. **Public async contract uses Pulsar** — NATS is internal only.
+4. **Default subject is config-driven** — current default `reasoner.request`, future-ready for `arc.reasoner.request`.
+5. **Voice belongs in `reason` profile** — model footprint is too heavy for `think`.
 
 ## API Contracts
 
 Two spec files (same convention as `services/reasoner/contracts/`):
 
 **`contracts/openapi.yaml`**
+
 - `POST /v1/audio/transcriptions`
 - `POST /v1/audio/speech`
 - `GET /health`
 - `GET /health/deep`
 
 **`contracts/asyncapi.yaml`**
+
 - NATS publish: `reasoner.request` — utterance forwarded to Sherlock (Reasoner)
 - NATS publish: `scarlett.session.started` — room join event
 - NATS publish: `scarlett.session.ended` — room leave / timeout event
@@ -337,36 +293,36 @@ Two spec files (same convention as `services/reasoner/contracts/`):
 
 ## Stories (SpecKit Backlog)
 
-| # | Story | Notes |
-|---|-------|-------|
-| S-1 | Scaffold `services/voice/` structure | service.yaml, Dockerfile, pyproject.toml, config.py |
-| S-2 | Migrate voice pipeline from spike | Update livekit-agents deps, align NATS subjects |
-| S-3 | STT REST endpoint | `POST /v1/audio/transcriptions`, Whisper adapter, OpenAI-compatible |
-| S-4 | TTS REST endpoint | `POST /v1/audio/speech`, Piper adapter, OpenAI-compatible |
-| S-5 | Voice pipeline wiring | VAD → STT → Sherlock NATS → TTS → room audio |
-| S-6 | OTEL instrumentation | Per-stage latency histograms, session counters |
-| S-7 | API contracts | `contracts/openapi.yaml` + `contracts/asyncapi.yaml` |
-| S-8 | Profile integration | Add `voice` to `reason` profile in `services/profiles.yaml` |
-| S-9 | CI/CD | `voice-images.yml` + `voice-release.yml` (follow `realtime-images.yml` pattern) |
-| S-10 | Health probes | Shallow + deep health endpoints |
+| #    | Story                                | Notes                                                                           |
+| ---- | ------------------------------------ | ------------------------------------------------------------------------------- |
+| S-1  | Scaffold `services/voice/` structure | service.yaml, Dockerfile, pyproject.toml, config.py                             |
+| S-2  | Migrate voice pipeline from spike    | Update livekit-agents deps, align NATS subjects                                 |
+| S-3  | STT REST endpoint                    | `POST /v1/audio/transcriptions`, Whisper adapter, OpenAI-compatible             |
+| S-4  | TTS REST endpoint                    | `POST /v1/audio/speech`, Piper adapter, OpenAI-compatible                       |
+| S-5  | Voice pipeline wiring                | VAD → STT → Sherlock NATS → TTS → room audio                                    |
+| S-6  | OTEL instrumentation                 | Per-stage latency histograms, session counters                                  |
+| S-7  | API contracts                        | `contracts/openapi.yaml` + `contracts/asyncapi.yaml`                            |
+| S-8  | Profile integration                  | Add `voice` to `reason` profile in `services/profiles.yaml`                     |
+| S-9  | CI/CD                                | `voice-images.yml` + `voice-release.yml` (follow `realtime-images.yml` pattern) |
+| S-10 | Health probes                        | Shallow + deep health endpoints                                                 |
 
 ---
 
 ## Reference Files
 
-| What | Path |
-|------|------|
-| Voice agent pipeline (spike) | `platform-spike/services/arc-scarlett-voice/src/agent.py` |
-| NATS LLM plugin (spike) | `platform-spike/services/arc-scarlett-voice/src/plugins/sherlock_llm.py` |
-| Piper TTS plugin (spike) | `platform-spike/services/arc-scarlett-voice/src/plugins/piper_tts.py` |
-| OTEL setup (spike) | `platform-spike/services/arc-scarlett-voice/src/observability.py` |
-| Sherlock config pattern | `services/reasoner/src/sherlock/config.py` |
-| Sherlock router pattern | `services/reasoner/src/sherlock/files_router.py` |
-| Sherlock interfaces | `services/reasoner/src/sherlock/interfaces.py` |
-| Sherlock main/lifespan | `services/reasoner/src/sherlock/main.py` |
-| Sherlock OpenAPI contract | `services/reasoner/contracts/openapi.yaml` |
-| Sherlock AsyncAPI contract | `services/reasoner/contracts/asyncapi.yaml` |
-| LiveKit server config | `services/realtime/livekit.yaml` |
-| Realtime service definition | `services/realtime/service.yaml` |
-| Service profiles | `services/profiles.yaml` |
-| Existing voice spec | `specs/007-voice-stack/spec.md` |
+| What                         | Path                                                                     |
+| ---------------------------- | ------------------------------------------------------------------------ |
+| Voice agent pipeline (spike) | `platform-spike/services/arc-scarlett-voice/src/agent.py`                |
+| NATS LLM plugin (spike)      | `platform-spike/services/arc-scarlett-voice/src/plugins/sherlock_llm.py` |
+| Piper TTS plugin (spike)     | `platform-spike/services/arc-scarlett-voice/src/plugins/piper_tts.py`    |
+| OTEL setup (spike)           | `platform-spike/services/arc-scarlett-voice/src/observability.py`        |
+| Sherlock config pattern      | `services/reasoner/src/sherlock/config.py`                               |
+| Sherlock router pattern      | `services/reasoner/src/sherlock/files_router.py`                         |
+| Sherlock interfaces          | `services/reasoner/src/sherlock/interfaces.py`                           |
+| Sherlock main/lifespan       | `services/reasoner/src/sherlock/main.py`                                 |
+| Sherlock OpenAPI contract    | `services/reasoner/contracts/openapi.yaml`                               |
+| Sherlock AsyncAPI contract   | `services/reasoner/contracts/asyncapi.yaml`                              |
+| LiveKit server config        | `services/realtime/livekit.yaml`                                         |
+| Realtime service definition  | `services/realtime/service.yaml`                                         |
+| Service profiles             | `services/profiles.yaml`                                                 |
+| Existing voice spec          | `specs/007-voice-stack/spec.md`                                          |
