@@ -165,7 +165,7 @@ graph TD
 
 ## Phase 5: Contracts & Infrastructure
 
-- [ ] [TASK-060] [P] [VOICE] [P1] Write `contracts/openapi.yaml` and `contracts/asyncapi.yaml`
+- [x] [TASK-060] [P] [VOICE] [P1] Write `contracts/openapi.yaml` and `contracts/asyncapi.yaml`
   - Dependencies: TASK-050
   - Module: `services/voice/contracts/`
   - Acceptance: `openapi.yaml` documents `/v1/audio/transcriptions`, `/v1/audio/speech`, `/health`, `/health/deep` with request/response schemas matching `models_v1.py`; `asyncapi.yaml` documents `arc.voice.session.started`, `arc.voice.session.ended`, `arc.voice.turn.completed`, `arc.voice.turn.failed` topics with full payload schemas; both files are valid YAML; schemas match what the service actually produces
