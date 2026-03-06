@@ -6,7 +6,6 @@ The piper subprocess is patched so the actual binary is never executed.
 from __future__ import annotations
 
 import subprocess
-from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -18,7 +17,6 @@ from voice.providers.tts_piper import (
     _calc_duration,
     _raw_to_wav,
 )
-
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -110,23 +108,29 @@ class TestRunPiper:
         adapter = PiperTTSAdapter()
         exc = subprocess.CalledProcessError(1, "piper", stderr=b"model not found")
 
-        with patch("subprocess.run", side_effect=exc):
-            with pytest.raises(TTSError, match="piper exited with code 1"):
-                adapter._run_piper("Hello", "bad-voice")
+        with (
+            patch("subprocess.run", side_effect=exc),
+            pytest.raises(TTSError, match="piper exited with code 1"),
+        ):
+            adapter._run_piper("Hello", "bad-voice")
 
     def test_raises_tts_error_when_binary_not_found(self) -> None:
         adapter = PiperTTSAdapter(piper_bin="/nonexistent/piper")
 
-        with patch("subprocess.run", side_effect=FileNotFoundError("not found")):
-            with pytest.raises(TTSError, match="piper binary not found"):
-                adapter._run_piper("Hello", "some-voice")
+        with (
+            patch("subprocess.run", side_effect=FileNotFoundError("not found")),
+            pytest.raises(TTSError, match="piper binary not found"),
+        ):
+            adapter._run_piper("Hello", "some-voice")
 
     def test_raises_tts_error_on_generic_exception(self) -> None:
         adapter = PiperTTSAdapter()
 
-        with patch("subprocess.run", side_effect=OSError("permission denied")):
-            with pytest.raises(TTSError, match="permission denied"):
-                adapter._run_piper("Hello", "voice")
+        with (
+            patch("subprocess.run", side_effect=OSError("permission denied")),
+            pytest.raises(TTSError, match="permission denied"),
+        ):
+            adapter._run_piper("Hello", "voice")
 
 
 # ─── PiperTTSAdapter.synthesize (async) ──────────────────────────────────────
@@ -159,9 +163,8 @@ class TestPiperTTSAdapterSynthesize:
         adapter = PiperTTSAdapter()
         exc = subprocess.CalledProcessError(1, "piper", stderr=b"error")
 
-        with patch("subprocess.run", side_effect=exc):
-            with pytest.raises(TTSError):
-                await adapter.synthesize("Hello", "voice")
+        with patch("subprocess.run", side_effect=exc), pytest.raises(TTSError):
+            await adapter.synthesize("Hello", "voice")
 
     async def test_synthesize_passes_voice_to_piper(self) -> None:
         raw_audio = _make_fake_raw_audio(100)
@@ -183,7 +186,7 @@ class TestPiperTTSAdapterSynthesize:
             await adapter.synthesize("Héllo wörld", "voice")
 
         call_kwargs = mock_run.call_args[1]
-        assert call_kwargs["input"] == "Héllo wörld".encode("utf-8")
+        assert call_kwargs["input"] == "Héllo wörld".encode()
 
     async def test_synthesize_empty_text_produces_result(self) -> None:
         # Empty text is allowed at the adapter level; validation happens in router

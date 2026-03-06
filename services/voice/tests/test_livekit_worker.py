@@ -2,17 +2,14 @@
 
 from __future__ import annotations
 
-import asyncio
-import struct
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
 import pytest
 
 from voice.config import Settings
-from voice.interfaces import BridgeError, STTError, TTSError, TranscriptResult, SynthesisResult
+from voice.interfaces import BridgeError, STTError, SynthesisResult, TranscriptResult, TTSError
 from voice.livekit_worker import VoiceAgentWorker, _compute_rms
-
 
 # ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -145,7 +142,9 @@ async def test_handle_turn_success_publishes_completed_event(
     )
 
     mock_stt.transcribe.assert_awaited_once_with(audio, language=None)
-    mock_bridge.reason.assert_awaited_once_with("Hello world", "session-1", mock_bridge.reason.call_args.args[2])
+    mock_bridge.reason.assert_awaited_once_with(
+        "Hello world", "session-1", mock_bridge.reason.call_args.args[2]
+    )
     mock_tts.synthesize.assert_awaited_once()
     mock_publisher.publish_turn_completed.assert_called_once()
     mock_publisher.publish_turn_failed.assert_not_called()

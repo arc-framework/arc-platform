@@ -12,7 +12,6 @@ import voice.nats_bridge as bridge_module
 from voice.interfaces import BridgeError, LLMBridgePort
 from voice.nats_bridge import NATSBridge
 
-
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 
@@ -234,9 +233,6 @@ async def test_timeout_ms_converted_to_seconds() -> None:
 
     call_args = mock_nc.request.call_args
     # timeout may be positional or keyword
-    if len(call_args.args) > 2:
-        timeout = call_args.args[2]
-    else:
-        timeout = call_args.kwargs["timeout"]
+    timeout = call_args.args[2] if len(call_args.args) > 2 else call_args.kwargs["timeout"]
 
     assert timeout == pytest.approx(10.0)

@@ -18,7 +18,6 @@ from voice.models_v1 import (
     VoiceTurnFailedEvent,
 )
 
-
 # ─── REST I/O Models ──────────────────────────────────────────────────────────
 
 
@@ -127,7 +126,10 @@ class TestHealthCheckResponse:
     def test_ok_response(self) -> None:
         resp = HealthCheckResponse(
             status="ok",
-            checks={"nats": HealthCheckDetail(status="ok"), "livekit": HealthCheckDetail(status="ok")},
+            checks={
+                "nats": HealthCheckDetail(status="ok"),
+                "livekit": HealthCheckDetail(status="ok"),
+            },
         )
         assert resp.status == "ok"
         assert len(resp.checks) == 2
@@ -137,7 +139,9 @@ class TestHealthCheckResponse:
             status="degraded",
             checks={
                 "nats": HealthCheckDetail(status="ok", latency_ms=5.0),
-                "livekit": HealthCheckDetail(status="degraded", reason="high latency", latency_ms=800.0),
+                "livekit": HealthCheckDetail(
+                    status="degraded", reason="high latency", latency_ms=800.0
+                ),
             },
         )
         assert resp.status == "degraded"
