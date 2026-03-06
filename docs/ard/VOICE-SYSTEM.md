@@ -162,19 +162,21 @@ services/voice/
 ├── contracts/
 │   ├── openapi.yaml
 │   └── asyncapi.yaml
-└── src/scarlett/
+└── src/voice/
     ├── main.py
     ├── config.py
-    ├── interfaces.py
-    ├── health.py
+    ├── interfaces.py         # STTPort, TTSPort, LLMBridgePort protocols
+    ├── health_router.py
     ├── stt_router.py
     ├── tts_router.py
-    ├── agent.py
-    ├── observability.py
-    └── plugins/
-        ├── whisper_stt.py
-        ├── piper_tts.py
-        └── sherlock_bridge.py
+    ├── livekit_worker.py     # VoiceAgentWorker — VAD → STT → bridge → TTS
+    ├── nats_bridge.py        # NATSBridge — LLMBridgePort over NATS
+    ├── pulsar_events.py      # VoiceEventPublisher — durable Pulsar events
+    ├── models_v1.py          # Event schemas (VoiceSession*, VoiceTurn*)
+    ├── observability.py      # OTEL tracer + 4 latency histograms
+    └── providers/
+        ├── stt_whisper.py    # WhisperSTTAdapter (faster-whisper)
+        └── tts_piper.py      # PiperTTSAdapter
 ```
 
 ## Dependencies
@@ -197,7 +199,7 @@ services/voice/
 | Area                                         | Status      |
 | -------------------------------------------- | ----------- |
 | Realtime transport (`services/realtime/`)    | Implemented |
-| Voice production service (`services/voice/`) | Planned     |
-| Voice REST contracts                         | Planned     |
-| Realtime voice agent                         | Planned     |
-| Durable voice event contracts                | Planned     |
+| Voice production service (`services/voice/`) | Implemented |
+| Voice REST contracts                         | Implemented |
+| Realtime voice agent                         | Implemented |
+| Durable voice event contracts                | Implemented |

@@ -175,7 +175,7 @@ graph TD
   - Module: `services/voice/docker-compose.yml`, `services/profiles.yaml`
   - Acceptance: `services/voice/docker-compose.yml` defines `arc-voice-agent` service with correct env vars, port (8803), `depends_on` (arc-realtime, arc-messaging, arc-streaming, arc-friday-collector, arc-cache), and health check; `services/profiles.yaml` `reason` profile includes `voice`; `ultra-instinct` profile still resolves correctly (uses `*`); `make dev PROFILE=reason` starts without compose errors
 
-- [ ] [TASK-080] [P] [VOICE] [P2] Add CI workflow for voice image build, test, and release
+- [x] [TASK-080] [P] [VOICE] [P2] Add CI workflow for voice image build, test, and release
   - Dependencies: TASK-001
   - Module: `.github/workflows/voice.yml`
   - Acceptance: Workflow triggers on push to `services/voice/**` and tags `voice/v*`; runs `uv run ruff check src/`, `uv run mypy src/`, `uv run python -m pytest tests/ -q`; builds and pushes `ghcr.io/arc-framework/arc-voice-agent` on tag; mirrors structure of existing service workflows

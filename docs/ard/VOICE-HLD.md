@@ -97,10 +97,10 @@ Scarlett sends text turns to Sherlock over Flash. Default subject is `reasoner.r
 ```text
 Codename : Scarlett
 Role     : voice
-Port     : 8084
-Image    : ghcr.io/arc-framework/arc-scarlett:latest
+Port     : 8803
+Image    : ghcr.io/arc-framework/arc-voice-agent:latest
 Tech     : FastAPI + livekit-agents + faster-whisper + piper
-Profile  : reason
+Profile  : reason, ultra-instinct
 ```
 
 ### Directory layout
@@ -113,19 +113,21 @@ services/voice/
 ├── contracts/
 │   ├── openapi.yaml
 │   └── asyncapi.yaml
-└── src/scarlett/
+└── src/voice/
     ├── main.py
     ├── config.py
     ├── interfaces.py
-    ├── health.py
+    ├── health_router.py
     ├── stt_router.py
     ├── tts_router.py
-    ├── agent.py
+    ├── livekit_worker.py
+    ├── nats_bridge.py
+    ├── pulsar_events.py
+    ├── models_v1.py
     ├── observability.py
-    └── plugins/
-        ├── whisper_stt.py
-        ├── piper_tts.py
-        └── sherlock_bridge.py
+    └── providers/
+        ├── stt_whisper.py
+        └── tts_piper.py
 ```
 
 ## Request Flows
@@ -174,19 +176,19 @@ sequenceDiagram
 
 ### Offline-first defaults
 
-| Capability | Default                 | Why                                          |
-| ---------- | ----------------------- | -------------------------------------------- |
-| STT        | `faster-whisper`        | Local, multilingual, no external account     |
-| TTS        | `piper`                 | Local, CPU-friendly, deterministic packaging |
-| VAD        | Silero / LiveKit-native | Fast speech boundary detection               |
+| Capability | Default          | Why                                                   |
+| ---------- | ---------------- | ----------------------------------------------------- |
+| STT        | `faster-whisper` | Local, multilingual, no external account              |
+| TTS        | `piper`          | Local, CPU-friendly, deterministic packaging          |
+| VAD        | Energy-based RMS | RMS threshold (default 500.0), no external dependency |
 
 ### Cloud-ready adapters
 
-All providers stay behind protocol interfaces:
+All providers stay behind protocol interfaces (hexagonal architecture):
 
-- `STTPort`
-- `TTSPort`
-- `LLMBridgePort`
+- `STTPort` — implemented by `WhisperSTTAdapter`
+- `TTSPort` — implemented by `PiperTTSAdapter`
+- `LLMBridgePort` — implemented by `NATSBridge`
 
 This allows Deepgram, Azure, ElevenLabs, or OpenAI to be enabled without changing routing, health, or contracts.
 
@@ -209,14 +211,13 @@ Scarlett follows the same OTEL pattern as Sherlock.
 
 ### Metrics
 
+Four OTEL histograms exported under the `arc-voice` meter:
+
 ```text
-scarlett.sessions.total
-scarlett.utterances.total
-scarlett.stt.latency
-scarlett.llm.latency
-scarlett.tts.latency
-scarlett.pipeline.latency
-scarlett.errors.total
+voice.stt.latency_seconds     STT transcription latency per request
+voice.tts.latency_seconds     TTS synthesis latency per request
+voice.bridge.latency_seconds  NATS bridge round-trip latency (Scarlett → Sherlock → Scarlett)
+voice.turn.latency_seconds    Full turn pipeline latency (VAD end → audio out)
 ```
 
 ### Traces
@@ -285,9 +286,14 @@ Two spec files (same convention as `services/reasoner/contracts/`):
 
 **`contracts/asyncapi.yaml`**
 
-- NATS publish: `reasoner.request` — utterance forwarded to Sherlock (Reasoner)
-- NATS publish: `scarlett.session.started` — room join event
-- NATS publish: `scarlett.session.ended` — room leave / timeout event
+Pulsar topics (durable, public):
+- `arc.voice.session.started` — room join event
+- `arc.voice.session.ended` — room leave / timeout event
+- `arc.voice.turn.completed` — successful turn with latency and token metadata
+- `arc.voice.turn.failed` — turn failure with error type and context
+
+NATS subjects (internal speed path):
+- `reasoner.request` — utterance forwarded to Sherlock; subject is config-driven
 
 ---
 
