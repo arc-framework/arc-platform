@@ -151,7 +151,7 @@ graph TD
   - Acceptance: `VoiceWorker` connects to LiveKit room as agent; VAD detects end-of-speech; calls `STTPort.transcribe()`; calls `LLMBridgePort.reason()`; calls `TTSPort.synthesize()`; publishes audio frames back to room; publishes `VoiceTurnCompletedEvent` on success and `VoiceTurnFailedEvent` on any exception; OTEL turn span wraps full pipeline; room failure publishes failure event and logs without crashing worker loop; tests mock LiveKit room and all ports; `ruff` + `mypy` clean
   - **WARN-3** Exception → `error_type` mapping for `VoiceTurnFailedEvent`: `STTError` → `'stt_error'`; `BridgeError` with timeout → `'bridge_timeout'`; `BridgeError` with reasoner error → `'bridge_error'`; `TTSError` → `'tts_error'`; any other unhandled exception → `'unknown'`; `error_type` must be a `Literal` field in `VoiceTurnFailedEvent` (defined in TASK-023)
 
-- [ ] [TASK-041] [P] [VOICE] [P2] Load and latency validation — confirm end-to-end turn budget (750–1550 ms) under concurrent rooms
+- [x] [TASK-041] [P] [VOICE] [P2] Load and latency validation — confirm end-to-end turn budget (750–1550 ms) under concurrent rooms
   - Dependencies: TASK-040
   - Module: `tests/test_latency.py` (or `tests/test_load.py`)
   - Acceptance: Pytest benchmark or `locust` script simulates ≥3 concurrent room turns with mocked STT/TTS/NATS providers returning fixed-latency stubs; asserts p95 end-to-end turn latency ≤ 1550 ms across 50 iterations; OTEL histogram `voice.turn.latency_seconds` records each measurement; results logged to stdout for CI visibility; test is skipped (`pytest.mark.skip`) in short mode via `--no-load-test` flag
@@ -184,12 +184,12 @@ graph TD
 
 ## Phase 6: Polish
 
-- [ ] [TASK-900] [P] [DOCS] [P1] Create `docs/ard/VOICE-SYSTEM.md`, update `docs/ard/VOICE-HLD.md`, and link to framework doc
+- [x] [TASK-900] [P] [DOCS] [P1] Create `docs/ard/VOICE-SYSTEM.md`, update `docs/ard/VOICE-HLD.md`, and link to framework doc
   - Dependencies: TASK-060
   - Module: `docs/ard/`
   - Acceptance: `VOICE-SYSTEM.md` documents service codename (Scarlett), ports (8803), dependencies, event topics, local provider defaults, and latency budget; `VOICE-HLD.md` updated with architecture diagram reflecting final implementation; `docs/ard/ARC-ENTERPRISE-AI-FRAMEWORK.md` links to voice system doc; all internal links resolve; no broken references
 
-- [ ] [TASK-999] [REVIEW] [P1] Reviewer agent verification — validate all tasks complete, quality gates met
+- [x] [TASK-999] [REVIEW] [P1] Reviewer agent verification — validate all tasks complete, quality gates met
   - Dependencies: ALL
   - Module: all (`services/voice/`, `services/profiles.yaml`, `.github/workflows/`, `docs/ard/`)
   - Acceptance:

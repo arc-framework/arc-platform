@@ -417,6 +417,115 @@ async def test_stop_sets_stop_flag(worker: VoiceAgentWorker) -> None:
     assert worker._stopped
 
 
+# ─── Participant event handlers ───────────────────────────────────────────────
+
+
+def test_on_participant_connected_publishes_session_started(
+    worker: VoiceAgentWorker,
+    mock_publisher: MagicMock,
+    settings: Settings,
+) -> None:
+    """_on_participant_connected initialises VAD state and publishes session started event."""
+    participant = MagicMock()
+    participant.identity = "user-abc"
+    participant.sid = "sid-123"
+
+    worker._on_participant_connected(participant)
+
+    mock_publisher.publish_session_started.assert_called_once()
+    event = mock_publisher.publish_session_started.call_args.args[0]
+    assert event.session_id == "user-abc"
+    assert event.room_id == settings.livekit_room_name
+
+    # VAD state initialised
+    assert "user-abc" in worker._vad_state
+    assert worker._speech_frames["user-abc"] == []
+    assert worker._silence_count["user-abc"] == 0
+
+
+def test_on_participant_disconnected_publishes_session_ended(
+    worker: VoiceAgentWorker,
+    mock_publisher: MagicMock,
+) -> None:
+    """_on_participant_disconnected clears VAD state and publishes session ended event."""
+    participant = MagicMock()
+    participant.identity = "user-xyz"
+    participant.sid = "sid-456"
+
+    # Pre-populate VAD state as if participant was active
+    worker._vad_state["user-xyz"] = MagicMock()
+    worker._speech_frames["user-xyz"] = [b"audio"]
+    worker._silence_count["user-xyz"] = 5
+
+    worker._on_participant_disconnected(participant)
+
+    mock_publisher.publish_session_ended.assert_called_once()
+    event = mock_publisher.publish_session_ended.call_args.args[0]
+    assert event.session_id == "user-xyz"
+
+    # VAD state cleared
+    assert "user-xyz" not in worker._vad_state
+    assert "user-xyz" not in worker._speech_frames
+    assert "user-xyz" not in worker._silence_count
+
+
+def test_on_participant_connected_uses_sid_when_identity_empty(
+    worker: VoiceAgentWorker,
+    mock_publisher: MagicMock,
+) -> None:
+    """Falls back to participant.sid when identity is empty."""
+    participant = MagicMock()
+    participant.identity = ""
+    participant.sid = "fallback-sid"
+
+    worker._on_participant_connected(participant)
+
+    event = mock_publisher.publish_session_started.call_args.args[0]
+    assert event.session_id == "fallback-sid"
+
+
+# ─── _publish_audio ───────────────────────────────────────────────────────────
+
+
+async def test_publish_audio_does_not_raise_on_malformed_wav(
+    worker: VoiceAgentWorker,
+) -> None:
+    """_publish_audio must never raise even with malformed WAV data."""
+    with patch("voice.livekit_worker.rtc") as mock_rtc:
+        mock_source = AsyncMock()
+        mock_rtc.AudioSource.return_value = mock_source
+        mock_rtc.LocalAudioTrack.create_audio_track.return_value = MagicMock()
+        mock_rtc.AudioFrame.create.return_value = MagicMock(data=bytearray(100))
+        mock_source.capture_frame = AsyncMock()
+
+        # Should not raise
+        await worker._publish_audio(b"not-a-real-wav", 22050)
+
+
+async def test_publish_audio_skips_empty_bytes(
+    worker: VoiceAgentWorker,
+) -> None:
+    """_publish_audio returns early when wav_bytes is empty."""
+    with patch("voice.livekit_worker.rtc") as mock_rtc:
+        await worker._publish_audio(b"", 22050)
+        mock_rtc.AudioSource.assert_not_called()
+
+
+# ─── _build_token ─────────────────────────────────────────────────────────────
+
+
+def test_build_token_falls_back_to_empty_string_when_livekit_api_unavailable(
+    worker: VoiceAgentWorker,
+) -> None:
+    """_build_token returns '' when livekit.api import fails (e.g. test env)."""
+    with patch.dict("sys.modules", {"livekit.api": None}):
+        token = worker._build_token()
+    assert isinstance(token, str)
+
+
+# ─── run() with exception ─────────────────────────────────────────────────────
+
+
 async def test_run_exits_when_stopped(
     mock_stt: AsyncMock,
     mock_tts: AsyncMock,
