@@ -156,7 +156,7 @@ graph TD
   - Module: `tests/test_latency.py` (or `tests/test_load.py`)
   - Acceptance: Pytest benchmark or `locust` script simulates ≥3 concurrent room turns with mocked STT/TTS/NATS providers returning fixed-latency stubs; asserts p95 end-to-end turn latency ≤ 1550 ms across 50 iterations; OTEL histogram `voice.turn.latency_seconds` records each measurement; results logged to stdout for CI visibility; test is skipped (`pytest.mark.skip`) in short mode via `--no-load-test` flag
 
-- [ ] [TASK-050] [VOICE] [P1] Implement `src/voice/main.py` — FastAPI app factory, lifespan, router registration, worker launch
+- [x] [TASK-050] [VOICE] [P1] Implement `src/voice/main.py` — FastAPI app factory, lifespan, router registration, worker launch
   - Dependencies: TASK-040, TASK-022
   - Module: `services/voice/src/voice/main.py`
   - Acceptance: `create_app()` factory wires routers (STT, TTS, health); lifespan starts NATS connection, Pulsar client, OTEL, then launches `VoiceWorker` as `asyncio.create_task()`; lifespan teardown cancels `VoiceWorker` task with **5 s timeout** (log error and continue if exceeded), then closes Pulsar client, then closes NATS connection (shutdown order: worker → Pulsar → NATS); integration test: pytest fixture boots the full app with `httpx.AsyncClient(app=create_app(), ..., lifespan='on')` and confirms clean startup + teardown without deadlock; `uvicorn main:create_app()` starts without error with only local env vars set; `ruff` + `mypy` clean
@@ -170,7 +170,7 @@ graph TD
   - Module: `services/voice/contracts/`
   - Acceptance: `openapi.yaml` documents `/v1/audio/transcriptions`, `/v1/audio/speech`, `/health`, `/health/deep` with request/response schemas matching `models_v1.py`; `asyncapi.yaml` documents `arc.voice.session.started`, `arc.voice.session.ended`, `arc.voice.turn.completed`, `arc.voice.turn.failed` topics with full payload schemas; both files are valid YAML; schemas match what the service actually produces
 
-- [ ] [TASK-070] [P] [VOICE] [P1] Add docker-compose.yml, update `services/profiles.yaml` to add `voice` to `reason` profile
+- [x] [TASK-070] [P] [VOICE] [P1] Add docker-compose.yml, update `services/profiles.yaml` to add `voice` to `reason` profile
   - Dependencies: TASK-001
   - Module: `services/voice/docker-compose.yml`, `services/profiles.yaml`
   - Acceptance: `services/voice/docker-compose.yml` defines `arc-voice-agent` service with correct env vars, port (8803), `depends_on` (arc-realtime, arc-messaging, arc-streaming, arc-friday-collector, arc-cache), and health check; `services/profiles.yaml` `reason` profile includes `voice`; `ultra-instinct` profile still resolves correctly (uses `*`); `make dev PROFILE=reason` starts without compose errors
