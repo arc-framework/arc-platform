@@ -1,6 +1,6 @@
 name: Reasoner Release
 
-# Full release pipeline for arc-sherlock.
+# Full release pipeline for arc-reasoner.
 # Triggered by pushing a version tag: git tag reasoner/v1.2.3 && git push --tags
 #
 # Tag format:  reasoner/v{MAJOR}.{MINOR}.{PATCH}  (e.g. reasoner/v0.1.0)
@@ -83,10 +83,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+          cache: 'pip'
+          cache-dependency-path: |
+            services/reasoner/pyproject.toml
+            services/reasoner/uv.lock
       - name: Install dependencies
         run: cd services/reasoner && pip install ".[dev]"
       - name: Run mypy
-        run: cd services/reasoner && mypy src/sherlock/
+        run: cd services/reasoner && mypy src/reasoner/
 
   # ── Test (parallel with prepare + lint + typecheck) ───────────────────────
   test:
@@ -97,6 +101,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+          cache: 'pip'
+          cache-dependency-path: |
+            services/reasoner/pyproject.toml
+            services/reasoner/uv.lock
       - name: Install dependencies
         run: cd services/reasoner && pip install ".[dev]"
       - name: Run tests
@@ -104,11 +112,11 @@ jobs:
 
   # ── Build + push (after prepare + lint + typecheck + test all pass) ───────
   build:
-    name: Build arc-sherlock
+    name: Build arc-reasoner
     needs: [prepare, lint, typecheck, test]
     uses: ./.github/workflows/_reusable-build.yml
     with:
-      service-name: arc-sherlock
+      service-name: arc-reasoner
       service-path: services/reasoner
       dockerfile: Dockerfile
       platforms: linux/amd64,linux/arm64
@@ -130,7 +138,7 @@ jobs:
       severity: CRITICAL,HIGH
       fail-on-severity: CRITICAL
       block-on-failure: true
-      service-name: arc-sherlock-release
+      service-name: arc-reasoner-release
       create-issues: true
     secrets: inherit
 
@@ -149,7 +157,7 @@ jobs:
           PREFIX="ghcr.io/arc-framework"
 
           cat > release-notes.md << EOF
-          ## arc-sherlock — ${VERSION}
+          ## arc-reasoner — ${VERSION}
 
           LangGraph reasoning engine with pgvector memory, NATS/Pulsar transports,
           and a provider-agnostic OpenAI-compatible chat API on port 8083.
@@ -158,12 +166,12 @@ jobs:
 
           | Image | Versioned Tag | Also Tagged |
           |-------|--------------|-------------|
-          | \`arc-sherlock\` | \`${IMAGE_TAG}\` | \`latest\`, \`sha-*\` |
+          | \`arc-reasoner\` | \`${IMAGE_TAG}\` | \`latest\`, \`sha-*\` |
 
           ### Pull
 
           \`\`\`bash
-          docker pull ${PREFIX}/arc-sherlock:${IMAGE_TAG}
+          docker pull ${PREFIX}/arc-reasoner:${IMAGE_TAG}
           \`\`\`
 
           ### API
