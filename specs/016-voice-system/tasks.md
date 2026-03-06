@@ -131,7 +131,7 @@ graph TD
 
 ### Parallel Batch B — Messaging
 
-- [ ] [TASK-030] [P] [VOICE] [P1] Implement NATS bridge (`LLMBridgePort` impl) for reasoner request-reply
+- [x] [TASK-030] [P] [VOICE] [P1] Implement NATS bridge (`LLMBridgePort` impl) for reasoner request-reply
   - Dependencies: TASK-011, TASK-012, TASK-023
   - Module: `services/voice/src/voice/nats_bridge.py`, `tests/test_nats_bridge.py`
   - Acceptance: `NATSBridge` implements `LLMBridgePort`; publishes to `VOICE_BRIDGE_NATS_SUBJECT` with `request_id` correlation; awaits `arc.reasoner.result` reply with configurable timeout; on timeout or `arc.reasoner.error` raises typed `BridgeError`; OTEL span wraps the round-trip; `_nc` connection shared via lifespan; tests use mock NATS server or `AsyncMock`; `ruff` + `mypy` clean
