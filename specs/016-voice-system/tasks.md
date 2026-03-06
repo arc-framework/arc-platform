@@ -124,7 +124,7 @@ graph TD
   - Module: `services/voice/src/voice/providers/tts_piper.py`, `services/voice/src/voice/tts_router.py`, `tests/test_tts_router.py`, `tests/test_providers/test_tts_piper.py`
   - Acceptance: `PiperTTSAdapter` implements `TTSPort`; `POST /v1/audio/speech` accepts JSON `{input, voice, model}`; returns `StreamingResponse` with `Content-Type: audio/wav`, `X-Duration-Seconds`, `X-Sample-Rate` headers; empty `input` returns 400; provider failure returns typed 502; OTEL span wraps synthesis; tests pass with mocked piper binary; `ruff` + `mypy` clean
 
-- [ ] [TASK-022] [P] [VOICE] [P1] Implement `GET /health` and `GET /health/deep` router
+- [x] [TASK-022] [P] [VOICE] [P1] Implement `GET /health` and `GET /health/deep` router
   - Dependencies: TASK-010, TASK-012
   - Module: `services/voice/src/voice/health_router.py`, `tests/test_health_router.py`
   - Acceptance: `GET /health` returns `{status: "ok"}` 200 when process is alive (no deps checked); `GET /health/deep` checks `arc-realtime` connectivity (LiveKit API ping) and `arc-messaging` connectivity (NATS ping); returns `{status: "degraded", checks: {...}}` with 200 when deps down (not 500); individual check failures report reason; tests cover all combinations; `ruff` + `mypy` clean
