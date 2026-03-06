@@ -65,13 +65,12 @@ class TestCalcDuration:
         # 22050 samples * 2 bytes/sample = 44100 data bytes + 44 header = 44144
         raw = _make_fake_raw_audio(PIPER_SAMPLE_RATE)
         wav = _raw_to_wav(raw, PIPER_SAMPLE_RATE)
-        duration = _calc_duration(wav, PIPER_SAMPLE_RATE)
+        duration = _calc_duration(wav)
         assert abs(duration - 1.0) < 0.01
 
     def test_zero_data_returns_zero(self) -> None:
-        # 44 bytes WAV header, 0 data bytes
         wav = _raw_to_wav(b"", PIPER_SAMPLE_RATE)
-        duration = _calc_duration(wav, PIPER_SAMPLE_RATE)
+        duration = _calc_duration(wav)
         assert duration == pytest.approx(0.0, abs=0.001)
 
 
