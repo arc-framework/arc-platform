@@ -285,6 +285,6 @@ TASK-030 (event models) must complete before T031/T032/T033 can start. T031 must
 | Foundational (Phase 1) | 5 + 1 gate | 6 | 4 |
 | Implementation (Phase 2) | 3 + 1 gate | 4 | 3 |
 | Implementation (Phase 3) | 6 + 1 gate | 7 | 3 |
-| Integration | 3 | 0 | 3 |
+| Integration | 3 | 3 | 3 |
 | Polish | 2 | 2 | 1 |
-| **Total** | **22** | **0** | **13** |
+| **Total** | **23** | **23** | **13** |
