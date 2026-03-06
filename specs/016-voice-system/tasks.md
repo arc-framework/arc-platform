@@ -96,12 +96,12 @@ graph TD
   - Module: `services/voice/src/voice/interfaces.py`
   - Acceptance: `STTPort.transcribe(audio_bytes, language) -> TranscriptResult` defined; `TTSPort.synthesize(text, voice) -> SynthesisResult` defined; `LLMBridgePort.reason(transcript, session_id, correlation_id) -> str` defined; `TranscriptResult` has `text`, `language`, `duration_secs`; `SynthesisResult` has `wav_bytes`, `sample_rate`, `duration_secs`; `mypy` passes on the file
 
-- [ ] [TASK-012] [P] [VOICE] [P1] Implement `src/voice/observability.py` — OTEL tracer, meter, and per-stage histograms
+- [x] [TASK-012] [P] [VOICE] [P1] Implement `src/voice/observability.py` — OTEL tracer, meter, and per-stage histograms
   - Dependencies: TASK-001
   - Module: `services/voice/src/voice/observability.py`
   - Acceptance: `setup_telemetry(settings)` configures OTEL exporter and returns tracer + meter; histograms defined: `voice.stt.latency_seconds`, `voice.tts.latency_seconds`, `voice.bridge.latency_seconds`, `voice.turn.latency_seconds`; `get_tracer()` / `get_meter()` accessors exported; works with no OTEL endpoint (no-op exporter fallback)
 
-- [ ] [TASK-023] [P] [VOICE] [P1] Implement `src/voice/models_v1.py` — Pydantic I/O models and event schemas
+- [x] [TASK-023] [P] [VOICE] [P1] Implement `src/voice/models_v1.py` — Pydantic I/O models and event schemas
   - Dependencies: TASK-001
   - Module: `services/voice/src/voice/models_v1.py`
   - Acceptance: `TranscriptionRequest`, `TranscriptionResponse` (OpenAI-compatible: `text`, `language`, `duration`); `SpeechRequest` (`model`, `input`, `voice`, `response_format`); `VoiceSessionStartedEvent`, `VoiceSessionEndedEvent`, `VoiceTurnCompletedEvent`, `VoiceTurnFailedEvent` with `session_id`, `room_id`, `correlation_id`, `timestamp`, latency/duration fields; no secrets or audio payload fields; `mypy` passes
