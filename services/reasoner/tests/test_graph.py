@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from reasoner.graph import build_graph, invoke_graph
+from reasoner.graph import build_graph, invoke_graph, stream_graph
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -78,6 +78,34 @@ async def test_error_handler_triggered_on_llm_failure(
 
     with pytest.raises(RuntimeError):
         await invoke_graph(mock_graph, mock_memory, "u1", "hello")
+
+
+# ─── stream_graph ─────────────────────────────────────────────────────────────
+
+
+async def test_stream_graph_pre_fetches_context(
+    mock_memory: AsyncMock, mock_graph: MagicMock
+) -> None:
+    """stream_graph() calls memory.search() before starting the LLM stream and injects
+    the result into the initial state so the retrieve_context node is bypassed."""
+    mock_memory.search = AsyncMock(return_value=["pre-fetched ctx"])
+
+    captured_states: list[dict] = []
+
+    async def _mock_astream_events(state: dict, version: str):  # type: ignore[override]
+        captured_states.append(dict(state))
+        return
+        yield  # make it an async generator
+
+    mock_graph.astream_events = _mock_astream_events
+
+    chunks = []
+    async for chunk in stream_graph(mock_graph, mock_memory, "u1", "hello"):
+        chunks.append(chunk)
+
+    mock_memory.search.assert_called_once_with("u1", "hello")
+    assert len(captured_states) == 1
+    assert captured_states[0]["context"] == ["pre-fetched ctx"]
 
 
 # ─── Fixtures local to this module ────────────────────────────────────────────

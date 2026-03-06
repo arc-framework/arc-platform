@@ -34,6 +34,9 @@ def _make_settings() -> MagicMock:
     s.pulsar_request_topic = "persistent://public/default/reasoner-requests"
     s.pulsar_result_topic = "persistent://public/default/reasoner-results"
     s.pulsar_subscription = "reasoner-workers"
+    s.pulsar_event_received_topic = "persistent://arc/default/reasoner-request-received"
+    s.pulsar_event_completed_topic = "persistent://arc/default/reasoner-inference-completed"
+    s.llm_model = "test-model"
     return s
 
 
@@ -338,3 +341,172 @@ def test_pulsar_durable_request_payload_matches_asyncapi_schema() -> None:
     schema = _load_asyncapi_schema("DurableReasoningRequestPayload")
     payload = {"request_id": "req-abc-123", "user_id": "u1", "text": "analyze this"}
     jsonschema.validate(instance=payload, schema=schema)
+
+
+# ─── T031: arc.reasoner.request.received on arrival ──────────────────────────
+
+
+async def test_request_received_published_on_arrival() -> None:
+    """RequestReceivedEvent is published (fire-and-forget) before invoke_graph runs."""
+    handler = _make_handler()
+
+    mock_consumer = MagicMock()
+    mock_consumer.acknowledge = MagicMock()
+    mock_consumer.negative_acknowledge = MagicMock()
+    mock_producer = MagicMock()
+    mock_producer.send = MagicMock()
+    mock_event_producer = MagicMock()
+    mock_event_producer.send = MagicMock()
+
+    handler._consumer = mock_consumer
+    handler._producer = mock_producer
+    handler._event_received_producer = mock_event_producer
+
+    msg = _make_pulsar_msg(b'{"request_id": "req1", "user_id": "u1", "text": "hi"}')
+
+    published_events: list[bytes] = []
+
+    async def _recording_event_publish(producer: Any, payload: bytes) -> None:
+        published_events.append(payload)
+
+    with (
+        patch(
+            "reasoner.pulsar_handler.invoke_graph",
+            new_callable=AsyncMock,
+            return_value="response",
+        ),
+        patch("asyncio.to_thread", side_effect=_fake_to_thread),
+        patch.object(handler, "_publish_event", side_effect=_recording_event_publish),
+    ):
+        await handler._process(msg)
+        # Drain the event loop so fire-and-forget create_task() coroutines complete
+        await asyncio.sleep(0)
+
+    # At least one event was published — the first must be request.received
+    assert len(published_events) >= 1
+    received_event = json.loads(published_events[0].decode())
+    assert received_event["request_id"] == "req1"
+    assert received_event["user_id"] == "u1"
+    assert "event_id" in received_event
+    assert "timestamp_ms" in received_event
+
+
+# ─── T033: arc.reasoner.inference.completed with token usage ─────────────────
+
+
+async def test_inference_completed_has_token_usage() -> None:
+    """InferenceCompletedEvent published after inference has non-zero token usage fields."""
+    from unittest.mock import patch as _patch
+
+    handler = _make_handler()
+
+    mock_consumer = MagicMock()
+    mock_consumer.acknowledge = MagicMock()
+    mock_consumer.negative_acknowledge = MagicMock()
+    mock_producer = MagicMock()
+    mock_producer.send = MagicMock()
+
+    handler._consumer = mock_consumer
+    handler._producer = mock_producer
+
+    msg = _make_pulsar_msg(b'{"request_id": "req2", "user_id": "u2", "text": "analyze this"}')
+
+    published_events: list[bytes] = []
+
+    async def _recording_event_publish(producer: Any, payload: bytes) -> None:
+        published_events.append(payload)
+
+    with (
+        _patch(
+            "reasoner.pulsar_handler.invoke_graph",
+            new_callable=AsyncMock,
+            return_value="the detailed analysis result",
+        ),
+        _patch("asyncio.to_thread", side_effect=_fake_to_thread),
+        _patch.object(handler, "_publish_event", side_effect=_recording_event_publish),
+    ):
+        await handler._process(msg)
+        # Drain the event loop so fire-and-forget create_task() coroutines complete
+        await asyncio.sleep(0)
+
+    # Find the inference.completed event (last published event)
+    assert len(published_events) >= 2, "Expected request.received + inference.completed events"
+    completed_event = json.loads(published_events[-1].decode())
+
+    assert completed_event["request_id"] == "req2"
+    assert completed_event["user_id"] == "u2"
+    assert completed_event["model"] == "test-model"
+    assert "event_id" in completed_event
+
+    usage = completed_event["usage"]
+    assert usage["input_tokens"] > 0, "input_tokens must be non-zero"
+    assert usage["output_tokens"] > 0, "output_tokens must be non-zero"
+    assert usage["total_tokens"] > 0, "total_tokens must be non-zero"
+
+
+# ─── _publish_event() coverage ────────────────────────────────────────────────
+
+
+async def test_publish_event_sends_to_producer() -> None:
+    """_publish_event() calls producer.send via asyncio.to_thread when producer is not None."""
+    handler = _make_handler()
+    mock_producer = MagicMock()
+    mock_producer.send = MagicMock()
+
+    payload = b'{"test": "data"}'
+
+    with patch("asyncio.to_thread", side_effect=_fake_to_thread):
+        await handler._publish_event(mock_producer, payload)
+
+    mock_producer.send.assert_called_once_with(payload)
+
+
+async def test_publish_event_skips_none_producer() -> None:
+    """_publish_event() does nothing when producer is None."""
+    handler = _make_handler()
+
+    with patch("asyncio.to_thread", side_effect=_fake_to_thread):
+        # Must not raise
+        await handler._publish_event(None, b"payload")
+
+
+async def test_publish_event_swallows_exceptions() -> None:
+    """_publish_event() never raises — exceptions from producer.send are swallowed."""
+    handler = _make_handler()
+    mock_producer = MagicMock()
+    mock_producer.send = MagicMock(side_effect=RuntimeError("pulsar down"))
+
+    with patch("asyncio.to_thread", side_effect=_fake_to_thread):
+        # Must not raise
+        await handler._publish_event(mock_producer, b"payload")
+
+
+# ─── close() ──────────────────────────────────────────────────────────────────
+
+
+async def test_close_cancels_task_and_closes_client() -> None:
+    """close() cancels the background task and closes the Pulsar client."""
+    handler = _make_handler()
+    mock_client = MagicMock()
+    mock_client.close = MagicMock()
+
+    # Create a real task that can be cancelled
+    async def _never_returns() -> None:
+        await asyncio.sleep(9999)
+
+    task = asyncio.create_task(_never_returns())
+    handler._task = task
+    handler._client = mock_client
+
+    with patch("asyncio.to_thread", side_effect=_fake_to_thread):
+        await handler.close()
+
+    assert task.cancelled()
+    mock_client.close.assert_called_once()
+
+
+async def test_close_with_no_task_or_client() -> None:
+    """close() succeeds gracefully when task and client are both None."""
+    handler = _make_handler()
+    # _task and _client default to None — should not raise
+    await handler.close()

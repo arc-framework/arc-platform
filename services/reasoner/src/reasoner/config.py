@@ -93,6 +93,59 @@ class Settings(BaseSettings):
     )
     nats_v1_enabled: bool = Field(True, alias="SHERLOCK_NATS_V1_ENABLED")
 
+    # NATS arc.* subjects (Phase 1 — token streaming)
+    arc_nats_request_subject: str = Field(
+        "arc.reasoner.request", alias="SHERLOCK_ARC_NATS_REQUEST_SUBJECT"
+    )
+    arc_nats_stream_prefix: str = Field(
+        "arc.reasoner.stream", alias="SHERLOCK_ARC_NATS_STREAM_PREFIX"
+    )
+    arc_nats_result_subject: str = Field(
+        "arc.reasoner.result", alias="SHERLOCK_ARC_NATS_RESULT_SUBJECT"
+    )
+    arc_nats_error_subject: str = Field(
+        "arc.reasoner.error", alias="SHERLOCK_ARC_NATS_ERROR_SUBJECT"
+    )
+    arc_nats_ingest_request_subject: str = Field(
+        "arc.ingest.request", alias="SHERLOCK_ARC_NATS_INGEST_REQUEST_SUBJECT"
+    )
+    arc_nats_ingest_progress_prefix: str = Field(
+        "arc.ingest.progress", alias="SHERLOCK_ARC_NATS_INGEST_PROGRESS_PREFIX"
+    )
+
+    # Redis (Sonic — context cache, Phase 2)
+    sonic_url: str = Field("redis://arc-cache:6379", alias="SHERLOCK_SONIC_URL")
+    context_cache_ttl: int = Field(300, alias="SHERLOCK_CONTEXT_CACHE_TTL")
+
+    # Guardrail feature flag + subjects (Phase 3 — RoboCop pre/post checks, disabled by default)
+    guard_enabled: bool = Field(False, alias="SHERLOCK_GUARD_ENABLED")
+    arc_nats_guard_rejected_subject: str = Field(
+        "arc.reasoner.guard.rejected", alias="SHERLOCK_ARC_NATS_GUARD_REJECTED_SUBJECT"
+    )
+    arc_nats_guard_intercepted_subject: str = Field(
+        "arc.reasoner.guard.intercepted", alias="SHERLOCK_ARC_NATS_GUARD_INTERCEPTED_SUBJECT"
+    )
+
+    # NATS → Pulsar fallback durable queue + DLQ (Phase 3, FR-12/FR-14)
+    nats_ttft_timeout: float = Field(0.5, alias="SHERLOCK_NATS_TTFT_TIMEOUT")
+    nats_max_retries: int = Field(3, alias="SHERLOCK_NATS_MAX_RETRIES")
+    arc_nats_durable_subject: str = Field(
+        "arc.reasoner.requests.durable", alias="SHERLOCK_ARC_NATS_DURABLE_SUBJECT"
+    )
+    arc_nats_dlq_subject: str = Field(
+        "arc.reasoner.requests.failed", alias="SHERLOCK_ARC_NATS_DLQ_SUBJECT"
+    )
+
+    # Pulsar event topics (Phase 3 — request.received + inference.completed)
+    pulsar_event_received_topic: str = Field(
+        "persistent://arc/default/reasoner-request-received",
+        alias="SHERLOCK_PULSAR_EVENT_RECEIVED_TOPIC",
+    )
+    pulsar_event_completed_topic: str = Field(
+        "persistent://arc/default/reasoner-inference-completed",
+        alias="SHERLOCK_PULSAR_EVENT_COMPLETED_TOPIC",
+    )
+
     # AsyncAPI UI
     async_docs_enabled: bool = Field(True, alias="SHERLOCK_ASYNC_DOCS_ENABLED")
 

@@ -132,6 +132,35 @@ class ResponsesResponse(BaseModel):
     instructions: str | None = None
 
 
+# ─── Nervous System Event Models (Phase 3) ────────────────────────────────────
+
+
+class TokenUsage(BaseModel):
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+
+
+class RequestReceivedEvent(BaseModel):
+    event_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    request_id: str
+    user_id: str
+    subject: str  # NATS subject or Pulsar topic that received the request
+    timestamp_ms: int = Field(default_factory=lambda: int(time.time() * 1000))
+
+
+class InferenceCompletedEvent(BaseModel):
+    event_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    request_id: str
+    user_id: str
+    model: str
+    ttft_ms: int = 0
+    latency_ms: int
+    guard_status: Literal["pass", "rejected", "intercepted"] = "pass"
+    cache_hit: bool = False
+    usage: TokenUsage = Field(default_factory=TokenUsage)
+
+
 # ─── GET /v1/models ───────────────────────────────────────────────────────────
 
 

@@ -1,6 +1,6 @@
 name: Reasoner Image Pipeline
 
-# CI/push orchestrator for the arc-sherlock image.
+# CI/push orchestrator for the arc-reasoner image.
 # Builds on every reasoner-related push; pushes to GHCR on main branch merges.
 # For a full versioned release, push a tag: git tag reasoner/v1.2.3 && git push --tags
 #
@@ -105,11 +105,13 @@ jobs:
         with:
           python-version: '3.13'
           cache: 'pip'
-          cache-dependency-path: services/reasoner/pyproject.toml
+          cache-dependency-path: |
+            services/reasoner/pyproject.toml
+            services/reasoner/uv.lock
       - name: Install dependencies
         run: cd services/reasoner && pip install ".[dev]"
       - name: Run mypy
-        run: cd services/reasoner && mypy src/sherlock/
+        run: cd services/reasoner && mypy src/reasoner/
 
   # ── Test (parallel) — only when Python source changed ────────────────────
   test:
@@ -123,7 +125,9 @@ jobs:
         with:
           python-version: '3.13'
           cache: 'pip'
-          cache-dependency-path: services/reasoner/pyproject.toml
+          cache-dependency-path: |
+            services/reasoner/pyproject.toml
+            services/reasoner/uv.lock
       - name: Install dependencies
         run: cd services/reasoner && pip install ".[dev]"
       - name: Run tests
@@ -137,12 +141,12 @@ jobs:
 
   # ── Build (parallel) — any reasoner file change ───────────────────────────
   build:
-    name: Build arc-sherlock
+    name: Build arc-reasoner
     needs: changes
     if: needs.changes.outputs.any == 'true'
     uses: ./.github/workflows/_reusable-build.yml
     with:
-      service-name: arc-sherlock
+      service-name: arc-reasoner
       service-path: services/reasoner
       dockerfile: Dockerfile
       platforms: linux/amd64
@@ -163,6 +167,6 @@ jobs:
       severity: CRITICAL,HIGH,MEDIUM
       fail-on-severity: CRITICAL
       block-on-failure: false
-      service-name: arc-sherlock
+      service-name: arc-reasoner
       create-issues: false
     secrets: inherit

@@ -271,6 +271,12 @@ class SherlockMetrics:
             description="Number of context chunks retrieved per request",
         )
 
+        self.ttft_seconds = meter.create_histogram(
+            "reasoner.ttft.seconds",
+            description="Time to first token: request receive → first token emitted (seconds)",
+            unit="s",
+        )
+
         # v1 Chat API instruments
         self.v1_requests_total = meter.create_counter(
             "reasoner.v1.requests.total",

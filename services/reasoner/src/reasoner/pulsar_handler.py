@@ -8,6 +8,7 @@ import pulsar
 
 from reasoner.config import Settings
 from reasoner.graph import GraphErrorResponse, invoke_graph
+from reasoner.models_v1 import InferenceCompletedEvent, RequestReceivedEvent, TokenUsage
 from reasoner.observability import SherlockMetrics
 
 
@@ -43,6 +44,8 @@ class PulsarHandler:
         self._client: pulsar.Client | None = None
         self._consumer: Any | None = None
         self._producer: Any | None = None
+        self._event_received_producer: Any | None = None
+        self._event_completed_producer: Any | None = None
         self._task: asyncio.Task[None] | None = None
 
     def _connect(self) -> None:
@@ -55,6 +58,12 @@ class PulsarHandler:
         )
         self._producer = self._client.create_producer(
             self._settings.pulsar_result_topic
+        )
+        self._event_received_producer = self._client.create_producer(
+            self._settings.pulsar_event_received_topic
+        )
+        self._event_completed_producer = self._client.create_producer(
+            self._settings.pulsar_event_completed_topic
         )
 
     async def start(self) -> None:
@@ -76,8 +85,19 @@ class PulsarHandler:
                 # Timeout or transient error — continue loop
                 continue
 
+    async def _publish_event(self, producer: Any, payload_bytes: bytes) -> None:
+        """Fire-and-forget Pulsar event publish (best-effort, never raises)."""
+        try:
+            if producer is not None:
+                await asyncio.to_thread(producer.send, payload_bytes)
+        except Exception:
+            pass
+
     async def _process(self, msg: Any) -> None:
         """Process a single Pulsar message.
+
+        Publishes RequestReceivedEvent before processing (TASK-031) and
+        InferenceCompletedEvent after successful inference (TASK-033).
 
         Path A — GraphErrorResponse (error_handler exhausted retries):
             invoke_graph raises GraphErrorResponse; _process publishes
@@ -97,11 +117,22 @@ class PulsarHandler:
             user_id: str = payload["user_id"]
             text: str = payload["text"]
 
+            # T031: Publish request.received before any processing (fire-and-forget)
+            asyncio.create_task(
+                self._publish_event(
+                    self._event_received_producer,
+                    RequestReceivedEvent(
+                        request_id=request_id,
+                        user_id=user_id,
+                        subject=self._settings.pulsar_request_topic,
+                    ).model_dump_json().encode(),
+                )
+            )
+
             try:
                 response = await invoke_graph(self._graph, self._memory, user_id, text)
             except GraphErrorResponse as graph_err:
                 # Path A: graph returned graceful error (error_handler exhausted retries)
-                # Publish error result to reasoner-results and ACK — do NOT redeliver
                 latency_ms = int((time.monotonic() - start) * 1000)
                 error_result: dict[str, Any] = {
                     "request_id": request_id,
@@ -127,6 +158,26 @@ class PulsarHandler:
             )
             await asyncio.to_thread(self._consumer.acknowledge, msg)
             self._metrics.latency.record(latency_ms, {"transport": "pulsar"})
+
+            # T033: Publish inference.completed with token usage (fire-and-forget)
+            input_tokens = max(1, len(text.split()))
+            output_tokens = max(1, len(response.split()))
+            asyncio.create_task(
+                self._publish_event(
+                    self._event_completed_producer,
+                    InferenceCompletedEvent(
+                        request_id=request_id,
+                        user_id=user_id,
+                        model=self._settings.llm_model,
+                        latency_ms=latency_ms,
+                        usage=TokenUsage(
+                            input_tokens=input_tokens,
+                            output_tokens=output_tokens,
+                            total_tokens=input_tokens + output_tokens,
+                        ),
+                    ).model_dump_json().encode(),
+                )
+            )
 
         except Exception:
             # Path B: unhandled exception — nack so Pulsar can redeliver
