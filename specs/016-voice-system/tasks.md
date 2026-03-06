@@ -114,7 +114,7 @@ graph TD
 
 ### Parallel Batch A — REST Handlers
 
-- [ ] [TASK-020] [P] [VOICE] [P1] Implement faster-whisper STT adapter and `POST /v1/audio/transcriptions` router
+- [x] [TASK-020] [P] [VOICE] [P1] Implement faster-whisper STT adapter and `POST /v1/audio/transcriptions` router
   - Dependencies: TASK-010, TASK-011, TASK-012, TASK-023
   - Module: `services/voice/src/voice/providers/stt_whisper.py`, `services/voice/src/voice/stt_router.py`, `tests/test_stt_router.py`, `tests/test_providers/test_stt_whisper.py`
   - Acceptance: `WhisperSTTAdapter` implements `STTPort`; `POST /v1/audio/transcriptions` accepts multipart `file` field; returns JSON `{text, language, duration}`; rejects unsupported MIME types with typed 400; provider failure returns typed 502; OTEL span wraps transcription; tests pass with mocked Whisper model; `ruff` + `mypy` clean

@@ -13,33 +13,27 @@ dependencies = [
     "uvicorn[standard]>=0.30",
     "pydantic>=2.7",
     "pydantic-settings>=2.3",
-
     # LiveKit agent SDK
     "livekit-agents>=0.8",
-
     # Speech-to-Text
     "faster-whisper>=1.0",
-
     # Text-to-Speech (piper Python bindings; binary installed separately in Dockerfile)
     "piper-tts>=1.2",
-
     # Messaging
     "nats-py>=2.9",
     # pulsar-client==3.10.0: cp313 wheels verified for linux/amd64 and linux/arm64
     "pulsar-client==3.10.0",
-
     # Cache (Redis — session state)
     "redis>=5.0",
-
     # Observability
     "opentelemetry-api>=1.27",
     "opentelemetry-sdk>=1.27",
     "opentelemetry-instrumentation-fastapi>=0.48b0",
     "opentelemetry-exporter-otlp-proto-grpc>=1.27",
     "structlog>=24.4",
-
     # Resilience
     "tenacity>=9.0",
+    "python-multipart>=0.0.22",
 ]
 
 [project.optional-dependencies]
