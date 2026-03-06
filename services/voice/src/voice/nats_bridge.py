@@ -142,6 +142,7 @@ class NATSBridge:
 
             if "error" in data:
                 span.set_attribute("voice.bridge.outcome", "reasoner_error")
+                histogram.record(elapsed, {"outcome": "bridge_error"})
                 _log.warning(
                     "nats_bridge reasoner error",
                     subject=self._subject,

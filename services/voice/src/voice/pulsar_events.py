@@ -89,7 +89,7 @@ class VoiceEventPublisher:
             _log.warning("pulsar_events no producer for topic", topic=topic)
             return
         try:
-            await asyncio.get_event_loop().run_in_executor(None, producer.send, payload)
+            await asyncio.get_running_loop().run_in_executor(None, producer.send, payload)
         except Exception as exc:
             _log.warning("pulsar_events publish failed", topic=topic, error=str(exc))
 
