@@ -1,0 +1,296 @@
+openapi: 3.1.0
+
+info:
+  title: arc-voice-agent
+  version: 0.1.0
+  description: |
+    REST API for the A.R.C. voice service (Scarlett). Provides OpenAI-compatible
+    speech-to-text (Whisper) and text-to-speech (Piper) endpoints, plus liveness
+    and deep dependency health checks.
+
+servers:
+  - url: http://localhost:8803
+    description: Local development
+
+paths:
+  /v1/audio/transcriptions:
+    post:
+      operationId: transcribeAudio
+      summary: Transcribe audio to text
+      description: |
+        Accepts any audio/* MIME type uploaded as multipart/form-data.
+        Returns an OpenAI-compatible transcription response.
+        Rejects non-audio content types with 400.
+        Returns 502 when the Whisper provider is unavailable.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+                - model
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Audio file to transcribe. Must have an audio/* content type.
+                model:
+                  type: string
+                  default: whisper-1
+                  description: Whisper model identifier.
+                language:
+                  type: string
+                  nullable: true
+                  description: Optional BCP-47 language hint (e.g. "en", "fr").
+      responses:
+        "200":
+          description: Transcription succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranscriptionResponse"
+        "400":
+          description: Invalid input — non-audio MIME type or malformed request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error_type: invalid_input
+                message: "Unsupported content type: 'text/plain'. Expected audio/*."
+                correlation_id: "550e8400-e29b-41d4-a716-446655440000"
+        "502":
+          description: Whisper provider unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error_type: provider_unavailable
+                message: "Whisper model failed to load."
+                correlation_id: "550e8400-e29b-41d4-a716-446655440001"
+
+  /v1/audio/speech:
+    post:
+      operationId: synthesizeSpeech
+      summary: Synthesize speech from text
+      description: |
+        Converts input text to a WAV audio stream using Piper TTS.
+        Returns audio/wav binary with X-Duration-Seconds and X-Sample-Rate headers.
+        Returns 400 when input is empty; 502 when Piper is unavailable.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SpeechRequest"
+      responses:
+        "200":
+          description: Speech synthesis succeeded. Body is a WAV audio stream.
+          headers:
+            X-Duration-Seconds:
+              description: Duration of the synthesized audio in seconds.
+              schema:
+                type: string
+                example: "2.34"
+            X-Sample-Rate:
+              description: Sample rate of the WAV audio in Hz.
+              schema:
+                type: string
+                example: "22050"
+          content:
+            audio/wav:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: Invalid input — empty text field.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error_type: invalid_input
+                message: "'input' must not be empty."
+                correlation_id: "550e8400-e29b-41d4-a716-446655440002"
+        "502":
+          description: Piper TTS provider unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error_type: provider_unavailable
+                message: "Piper process exited unexpectedly."
+                correlation_id: "550e8400-e29b-41d4-a716-446655440003"
+
+  /health:
+    get:
+      operationId: healthShallow
+      summary: Liveness check
+      description: |
+        Returns 200 immediately when the process is alive.
+        No dependency checks — always fast. Used by container orchestrators.
+      responses:
+        "200":
+          description: Process is alive.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - status
+                properties:
+                  status:
+                    type: string
+                    enum:
+                      - ok
+              example:
+                status: ok
+
+  /health/deep:
+    get:
+      operationId: healthDeep
+      summary: Deep dependency health check
+      description: |
+        Checks connectivity to arc-realtime (LiveKit) and arc-messaging (NATS).
+        Always returns HTTP 200. The status field indicates overall health:
+        "ok" only when all checks pass, "degraded" when any dependency is unreachable.
+      responses:
+        "200":
+          description: Health check completed (may be degraded — inspect body).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthCheckResponse"
+              example:
+                status: ok
+                checks:
+                  arc-realtime:
+                    status: ok
+                    latency_ms: 4.2
+                  arc-messaging:
+                    status: degraded
+                    reason: "Connection refused"
+                    latency_ms: 2001.0
+
+components:
+  schemas:
+    TranscriptionResponse:
+      type: object
+      description: OpenAI-compatible transcription response.
+      required:
+        - text
+        - language
+        - duration
+      properties:
+        text:
+          type: string
+          description: Transcribed text.
+        language:
+          type: string
+          description: Detected or provided language code (BCP-47).
+        duration:
+          type: number
+          format: float
+          description: Duration of the audio in seconds.
+      example:
+        text: "Hello, how can I help you today?"
+        language: en
+        duration: 2.1
+
+    SpeechRequest:
+      type: object
+      description: Request body for POST /v1/audio/speech.
+      required:
+        - model
+        - input
+      properties:
+        model:
+          type: string
+          description: TTS model identifier (passed through; currently ignored by Piper adapter).
+        input:
+          type: string
+          description: Text to synthesize. Must not be empty.
+        voice:
+          type: string
+          default: default
+          description: Voice identifier. Passed to Piper as the voice selection.
+        response_format:
+          type: string
+          default: wav
+          description: Output format. Currently only "wav" is supported.
+      example:
+        model: piper-1
+        input: "Hello, this is Scarlett."
+        voice: default
+        response_format: wav
+
+    ErrorResponse:
+      type: object
+      description: Typed error response returned by STT and TTS endpoints on 400/502.
+      required:
+        - error_type
+        - message
+        - correlation_id
+      properties:
+        error_type:
+          type: string
+          enum:
+            - unsupported_format
+            - provider_unavailable
+            - invalid_input
+          description: Machine-readable error category.
+        message:
+          type: string
+          description: Human-readable error detail.
+        correlation_id:
+          type: string
+          format: uuid
+          description: Request trace ID for log correlation.
+
+    HealthCheckDetail:
+      type: object
+      description: Per-dependency health check result.
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - ok
+            - degraded
+            - unhealthy
+        reason:
+          type: string
+          nullable: true
+          description: Failure reason when status is not "ok".
+        latency_ms:
+          type: number
+          format: float
+          nullable: true
+          description: Round-trip latency of the health probe in milliseconds.
+
+    HealthCheckResponse:
+      type: object
+      description: Response body for GET /health/deep.
+      required:
+        - status
+        - checks
+      properties:
+        status:
+          type: string
+          enum:
+            - ok
+            - degraded
+            - unhealthy
+          description: Aggregate status across all dependency checks.
+        checks:
+          type: object
+          description: >
+            Map of dependency name to its HealthCheckDetail.
+            Known keys: arc-realtime, arc-messaging.
+          additionalProperties:
+            $ref: "#/components/schemas/HealthCheckDetail"

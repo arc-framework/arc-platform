@@ -1,0 +1,239 @@
+asyncapi: 2.6.0
+
+info:
+  title: arc-voice-agent events
+  version: 0.1.0
+  description: |
+    Pulsar event contract for the A.R.C. voice service (Scarlett).
+    All events are published fire-and-forget from the voice agent pipeline.
+    Events share a common base of session_id, room_id, correlation_id, and timestamp.
+
+servers:
+  streaming:
+    url: pulsar://arc-streaming:6650
+    protocol: pulsar
+    description: Apache Pulsar broker (Dr. Strange) — persistent topic namespace arc/voice
+
+channels:
+  arc.voice.session.started:
+    description: |
+      Published when a LiveKit participant joins a monitored room and a voice
+      session is established. Downstream consumers use this to open billing
+      windows and initialize session state.
+    x-retention: 7d
+    publish:
+      operationId: onVoiceSessionStarted
+      summary: Voice session started
+      message:
+        $ref: "#/components/messages/VoiceSessionStarted"
+
+  arc.voice.session.ended:
+    description: |
+      Published when a voice session concludes (participant leaves or is
+      disconnected). Consumers use this to close billing windows and flush
+      session state.
+    x-retention: 7d
+    publish:
+      operationId: onVoiceSessionEnded
+      summary: Voice session ended
+      message:
+        $ref: "#/components/messages/VoiceSessionEnded"
+
+  arc.voice.turn.completed:
+    description: |
+      Published after a full STT → bridge → TTS pipeline succeeds for one
+      conversational turn. Carries per-stage latency metrics and a preview of
+      the LLM response (first 200 chars — never raw audio bytes).
+    x-retention: 7d
+    publish:
+      operationId: onVoiceTurnCompleted
+      summary: Voice turn completed successfully
+      message:
+        $ref: "#/components/messages/VoiceTurnCompleted"
+
+  arc.voice.turn.failed:
+    description: |
+      Published when any stage of the STT → bridge → TTS pipeline errors.
+      The error_type field identifies which stage failed. Consumers may use
+      this for alerting, retry orchestration, or DLQ routing.
+    x-retention: 7d
+    publish:
+      operationId: onVoiceTurnFailed
+      summary: Voice turn failed
+      message:
+        $ref: "#/components/messages/VoiceTurnFailed"
+
+components:
+  messages:
+    VoiceSessionStarted:
+      name: VoiceSessionStartedEvent
+      title: Voice Session Started
+      contentType: application/json
+      payload:
+        $ref: "#/components/schemas/VoiceSessionStartedEvent"
+
+    VoiceSessionEnded:
+      name: VoiceSessionEndedEvent
+      title: Voice Session Ended
+      contentType: application/json
+      payload:
+        $ref: "#/components/schemas/VoiceSessionEndedEvent"
+
+    VoiceTurnCompleted:
+      name: VoiceTurnCompletedEvent
+      title: Voice Turn Completed
+      contentType: application/json
+      payload:
+        $ref: "#/components/schemas/VoiceTurnCompletedEvent"
+
+    VoiceTurnFailed:
+      name: VoiceTurnFailedEvent
+      title: Voice Turn Failed
+      contentType: application/json
+      payload:
+        $ref: "#/components/schemas/VoiceTurnFailedEvent"
+
+  schemas:
+    VoiceEventBase:
+      type: object
+      description: Shared fields present on all arc.voice.* events.
+      required:
+        - session_id
+        - room_id
+        - correlation_id
+        - timestamp
+      properties:
+        session_id:
+          type: string
+          description: Unique identifier for the voice session (LiveKit participant SID).
+        room_id:
+          type: string
+          description: LiveKit room name the session belongs to.
+        correlation_id:
+          type: string
+          format: uuid
+          description: Trace ID propagated across all pipeline stages for log correlation.
+        timestamp:
+          type: string
+          format: date-time
+          description: ISO-8601 UTC timestamp at event creation.
+
+    VoiceSessionStartedEvent:
+      allOf:
+        - $ref: "#/components/schemas/VoiceEventBase"
+        - type: object
+          description: Published to arc.voice.session.started when a participant joins a room.
+          required:
+            - participant_identity
+          properties:
+            participant_identity:
+              type: string
+              description: LiveKit participant identity string (typically the user ID).
+      example:
+        session_id: "PA_abc123"
+        room_id: "room-001"
+        correlation_id: "550e8400-e29b-41d4-a716-446655440010"
+        timestamp: "2026-03-07T12:00:00Z"
+        participant_identity: "user-42"
+
+    VoiceSessionEndedEvent:
+      allOf:
+        - $ref: "#/components/schemas/VoiceEventBase"
+        - type: object
+          description: Published to arc.voice.session.ended when a session concludes.
+          required:
+            - duration_secs
+          properties:
+            duration_secs:
+              type: number
+              format: float
+              description: Total wall-clock duration of the session in seconds.
+      example:
+        session_id: "PA_abc123"
+        room_id: "room-001"
+        correlation_id: "550e8400-e29b-41d4-a716-446655440011"
+        timestamp: "2026-03-07T12:05:42Z"
+        duration_secs: 342.7
+
+    VoiceTurnCompletedEvent:
+      allOf:
+        - $ref: "#/components/schemas/VoiceEventBase"
+        - type: object
+          description: |
+            Published to arc.voice.turn.completed after a successful STT → bridge → TTS
+            pipeline. Latency fields cover each stage independently.
+          required:
+            - transcript
+            - response_preview
+            - stt_latency_ms
+            - bridge_latency_ms
+            - tts_latency_ms
+            - total_latency_ms
+          properties:
+            transcript:
+              type: string
+              description: Full STT transcript for this turn.
+            response_preview:
+              type: string
+              maxLength: 200
+              description: |
+                First 200 characters of the LLM/bridge response.
+                Never contains raw audio bytes.
+            stt_latency_ms:
+              type: number
+              format: float
+              description: Time spent in the STT stage in milliseconds.
+            bridge_latency_ms:
+              type: number
+              format: float
+              description: Time spent waiting for the reasoner bridge in milliseconds.
+            tts_latency_ms:
+              type: number
+              format: float
+              description: Time spent in the TTS stage in milliseconds.
+            total_latency_ms:
+              type: number
+              format: float
+              description: End-to-end pipeline latency in milliseconds.
+      example:
+        session_id: "PA_abc123"
+        room_id: "room-001"
+        correlation_id: "550e8400-e29b-41d4-a716-446655440012"
+        timestamp: "2026-03-07T12:01:10Z"
+        transcript: "What is the weather like today?"
+        response_preview: "I don't have real-time weather data, but I can help you find out!"
+        stt_latency_ms: 310.5
+        bridge_latency_ms: 850.2
+        tts_latency_ms: 420.1
+        total_latency_ms: 1580.8
+
+    VoiceTurnFailedEvent:
+      allOf:
+        - $ref: "#/components/schemas/VoiceEventBase"
+        - type: object
+          description: |
+            Published to arc.voice.turn.failed when any stage of the pipeline errors.
+            error_type identifies the failing stage.
+          required:
+            - error_type
+            - error_message
+          properties:
+            error_type:
+              type: string
+              enum:
+                - stt_error
+                - bridge_timeout
+                - bridge_error
+                - tts_error
+                - unknown
+              description: Machine-readable identifier of the failing pipeline stage.
+            error_message:
+              type: string
+              description: Human-readable error detail from the failing stage.
+      example:
+        session_id: "PA_abc123"
+        room_id: "room-001"
+        correlation_id: "550e8400-e29b-41d4-a716-446655440013"
+        timestamp: "2026-03-07T12:02:05Z"
+        error_type: bridge_timeout
+        error_message: "Reasoner bridge did not respond within 5000 ms."
