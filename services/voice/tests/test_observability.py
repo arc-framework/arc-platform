@@ -4,7 +4,16 @@ import pytest
 from opentelemetry import metrics, trace
 
 from voice.config import Settings
-from voice.observability import get_meter, get_tracer, setup_telemetry
+import voice.observability as obs_module
+from voice.observability import (
+    get_bridge_histogram,
+    get_meter,
+    get_stt_histogram,
+    get_tracer,
+    get_tts_histogram,
+    get_turn_histogram,
+    setup_telemetry,
+)
 
 
 def _settings(endpoint: str = "") -> Settings:
@@ -135,3 +144,49 @@ class TestModuleAccessors:
     def test_get_meter_matches_setup_return(self) -> None:
         _, meter = setup_telemetry(_settings(endpoint=""))
         assert get_meter() is meter
+
+
+class TestAccessorsBeforeSetup:
+    """get_* accessors must raise RuntimeError when called before setup_telemetry."""
+
+    def setup_method(self) -> None:
+        # Reset singletons to None so tests are isolated
+        obs_module._tracer = None
+        obs_module._meter = None
+        obs_module.stt_latency = None
+        obs_module.tts_latency = None
+        obs_module.bridge_latency = None
+        obs_module.turn_latency = None
+
+    def test_get_tracer_raises_before_setup(self) -> None:
+        with pytest.raises(RuntimeError, match="setup_telemetry"):
+            get_tracer()
+
+    def test_get_meter_raises_before_setup(self) -> None:
+        with pytest.raises(RuntimeError, match="setup_telemetry"):
+            get_meter()
+
+    def test_get_stt_histogram_raises_before_setup(self) -> None:
+        with pytest.raises(RuntimeError, match="setup_telemetry"):
+            get_stt_histogram()
+
+    def test_get_tts_histogram_raises_before_setup(self) -> None:
+        with pytest.raises(RuntimeError, match="setup_telemetry"):
+            get_tts_histogram()
+
+    def test_get_bridge_histogram_raises_before_setup(self) -> None:
+        with pytest.raises(RuntimeError, match="setup_telemetry"):
+            get_bridge_histogram()
+
+    def test_get_turn_histogram_raises_before_setup(self) -> None:
+        with pytest.raises(RuntimeError, match="setup_telemetry"):
+            get_turn_histogram()
+
+
+class TestHistogramAccessors:
+    def test_histogram_accessors_return_non_none_after_setup(self) -> None:
+        setup_telemetry(_settings(endpoint=""))
+        assert get_stt_histogram() is not None
+        assert get_tts_histogram() is not None
+        assert get_bridge_histogram() is not None
+        assert get_turn_histogram() is not None

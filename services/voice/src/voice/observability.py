@@ -120,3 +120,27 @@ def get_meter() -> Meter:
     if _meter is None:
         raise RuntimeError("setup_telemetry() has not been called")
     return _meter
+
+
+def get_stt_histogram() -> Histogram:
+    if stt_latency is None:
+        raise RuntimeError("setup_telemetry() has not been called")
+    return stt_latency
+
+
+def get_tts_histogram() -> Histogram:
+    if tts_latency is None:
+        raise RuntimeError("setup_telemetry() has not been called")
+    return tts_latency
+
+
+def get_bridge_histogram() -> Histogram:
+    if bridge_latency is None:
+        raise RuntimeError("setup_telemetry() has not been called")
+    return bridge_latency
+
+
+def get_turn_histogram() -> Histogram:
+    if turn_latency is None:
+        raise RuntimeError("setup_telemetry() has not been called")
+    return turn_latency
