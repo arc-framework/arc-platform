@@ -18,7 +18,6 @@ from voice.interfaces import SynthesisResult, TTSError, TTSPort
 from voice.providers.tts_piper import PIPER_SAMPLE_RATE
 from voice.tts_router import _get_tts_adapter, router
 
-
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 

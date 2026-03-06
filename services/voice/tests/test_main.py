@@ -11,13 +11,12 @@ sends ASGI lifespan events to the application.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import FastAPI
 from starlette.testclient import TestClient
-
 
 # ─── Shared mock helpers ──────────────────────────────────────────────────────
 
@@ -42,7 +41,7 @@ def _patched_lifespan(
     worker: MagicMock | None = None,
     publisher: MagicMock | None = None,
     mock_telemetry: bool = True,
-) -> Generator[dict[str, MagicMock], None, None]:
+) -> Generator[dict[str, MagicMock]]:
     """Context manager that patches all lifespan deps and yields the mocks."""
     if worker is None:
         worker = _mock_worker()

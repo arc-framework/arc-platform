@@ -3,8 +3,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from opentelemetry import metrics, trace
 
-from voice.config import Settings
 import voice.observability as obs_module
+from voice.config import Settings
 from voice.observability import (
     get_bridge_histogram,
     get_meter,

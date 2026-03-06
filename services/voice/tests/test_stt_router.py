@@ -16,7 +16,6 @@ from fastapi.testclient import TestClient
 from voice.interfaces import STTError, STTPort, TranscriptResult
 from voice.stt_router import _get_stt_adapter, router
 
-
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 

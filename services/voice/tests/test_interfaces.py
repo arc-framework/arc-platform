@@ -2,19 +2,16 @@
 
 from __future__ import annotations
 
-import pytest
-
 from voice.interfaces import (
     BridgeError,
     LLMBridgePort,
     STTError,
     STTPort,
     SynthesisResult,
+    TranscriptResult,
     TTSError,
     TTSPort,
-    TranscriptResult,
 )
-
 
 # ─── Result Dataclasses ────────────────────────────────────────────────────────
 

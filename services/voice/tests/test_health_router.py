@@ -14,7 +14,6 @@ from fastapi.testclient import TestClient
 from voice.health_router import _check_livekit, _check_nats, router
 from voice.models_v1 import HealthCheckDetail
 
-
 # ─── App factory ──────────────────────────────────────────────────────────────
 
 

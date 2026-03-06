@@ -13,7 +13,6 @@ import pytest
 from voice.interfaces import STTError, TranscriptResult
 from voice.providers.stt_whisper import WhisperSTTAdapter
 
-
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 
