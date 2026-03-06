@@ -1,0 +1,166 @@
+name: Voice Image Pipeline
+
+# CI/push orchestrator for the arc-voice-agent image.
+# Builds on every voice-related push; pushes to GHCR on main branch merges.
+# For a full versioned release, push a tag: git tag voice/v1.2.3 && git push --tags
+#
+# Parallelism:
+#   lint, typecheck, test, build all run concurrently — build doesn't wait for quality jobs.
+#   security → build.
+#
+# Change detection (per-job skipping):
+#   python (*.py, pyproject.toml, uv.lock) → lint + typecheck + test
+#   any    (services/voice/**)             → build
+#
+# Triggers:
+#   push (main, 016-voice-system) — detect changes, run relevant jobs, push image on main
+#   pull_request                  — detect changes, run relevant jobs, build only (no push)
+#   workflow_dispatch             — always runs all jobs; mode=release forces push
+
+on:
+  push:
+    branches: [main, 016-voice-system]
+    paths:
+      - 'services/voice/**'
+      - '.github/workflows/voice-images.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'services/voice/**'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'ci = build only, release = build + push'
+        required: false
+        type: choice
+        options: [ci, release]
+        default: ci
+
+env:
+  IMAGE_PREFIX: ghcr.io/arc-framework
+
+jobs:
+
+  # ── Detect file-level changes and resolve push mode ───────────────────────
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      python:     ${{ steps.filter.outputs.python == 'true'  || github.event_name == 'workflow_dispatch' }}
+      any:        ${{ steps.filter.outputs.any == 'true'     || github.event_name == 'workflow_dispatch' }}
+      push-image: ${{ steps.mode.outputs.push-image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect changed paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            python:
+              - 'services/voice/**/*.py'
+              - 'services/voice/pyproject.toml'
+              - 'services/voice/uv.lock'
+            any:
+              - 'services/voice/**'
+
+      - name: Resolve push mode
+        id: mode
+        run: |
+          EVENT="${{ github.event_name }}"
+          REF="${{ github.ref }}"
+          MODE="${{ github.event.inputs.mode || 'ci' }}"
+
+          if [ "$MODE" = "release" ] || ([ "$EVENT" = "push" ] && [ "$REF" = "refs/heads/main" ]); then
+            echo "push-image=true" >> $GITHUB_OUTPUT
+          else
+            echo "push-image=false" >> $GITHUB_OUTPUT
+          fi
+
+  # ── Lint (parallel) — only when Python source changed ────────────────────
+  lint:
+    name: Lint
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install ruff
+        run: pip install "ruff>=0.6"
+      - name: Run ruff
+        run: cd services/voice && ruff check src/
+
+  # ── Type-check (parallel) — only when Python source changed ──────────────
+  typecheck:
+    name: Type Check
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+          cache-dependency-path: |
+            services/voice/pyproject.toml
+            services/voice/uv.lock
+      - name: Install dependencies
+        run: cd services/voice && pip install ".[dev]"
+      - name: Run mypy
+        run: cd services/voice && mypy src/voice/
+
+  # ── Test (parallel) — only when Python source changed ────────────────────
+  test:
+    name: Test
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+          cache-dependency-path: |
+            services/voice/pyproject.toml
+            services/voice/uv.lock
+      - name: Install dependencies
+        run: cd services/voice && pip install ".[dev]"
+      - name: Run tests
+        run: cd services/voice && pytest tests/ -x --tb=short -q
+
+  # ── Build (parallel) — any voice file change ──────────────────────────────
+  build:
+    name: Build arc-voice-agent
+    needs: changes
+    if: needs.changes.outputs.any == 'true'
+    uses: ./.github/workflows/_reusable-build.yml
+    with:
+      service-name: arc-voice-agent
+      service-path: services/voice
+      dockerfile: Dockerfile
+      platforms: linux/amd64
+      push-image: ${{ needs.changes.outputs.push-image == 'true' }}
+      generate-sbom: ${{ needs.changes.outputs.push-image == 'true' }}
+      image-prefix: ghcr.io/arc-framework
+    secrets: inherit
+
+  # ── Security (after build, non-blocking in CI) ────────────────────────────
+  security:
+    name: Security Scan
+    needs: [build]
+    if: always() && !cancelled() && needs.build.result == 'success'
+    uses: ./.github/workflows/_reusable-security.yml
+    with:
+      scan-type: fs
+      scan-target: services/voice
+      severity: CRITICAL,HIGH,MEDIUM
+      fail-on-severity: CRITICAL
+      block-on-failure: false
+      service-name: arc-voice-agent
+      create-issues: false
+    secrets: inherit

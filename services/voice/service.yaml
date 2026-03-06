@@ -1,0 +1,22 @@
+name: arc-voice-agent
+role: voice
+codename: scarlett
+image: ghcr.io/arc-framework/arc-voice-agent:latest
+version: "0.1.0"
+description: "Voice agent — LiveKit room handler, faster-whisper STT, piper TTS, NATS bridge to Sherlock"
+language: python
+port: 8803
+health: http://localhost:8803/health
+timeout: 60
+healthcheck:
+  test: "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8803/health')\""
+  interval: 15s
+  timeout: 5s
+  retries: 5
+  start_period: 30s
+depends_on:
+  - messaging        # arc-messaging (NATS — reasoner request-reply bridge)
+  - streaming        # arc-streaming (Pulsar — voice lifecycle events)
+  - realtime         # arc-realtime (LiveKit — room audio)
+  - friday-collector # arc-friday-collector (OTEL)
+  - cache            # arc-cache (Redis — session state)

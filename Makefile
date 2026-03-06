@@ -38,6 +38,7 @@ include services/flags/flags.mk
 include services/control.mk
 include services/realtime/realtime.mk
 include services/reasoner/reasoner.mk
+include dev-tools/dev-tools.mk
 
 # ─── Generated orchestration metadata (.make/ — gitignored) ───────────────────
 # -include silently skips missing files on first run; generation rules create them.
