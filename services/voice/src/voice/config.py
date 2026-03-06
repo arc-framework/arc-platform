@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     port: int = 8803
     log_level: str = "INFO"
 
+    # NATS server URL for health checks and bridge connectivity
+    nats_url: str = "nats://arc-messaging:4222"
+
     # Piper TTS binary path (installed to /usr/local/bin/piper in Dockerfile)
     piper_bin: str = "/usr/local/bin/piper"
 

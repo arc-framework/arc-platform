@@ -113,11 +113,9 @@ async def health_deep() -> JSONResponse:
     """
     settings = get_settings()
 
-    nats_url = "nats://arc-messaging:4222"
-
     livekit_detail, nats_detail = await asyncio.gather(
         _check_livekit(settings.livekit_url),
-        _check_nats(nats_url),
+        _check_nats(settings.nats_url),
     )
 
     checks: dict[str, HealthCheckDetail] = {
