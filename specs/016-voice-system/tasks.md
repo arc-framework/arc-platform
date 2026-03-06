@@ -77,7 +77,7 @@ graph TD
 
 ## Phase 1: Setup
 
-- [ ] [TASK-001] [VOICE] [P1] Create `services/voice/` directory structure with service.yaml, Dockerfile, pyproject.toml, uv.lock placeholder, and voice.mk
+- [x] [TASK-001] [VOICE] [P1] Create `services/voice/` directory structure with service.yaml, Dockerfile, pyproject.toml, uv.lock placeholder, and voice.mk
   - Dependencies: none
   - Module: `services/voice/`
   - Acceptance: `services/voice/service.yaml` declares `name: arc-voice-agent`, `codename: scarlett`, `port: 8803`, correct `depends_on` (messaging, streaming, realtime, friday-collector, cache); Dockerfile uses non-root user, mirrors reasoner multi-stage build, and installs `piper` binary to `/usr/local/bin/piper`; `pyproject.toml` declares `arc-voice-agent` package with fastapi, uvicorn, pydantic-settings, livekit-agents, faster-whisper, piper-tts, nats-py, `pulsar-client==3.10.0` (matches `services/reasoner/uv.lock` — cp313 wheels verified for all target platforms), opentelemetry-api/sdk deps; `uv lock` runs cleanly
@@ -86,12 +86,12 @@ graph TD
 
 ## Phase 2: Foundational
 
-- [ ] [TASK-010] [P] [VOICE] [P1] Implement `src/voice/config.py` — pydantic-settings `Settings` class with all env vars
+- [x] [TASK-010] [P] [VOICE] [P1] Implement `src/voice/config.py` — pydantic-settings `Settings` class with all env vars
   - Dependencies: TASK-001
   - Module: `services/voice/src/voice/config.py`
   - Acceptance: `Settings` covers `VOICE_STT_PROVIDER`, `VOICE_TTS_PROVIDER`, `VOICE_BRIDGE_NATS_SUBJECT` (default `arc.reasoner.request` — matches Spec 015 final state; see `services/reasoner/src/reasoner/nats_handler.py`), `VOICE_BRIDGE_TIMEOUT_MS` (default `10000`), `VOICE_LIVEKIT_URL`, `VOICE_LIVEKIT_API_KEY`, `VOICE_LIVEKIT_API_SECRET`, `VOICE_OTEL_ENDPOINT`, `VOICE_PORT` (default 8803), `VOICE_LOG_LEVEL`; all vars have sane defaults; `Settings()` instantiates with no env vars set
 
-- [ ] [TASK-011] [P] [VOICE] [P1] Implement `src/voice/interfaces.py` — `STTPort`, `TTSPort`, `LLMBridgePort` Protocol interfaces + result dataclasses
+- [x] [TASK-011] [P] [VOICE] [P1] Implement `src/voice/interfaces.py` — `STTPort`, `TTSPort`, `LLMBridgePort` Protocol interfaces + result dataclasses
   - Dependencies: TASK-001
   - Module: `services/voice/src/voice/interfaces.py`
   - Acceptance: `STTPort.transcribe(audio_bytes, language) -> TranscriptResult` defined; `TTSPort.synthesize(text, voice) -> SynthesisResult` defined; `LLMBridgePort.reason(transcript, session_id, correlation_id) -> str` defined; `TranscriptResult` has `text`, `language`, `duration_secs`; `SynthesisResult` has `wav_bytes`, `sample_rate`, `duration_secs`; `mypy` passes on the file
