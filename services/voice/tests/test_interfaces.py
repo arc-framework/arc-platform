@@ -48,17 +48,12 @@ def test_tts_error_is_exception() -> None:
     assert str(err) == "synthesis failed"
 
 
-def test_bridge_error_is_timeout_true() -> None:
-    err = BridgeError("timed out", is_timeout=True, error_type="bridge_timeout")
+def test_bridge_error_explicit_override() -> None:
+    # error_type override must win over the is_timeout derivation
+    err = BridgeError("upstream error", is_timeout=True, error_type="custom_override")
     assert err.is_timeout is True
-    assert err.error_type == "bridge_timeout"
+    assert err.error_type == "custom_override"
     assert isinstance(err, Exception)
-
-
-def test_bridge_error_is_timeout_false() -> None:
-    err = BridgeError("reasoner error", is_timeout=False, error_type="bridge_error")
-    assert err.is_timeout is False
-    assert err.error_type == "bridge_error"
 
 
 def test_bridge_error_default_error_type_timeout() -> None:
