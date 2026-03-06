@@ -30,15 +30,11 @@ def _raw_to_wav(raw_audio: bytes, sample_rate: int) -> bytes:
     return buf.getvalue()
 
 
-def _calc_duration(wav_bytes: bytes, sample_rate: int) -> float:
-    """Estimate audio duration from WAV byte length.
-
-    Uses the data section size rather than the full WAV payload so the WAV
-    header overhead is excluded from the calculation.
-    """
-    # WAV header is 44 bytes for a standard PCM file.
-    data_bytes = max(0, len(wav_bytes) - 44)
-    return data_bytes / (sample_rate * _BYTES_PER_SAMPLE)
+def _calc_duration(wav_bytes: bytes) -> float:
+    """Return audio duration by reading frame count and rate from the WAV container."""
+    buf = io.BytesIO(wav_bytes)
+    with wave.open(buf, "rb") as wf:
+        return wf.getnframes() / wf.getframerate()
 
 
 class PiperTTSAdapter:
@@ -100,7 +96,7 @@ class PiperTTSAdapter:
             raise TTSError(str(exc)) from exc
 
         wav_bytes = _raw_to_wav(raw_audio, PIPER_SAMPLE_RATE)
-        duration_secs = _calc_duration(wav_bytes, PIPER_SAMPLE_RATE)
+        duration_secs = _calc_duration(wav_bytes)
 
         return SynthesisResult(
             wav_bytes=wav_bytes,
