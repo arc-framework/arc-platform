@@ -1,0 +1,198 @@
+name: Voice Release
+
+# Full release pipeline for arc-voice-agent.
+# Triggered by pushing a version tag: git tag voice/v1.2.3 && git push --tags
+#
+# Tag format:  voice/v{MAJOR}.{MINOR}.{PATCH}  (e.g. voice/v0.1.0)
+# Pre-release: voice/v1.0.0-rc1, voice/v1.0.0-alpha, voice/v1.0.0-beta
+#
+# Image tags published:
+#   voice-v{x.y.z}  — pinned reference for service.yaml / docker-compose.yml
+#   sha-{short}     — traceability back to the exact commit
+#   latest          — convenience tag for local dev
+#
+# Version bump rules:
+#   breaking API change (endpoint removed/incompatible)  → MAJOR
+#   new provider, LLM bridge change, or new feature      → MINOR
+#   bug fix, dependency update, Dockerfile tweak         → PATCH
+#
+# Parallelism:
+#   prepare, lint, typecheck, test all run concurrently.
+#   build waits for all four (quality must pass before push).
+#   security runs after build; release runs after security.
+
+on:
+  push:
+    tags:
+      - 'voice/v*'
+
+permissions:
+  contents: write
+  packages: write
+  security-events: write
+  issues: write
+
+jobs:
+
+  # ── Derive Docker-safe image tag from git tag ──────────────────────────────
+  # voice/v0.1.0 → voice-v0.1.0  (slashes are not valid in Docker image tags)
+  prepare:
+    name: Prepare Release
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag:  ${{ steps.tag.outputs.image-tag }}
+      version:    ${{ steps.tag.outputs.version }}
+      prerelease: ${{ steps.tag.outputs.prerelease }}
+    steps:
+      - name: Derive image tag and version
+        id: tag
+        run: |
+          GIT_TAG="${GITHUB_REF_NAME}"                 # voice/v0.1.0
+          IMAGE_TAG="${GIT_TAG/\//-}"                  # voice-v0.1.0
+          VERSION="${GIT_TAG#voice/v}"                 # 0.1.0
+
+          echo "image-tag=$IMAGE_TAG"   >> $GITHUB_OUTPUT
+          echo "version=$VERSION"       >> $GITHUB_OUTPUT
+
+          if echo "$VERSION" | grep -qE '\-(rc|alpha|beta)'; then
+            echo "prerelease=true"  >> $GITHUB_OUTPUT
+          else
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+          fi
+
+  # ── Lint (parallel with prepare + typecheck + test) ───────────────────────
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install ruff
+        run: pip install "ruff>=0.6"
+      - name: Run ruff
+        run: cd services/voice && ruff check src/
+
+  # ── Type-check (parallel with prepare + lint + test) ─────────────────────
+  typecheck:
+    name: Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+          cache-dependency-path: |
+            services/voice/pyproject.toml
+            services/voice/uv.lock
+      - name: Install dependencies
+        run: cd services/voice && pip install ".[dev]"
+      - name: Run mypy
+        run: cd services/voice && mypy src/voice/
+
+  # ── Test (parallel with prepare + lint + typecheck) ───────────────────────
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+          cache-dependency-path: |
+            services/voice/pyproject.toml
+            services/voice/uv.lock
+      - name: Install dependencies
+        run: cd services/voice && pip install ".[dev]"
+      - name: Run tests
+        run: cd services/voice && pytest tests/ -x --tb=short -v
+
+  # ── Build + push (after prepare + lint + typecheck + test all pass) ───────
+  build:
+    name: Build arc-voice-agent
+    needs: [prepare, lint, typecheck, test]
+    uses: ./.github/workflows/_reusable-build.yml
+    with:
+      service-name: arc-voice-agent
+      service-path: services/voice
+      dockerfile: Dockerfile
+      platforms: linux/amd64,linux/arm64
+      push-image: true
+      latest-tag: true
+      image-tag: ${{ needs.prepare.outputs.image-tag }}
+      generate-sbom: true
+      image-prefix: ghcr.io/arc-framework
+    secrets: inherit
+
+  # ── Security — CRITICAL CVEs block the release ────────────────────────────
+  security:
+    name: Security Gate
+    needs: [build]
+    uses: ./.github/workflows/_reusable-security.yml
+    with:
+      scan-type: fs
+      scan-target: services/voice
+      severity: CRITICAL,HIGH
+      fail-on-severity: CRITICAL
+      block-on-failure: true
+      service-name: arc-voice-agent-release
+      create-issues: true
+    secrets: inherit
+
+  # ── GitHub release ─────────────────────────────────────────────────────────
+  release:
+    name: GitHub Release
+    needs: [prepare, build, security]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate release notes
+        run: |
+          IMAGE_TAG="${{ needs.prepare.outputs.image-tag }}"
+          VERSION="${{ needs.prepare.outputs.version }}"
+          PREFIX="ghcr.io/arc-framework"
+
+          cat > release-notes.md << EOF
+          ## arc-voice-agent — ${VERSION}
+
+          LiveKit-based voice agent (Scarlett) with faster-whisper STT, piper TTS,
+          and a NATS bridge to the A.R.C. reasoner on port 8803.
+
+          ### Image
+
+          | Image | Versioned Tag | Also Tagged |
+          |-------|--------------|-------------|
+          | \`arc-voice-agent\` | \`${IMAGE_TAG}\` | \`latest\`, \`sha-*\` |
+
+          ### Pull
+
+          \`\`\`bash
+          docker pull ${PREFIX}/arc-voice-agent:${IMAGE_TAG}
+          \`\`\`
+
+          ### API
+
+          | Endpoint | Description |
+          |----------|-------------|
+          | \`POST /v1/audio/transcriptions\` | Speech-to-text (faster-whisper) |
+          | \`POST /v1/audio/speech\` | Text-to-speech WAV stream (piper) |
+          | \`GET /health\` | Liveness probe |
+          | \`GET /health/deep\` | Deep dependency health (LiveKit + NATS) |
+
+          ### Local Dev
+
+          Update \`services/voice/docker-compose.yml\` image tag to \`${IMAGE_TAG}\`, or use \`latest\` to track the newest release.
+          EOF
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: 'Voice ${{ needs.prepare.outputs.version }}'
+          body_path: release-notes.md
+          draft: false
+          prerelease: ${{ needs.prepare.outputs.prerelease == 'true' }}
