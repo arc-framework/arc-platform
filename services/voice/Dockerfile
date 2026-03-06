@@ -59,6 +59,7 @@ WORKDIR /app
 
 COPY --from=builder --chown=scarlett:scarlett /install /usr/local
 # Carry the piper binary into the runtime image
+# Root-owned so it stays in /usr/local/bin alongside system binaries; 0755 lets scarlett execute it.
 COPY --from=builder --chown=root:root /usr/local/bin/piper /usr/local/bin/piper
 
 EXPOSE 8803
