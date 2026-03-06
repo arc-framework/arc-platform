@@ -88,14 +88,3 @@ module = [
 ]
 disable_error_code = ["untyped-decorator"]
 
-[dependency-groups]
-dev = [
-    "httpx>=0.28.1",
-    "mypy>=1.19.1",
-    "pytest>=9.0.2",
-    "pytest-asyncio>=1.3.0",
-    "pytest-cov>=7.0.0",
-    "pyyaml>=6.0.3",
-    "ruff>=0.15.4",
-    "types-pyyaml>=6.0.12.20250915",
-]
