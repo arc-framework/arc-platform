@@ -136,7 +136,7 @@ graph TD
   - Module: `services/voice/src/voice/nats_bridge.py`, `tests/test_nats_bridge.py`
   - Acceptance: `NATSBridge` implements `LLMBridgePort`; publishes to `VOICE_BRIDGE_NATS_SUBJECT` with `request_id` correlation; awaits `arc.reasoner.result` reply with configurable timeout; on timeout or `arc.reasoner.error` raises typed `BridgeError`; OTEL span wraps the round-trip; `_nc` connection shared via lifespan; tests use mock NATS server or `AsyncMock`; `ruff` + `mypy` clean
 
-- [ ] [TASK-031] [P] [VOICE] [P1] Implement Pulsar event publisher (fire-and-forget) for voice lifecycle events
+- [x] [TASK-031] [P] [VOICE] [P1] Implement Pulsar event publisher (fire-and-forget) for voice lifecycle events
   - Dependencies: TASK-023
   - Module: `services/voice/src/voice/pulsar_events.py`, `tests/test_pulsar_events.py`
   - Acceptance: `VoiceEventPublisher` wraps Pulsar client; exposes `publish_session_started`, `publish_session_ended`, `publish_turn_completed`, `publish_turn_failed`; each wraps `asyncio.create_task()` so publishing never blocks caller; Pulsar unavailability logs warning and returns without raising; event payloads match `models_v1.py` schemas; no secrets or audio bytes in payloads; tests verify fire-and-forget behaviour (await `asyncio.sleep(0)` to drain); `ruff` + `mypy` clean
@@ -145,7 +145,7 @@ graph TD
 
 ## Phase 4: Integration
 
-- [ ] [TASK-040] [VOICE] [P1] Implement LiveKit worker — VAD → STT → NATSBridge → TTS → room audio
+- [x] [TASK-040] [VOICE] [P1] Implement LiveKit worker — VAD → STT → NATSBridge → TTS → room audio
   - Dependencies: TASK-020, TASK-021, TASK-030, TASK-031
   - Module: `services/voice/src/voice/worker.py`, `tests/test_worker.py`
   - Acceptance: `VoiceWorker` connects to LiveKit room as agent; VAD detects end-of-speech; calls `STTPort.transcribe()`; calls `LLMBridgePort.reason()`; calls `TTSPort.synthesize()`; publishes audio frames back to room; publishes `VoiceTurnCompletedEvent` on success and `VoiceTurnFailedEvent` on any exception; OTEL turn span wraps full pipeline; room failure publishes failure event and logs without crashing worker loop; tests mock LiveKit room and all ports; `ruff` + `mypy` clean

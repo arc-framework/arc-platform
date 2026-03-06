@@ -37,3 +37,8 @@ class Settings(BaseSettings):
     # faster-whisper model tunables
     whisper_model: str = "tiny"
     whisper_device: str = "cpu"
+
+    # LiveKit worker settings
+    livekit_room_name: str = "arc-voice"
+    vad_threshold: float = 500.0
+    vad_silence_frames: int = 20
