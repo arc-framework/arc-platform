@@ -1,12 +1,12 @@
-name: Deploy Specs Site
+name: Deploy ARC Docs
 
 on:
   push:
     branches: [main]
     paths:
-      - "specs/**"
-      - "docs/specs/**"
-      - ".github/workflows/deploy-specs-site.yml"
+      - 'specs/**'
+      - 'docs/**'
+      - '.github/workflows/deploy-specs-site.yml'
   workflow_dispatch:
 
 jobs:
@@ -24,19 +24,19 @@ jobs:
         with:
           node-version: '20'
           cache: npm
-          cache-dependency-path: docs/specs/package-lock.json
+          cache-dependency-path: docs/package-lock.json
 
       - run: npm ci
-        working-directory: docs/specs
+        working-directory: docs
 
       - run: npm run build
-        working-directory: docs/specs
+        working-directory: docs
 
       - uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: docs/specs/.vitepress/dist
-          destination_dir: specs-site
+          publish_dir: docs/.vitepress/dist
+          destination_dir: docs
 
       - name: Register deployment URL
         env:
@@ -45,14 +45,14 @@ jobs:
           deployment_id=$(gh api repos/${{ github.repository }}/deployments \
             --method POST \
             --input - <<EOF
-          {"ref":"${{ github.sha }}","environment":"specs-site","description":"Specs site deploy","auto_merge":false,"required_contexts":[]}
+          {"ref":"${{ github.sha }}","environment":"arc-docs","description":"ARC Docs deploy","auto_merge":false,"required_contexts":[]}
           EOF
           )
           deployment_id=$(echo "$deployment_id" | jq -r '.id')
           gh api repos/${{ github.repository }}/deployments/$deployment_id/statuses \
             --method POST \
             --input - <<EOF
-          {"state":"success","environment_url":"https://arc-framework.github.io/arc-platform/specs-site/","description":"Specs site is live"}
+          {"state":"success","environment_url":"https://arc-framework.github.io/arc-platform/docs/","description":"ARC Docs is live"}
           EOF
-          echo "### Specs Site Deployed" >> $GITHUB_STEP_SUMMARY
-          echo "[https://arc-framework.github.io/arc-platform/specs-site/](https://arc-framework.github.io/arc-platform/specs-site/)" >> $GITHUB_STEP_SUMMARY
+          echo "### ARC Docs Deployed" >> $GITHUB_STEP_SUMMARY
+          echo "[https://arc-framework.github.io/arc-platform/docs/](https://arc-framework.github.io/arc-platform/docs/)" >> $GITHUB_STEP_SUMMARY
