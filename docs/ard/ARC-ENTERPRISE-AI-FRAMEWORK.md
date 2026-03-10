@@ -336,7 +336,7 @@ graph LR
 | Cerebro          | Semantic Search    | Qdrant                          | arc-db-vector        |
 | Tardis           | Object Storage     | MinIO                           | arc-storage          |
 | Sherlock         | Reasoner           | LangGraph                       | arc-brain            |
-| Scarlett         | Voice Agent        | LiveKit VAD                     | arc-voice-agent      |
+| Scarlett         | Voice Agent        | LiveKit VAD                     | arc-voice-agent — see [VOICE-SYSTEM.md](VOICE-SYSTEM.md) / [VOICE-HLD.md](VOICE-HLD.md) |
 | Daredevil        | Realtime Server    | LiveKit                         | arc-voice-server     |
 | RoboCop          | Guardrails         | NeMo Guardrails / Guardrails AI | arc-guard            |
 | Gordon Ramsay    | Critic / Evaluator | RAGAs / DeepEval                | arc-critic           |

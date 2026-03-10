@@ -1,0 +1,43 @@
+name: arc-dev-tools
+
+services:
+  arc-dev-nats:
+    image: natsio/nats-box:latest
+    container_name: arc-dev-nats
+    command: ["sleep", "infinity"]
+    networks:
+      - arc_platform_net
+    restart: unless-stopped
+
+  arc-dev-pulsar:
+    image: apachepulsar/pulsar:3.3.2
+    container_name: arc-dev-pulsar
+    command: ["sh", "-c", "sleep infinity"]
+    networks:
+      - arc_platform_net
+    restart: unless-stopped
+
+  arc-dev-redis:
+    image: rediscommander/redis-commander:latest
+    container_name: arc-dev-redis
+    environment:
+      REDIS_HOSTS: arc:arc-cache:6379
+    ports:
+      - "127.0.0.1:8086:8081"
+    networks:
+      - arc_platform_net
+    restart: unless-stopped
+
+  arc-dev-postgres:
+    image: adminer:4
+    container_name: arc-dev-postgres
+    ports:
+      - "127.0.0.1:8085:8080"
+    networks:
+      - arc_platform_net
+    restart: unless-stopped
+
+networks:
+  arc_platform_net:
+    external: true
+    name: arc_platform_net
