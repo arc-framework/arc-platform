@@ -27,11 +27,17 @@ COPY pyproject.toml ./
 # dependency resolution before the full source tree is copied in.
 RUN mkdir -p src/reasoner && touch src/reasoner/__init__.py
 
-# Install remaining deps (torch/sentence-transformers/pulsar already in base).
-# --ignore-installed: ensures all transitive deps land in /install even if the base
-# already has them — Stage 2 starts from python:3.13-slim and only gets /install.
+# Seed /install with the heavy packages already in the base (torch, sentence-transformers,
+# pulsar-client and all their transitive deps including click, huggingface-hub, etc.).
+# pip then sees them as satisfied in the prefix and skips re-downloading them —
+# only the remaining lightweight deps (fastapi, uvicorn, langchain, etc.) are fetched.
+# Stage 2 starts from python:3.13-slim and only gets /install, so it inherits everything.
+RUN PY=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')") && \
+    mkdir -p /install/lib/python${PY}/site-packages /install/bin && \
+    cp -a /usr/local/lib/python${PY}/site-packages/. /install/lib/python${PY}/site-packages/
+
 RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
-    pip install --prefix=/install --no-compile --ignore-installed .
+    pip install --prefix=/install --no-compile .
 
 # Copy actual source after deps are cached — source changes hit only the fast
 # install below.
