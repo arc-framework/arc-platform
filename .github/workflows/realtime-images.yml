@@ -88,7 +88,7 @@ jobs:
       service-name: arc-realtime
       service-path: services/realtime
       dockerfile: Dockerfile
-      platforms: linux/amd64
+      platforms: linux/amd64,linux/arm64
       push-image: ${{ needs.changes.outputs.push-image == 'true' }}
       generate-sbom: ${{ needs.changes.outputs.push-image == 'true' }}
       latest-tag: ${{ needs.changes.outputs.push-image == 'true' }}
@@ -105,7 +105,7 @@ jobs:
       service-name: arc-realtime-ingress
       service-path: services/realtime
       dockerfile: Dockerfile.ingress
-      platforms: linux/amd64
+      platforms: linux/amd64,linux/arm64
       push-image: ${{ needs.changes.outputs.push-image == 'true' }}
       generate-sbom: ${{ needs.changes.outputs.push-image == 'true' }}
       latest-tag: ${{ needs.changes.outputs.push-image == 'true' }}
@@ -122,7 +122,7 @@ jobs:
       service-name: arc-realtime-egress
       service-path: services/realtime
       dockerfile: Dockerfile.egress
-      platforms: linux/amd64
+      platforms: linux/amd64,linux/arm64
       push-image: ${{ needs.changes.outputs.push-image == 'true' }}
       generate-sbom: ${{ needs.changes.outputs.push-image == 'true' }}
       latest-tag: ${{ needs.changes.outputs.push-image == 'true' }}
