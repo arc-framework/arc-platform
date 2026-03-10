@@ -328,3 +328,6 @@ temp/
 # Option A: Remove the ignore lines above (un-ignore everything)
 # Option B: Copy to a shared dotfiles/tooling repo
 # Option C: Add individual !.claude/agents/*.md exceptions here
+
+# A.R.C. workspace
+.arc/

@@ -1,0 +1,38 @@
+# A.R.C. Workspace Manifest
+# Documentation: https://github.com/arc-framework/arc-cli
+
+# Semantic version of arc.yaml format
+version: "1.0.0"
+
+# Platform tier (selected during initialization)
+# Options: super-saiyan, super-saiyan-blue, ultra-instinct
+tier: "ultra-instinct"
+
+# High-level feature flags
+# Enable/disable platform capabilities without managing individual services
+features:
+  # Voice interface (Scarlett/Daredevil)
+  voice: false
+
+  # Security & Identity (J.A.R.V.I.S./Kratos)
+  security: false
+
+  # Observability stack (Prometheus, Grafana, Loki)
+  observability: false
+
+  # Chaos engineering (T-800/Chaos Mesh)
+  chaos: false
+
+# Service-specific overrides (optional)
+# Uncomment to customize individual service configurations
+# services:
+#   arc-heimdall-gateway:
+#     enabled: true
+#     config:
+#       port: 8080
+
+# Environment variables (optional)
+# Injected into all services
+# environment:
+#   LOG_LEVEL: "info"
+#   ENVIRONMENT: "development"

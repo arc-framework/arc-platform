@@ -1,58 +1,64 @@
 # A.R.C. Service Profiles
-# Profiles select which services compose a running platform.
-# Usage: make up PROFILE=think | arc run --profile reason
+# Defines core infrastructure, capability groups, and tier presets.
+# Used by: `make dev PROFILE=<tier>`, CLI `arc workspace run`, CLI embedded copy
+#
+# Architecture: docs/ard/CAPABILITY-SYSTEM.md
 
-# ─── think ──────────────────────────────────────────────────────
-# Basic reasoning — minimal services to run an agent
+# ─── Core ────────────────────────────────────────────────────────────────────
+# Always started. Not user-configurable.
+# Classification: generic infrastructure depended on by 2+ capabilities.
+core:
+  description: 'Infrastructure backbone — always started regardless of tier or capabilities'
+  services:
+    - messaging
+    - cache
+    - streaming
+    - cortex
+    - persistence
+    - gateway
+    - friday-collector
+
+# ─── Capabilities ─────────────────────────────────────────────────────────────
+# Opt-in service groups. Each capability activates one or more services.
+# `requires` lists capabilities that must also be activated.
+capabilities:
+  reasoner:
+    services: [reasoner]
+    description: "LLM reasoning engine — OpenAI-compatible API"
+  voice:
+    services: [realtime, voice]
+    description: "Voice agent — STT (Whisper), TTS (Piper), LLM bridge"
+    requires: [reasoner]
+  observe:
+    services: [otel]
+    description: "Observability UI — SigNoz traces, metrics, logs at :3301"
+  security:
+    services: [vault, flags]
+    description: "Secrets management (OpenBao) + feature flags (Unleash)"
+  storage:
+    services: [storage]
+    description: "Object storage — MinIO"
+
+# ─── Tier Presets ─────────────────────────────────────────────────────────────
+# Tiers are named capability bundles exposed in arc.yaml.
+# think → reason → ultra-instinct is the upgrade path.
 think:
-  description: 'Default dev stack — core infra + reasoner + observability, no secrets/flags/storage'
-  services:
-    - messaging
-    - cache
-    - streaming
-    - cortex
-    - persistence
-    - gateway
-    - friday-collector
-    - reasoner
+  description: 'Core infrastructure only — fastest to start, no LLM engine'
+  capabilities: []
 
-# ─── observe ────────────────────────────────────────────────────
-# think + SigNoz UI — full OTEL traces/metrics/logs in the browser at :3301
-observe:
-  description: 'think profile + SigNoz observability UI (arc-friday :3301)'
-  services:
-    - messaging
-    - cache
-    - streaming
-    - cortex
-    - persistence
-    - gateway
-    - friday-collector
-    - reasoner
-    - otel
-
-# ─── reason ─────────────────────────────────────────────────────
-# Full dev stack — think + observability + identity + storage + realtime
 reason:
-  description: 'Full development stack — think + observability + secrets/flags/storage/realtime'
-  services:
-    - messaging
-    - cache
-    - streaming
-    - cortex
-    - persistence
-    - gateway
-    - friday-collector
+  description: 'Core + reasoning engine — standard development stack'
+  capabilities:
     - reasoner
-    - otel
-    - storage
-    - vault
-    - flags
-    - realtime
-    - voice
 
-# ─── ultra-instinct ─────────────────────────────────────────────
-# Everything — voice, real-time, chaos testing, the full roster
 ultra-instinct:
-  description: 'Full power — every service, every capability'
-  services: '*'
+  description: 'Core + all capabilities — full platform'
+  capabilities: '*'
+
+# ─── Dev-only Profiles ────────────────────────────────────────────────────────
+# These are usable via `make dev PROFILE=<name>` for local debugging.
+# They are NOT product tiers and do NOT appear in arc.yaml.
+observe:
+  description: 'think + SigNoz observability UI — local telemetry debugging only'
+  capabilities:
+    - observe
