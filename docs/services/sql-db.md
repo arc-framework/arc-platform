@@ -2,7 +2,7 @@
 
 > **Status:** Active | **Port:** 5432 | **Profile:** think, reason, ultra-instinct
 
-Oracle is the platform relational database built on PostgreSQL 17 with the pgvector extension. It serves as long-term memory storage for agents and provides vector similarity search until a dedicated vector service is available.
+The `arc-persistence` service (Oracle) is the platform relational database built on PostgreSQL 17 with the pgvector extension. It serves as long-term memory storage for agents and provides vector similarity search until a dedicated vector service is available.
 
 ## Quick Reference
 

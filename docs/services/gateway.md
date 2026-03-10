@@ -2,7 +2,7 @@
 
 > **Status:** Active | **Port:** 80, 8090 | **Profile:** think, reason, ultra-instinct
 
-Heimdall is the platform API gateway built on Traefik. It routes all inbound HTTP traffic to the correct service and exposes a dashboard for live traffic inspection.
+The `arc-gateway` service (Heimdall) is the platform API gateway built on Traefik. It routes all inbound HTTP traffic to the correct service and exposes a dashboard for live traffic inspection.
 
 ## Quick Reference
 

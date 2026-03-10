@@ -2,7 +2,7 @@
 
 > **Status:** Active | **Port:** 9000, 9001 | **Profile:** ultra-instinct
 
-Tardis is the platform object storage service built on MinIO. It provides S3-compatible blob storage for artifacts, model weights, and large binary assets.
+The `arc-storage` service (Tardis) is the platform object storage service built on MinIO. It provides S3-compatible blob storage for artifacts, model weights, and large binary assets.
 
 ## Quick Reference
 

@@ -2,7 +2,7 @@
 
 > **Status:** Active | **Port:** 8200 | **Profile:** ultra-instinct
 
-Nick Fury is the platform secrets manager built on OpenBao. It provides dynamic secrets, encryption-as-a-service, and a secrets leasing API for platform services.
+The `arc-secrets` service (Nick Fury) is the platform secrets manager built on OpenBao. It provides dynamic secrets, encryption-as-a-service, and a secrets leasing API for platform services.
 
 ## Quick Reference
 

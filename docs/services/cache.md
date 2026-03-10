@@ -2,7 +2,7 @@
 
 > **Status:** Active | **Port:** 6379 | **Profile:** think, reason, ultra-instinct
 
-Sonic is the platform cache service built on Redis. It provides sub-millisecond key-value storage used for embedding caches, session state, and rate-limit counters.
+The `arc-cache` service (Sonic) is the platform cache service built on Redis. It provides sub-millisecond key-value storage used for embedding caches, session state, and rate-limit counters.
 
 ## Quick Reference
 

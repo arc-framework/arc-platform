@@ -2,7 +2,7 @@
 
 > **Status:** Active | **Port:** 4242 | **Profile:** ultra-instinct
 
-Mystique is the platform feature-flag service built on Unleash. It enables runtime toggling of platform capabilities without redeployment.
+The `arc-flags` service (Mystique) is the platform feature-flag service built on Unleash. It enables runtime toggling of platform capabilities without redeployment.
 
 ## Quick Reference
 

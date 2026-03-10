@@ -9,16 +9,6 @@ import { resolve, join } from 'node:path'
 // CONTENT_DIR points to the symlinked specs/ directory (docs/specs → ../specs)
 const CONTENT_DIR = resolve(__dirname, '../specs')
 
-// Known doc filenames in display order
-const DOC_FILES = [
-  { file: 'spec',            label: 'Specification' },
-  { file: 'plan',            label: 'Implementation Plan' },
-  { file: 'tasks',           label: 'Task Breakdown' },
-  { file: 'analysis-report', label: 'Analysis Report' },
-  { file: 'quickstart',      label: 'Quick Start' },
-  { file: 'research',        label: 'Research' },
-  { file: 'data-model',      label: 'Data Model' },
-]
 
 function buildSidebar() {
   const dirs = readdirSync(CONTENT_DIR, { withFileTypes: true })
@@ -26,16 +16,14 @@ function buildSidebar() {
     .sort((a, b) => a.name.localeCompare(b.name))
 
   return [
-    { text: 'Index', link: '/specs/' },
-    ...dirs.map(dir => {
-      const slug = dir.name
-      const num = slug.slice(0, 3)
-      const name = slug.slice(4).replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-      const items = DOC_FILES
-        .filter(({ file }) => existsSync(join(CONTENT_DIR, slug, `${file}.md`)))
-        .map(({ file, label }) => ({ text: label, link: `/specs/${slug}/${file}` }))
-      return { text: `${num} — ${name}`, items }
-    }),
+    ...dirs
+      .filter(dir => existsSync(join(CONTENT_DIR, dir.name, 'plan.md')))
+      .map(dir => {
+        const slug = dir.name
+        const num = slug.slice(0, 3)
+        const name = slug.slice(4).replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+        return { text: `${num} — ${name}`, link: `/specs/${slug}/plan` }
+      }),
   ]
 }
 
@@ -46,7 +34,7 @@ function ardSidebar() {
     .sort()
 
   return files.map(f => ({
-    text: f.replace(/\.md$/, '').replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+    text: f.replace(/\.md$/, '').toLowerCase().replace(/[-_]/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()),
     link: `/ard/${f.replace(/\.md$/, '')}`,
   }))
 }
@@ -65,10 +53,13 @@ export default withMermaid(defineConfig({
   ],
   srcExclude: [
     '**/pr-description.md',
+    '**/spec.md',          // requirements brief — plan.md has the richer technical content
+    '**/tasks.md',         // implementation checklist — internal only
+    '**/analysis-report.md', // QA gap analysis — internal only
     '**/.work-docs/**',
     'node_modules/**',
     '.vitepress/**',
-    'superpowers/**',    // internal planning docs — not published
+    'superpowers/**',      // internal planning docs — not published
   ],
 
   themeConfig: {
@@ -76,7 +67,8 @@ export default withMermaid(defineConfig({
       { text: 'Guide',        link: '/guide/getting-started' },
       { text: 'Services',     link: '/services/' },
       { text: 'Contributing', link: '/contributing/architecture' },
-      { text: 'GitHub', link: 'https://github.com/arc-framework/arc-platform' }
+      { text: 'Roadmap',      link: '/specs/' },
+      { text: 'GitHub',       link: 'https://github.com/arc-framework/arc-platform' }
     ],
 
     sidebar: [
@@ -123,7 +115,7 @@ export default withMermaid(defineConfig({
         items: ardSidebar(),
       },
       {
-        text: 'Specs',
+        text: 'Roadmap',
         items: buildSidebar(),
       },
     ],
