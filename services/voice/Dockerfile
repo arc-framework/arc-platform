@@ -19,10 +19,17 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 
 # Install piper TTS binary from upstream release.
 # The binary is statically linked — no shared-lib dependencies in the runtime image.
+# Piper uses Linux kernel arch names (x86_64, aarch64) not Docker's TARGETARCH names (amd64, arm64).
 ARG PIPER_VERSION=2023.11.14-2
-ARG PIPER_ARCH=amd64
-RUN curl -fsSL \
-    "https://github.com/rhasspy/piper/releases/download/${PIPER_VERSION}/piper_linux_${PIPER_ARCH}.tar.gz" \
+ARG TARGETARCH
+RUN case "${TARGETARCH}" in \
+      amd64) PIPER_ARCH=x86_64  ;; \
+      arm64) PIPER_ARCH=aarch64 ;; \
+      arm)   PIPER_ARCH=armv7l  ;; \
+      *)     echo "Unsupported arch: ${TARGETARCH}" && exit 1 ;; \
+    esac \
+    && curl -fsSL \
+        "https://github.com/rhasspy/piper/releases/download/${PIPER_VERSION}/piper_linux_${PIPER_ARCH}.tar.gz" \
     | tar -xz -C /tmp \
     && install -m 0755 /tmp/piper/piper /usr/local/bin/piper
 
