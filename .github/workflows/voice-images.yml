@@ -143,6 +143,7 @@ jobs:
       platforms: linux/amd64
       push-image: ${{ needs.changes.outputs.push-image == 'true' }}
       generate-sbom: ${{ needs.changes.outputs.push-image == 'true' }}
+      latest-tag: ${{ needs.changes.outputs.push-image == 'true' }}
       image-prefix: ghcr.io/arc-framework
     secrets: inherit
 
