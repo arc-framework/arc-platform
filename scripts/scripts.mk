@@ -11,7 +11,7 @@ BASE ?= main
 .PHONY: scripts-help scripts-pr scripts-pr-json \
         scripts-check scripts-check-syntax scripts-check-lint \
         scripts-packages-list scripts-packages-list-json scripts-packages-delete \
-        scripts-permissions publish-all
+        scripts-permissions publish-local
 
 ## scripts-help: Utility scripts (PR description, package management, validation)
 scripts-help:
@@ -70,8 +70,8 @@ scripts-permissions:
 	@chmod +x $(SCRIPTS_DIR_PATH)/*.sh $(SCRIPTS_DIR_PATH)/lib/*.sh
 	@printf "$(COLOR_OK)✓$(COLOR_OFF) All scripts are executable\n"
 
-## publish-all: Build and push all platform images to ghcr.io (requires: docker login ghcr.io + gh auth)
-publish-all:
+## publish-local: Build and push all platform images locally to ghcr.io (requires: docker login ghcr.io)
+publish-local:
 	@printf "$(COLOR_INFO)→$(COLOR_OFF) Building and publishing all A.R.C. platform images...\n"
 	@printf "$(COLOR_WARN)!$(COLOR_OFF) Requires: docker login ghcr.io   and   gh auth login\n"
 	$(MAKE) sql-db-build      sql-db-publish      --no-print-directory
