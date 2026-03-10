@@ -121,7 +121,7 @@ jobs:
       service-name: arc-cortex
       service-path: services/cortex
       dockerfile: Dockerfile
-      platforms: linux/amd64
+      platforms: linux/amd64,linux/arm64
       push-image: ${{ needs.changes.outputs.push-image == 'true' }}
       generate-sbom: ${{ needs.changes.outputs.push-image == 'true' }}
       latest-tag: ${{ needs.changes.outputs.push-image == 'true' }}
