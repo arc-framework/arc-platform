@@ -132,3 +132,40 @@ This stops and removes all containers started by the current profile. Persistent
 - [Contributing](/contributing/architecture) — architecture overview, conventions, and guides for adding new services and capabilities
 - [LLM Testing](/guide/llm-testing) — `curl` examples for the reasoning engine and voice service
 - [arc.yaml Reference](/guide/arc-yaml-reference) — full reference for the workspace manifest
+
+## Troubleshooting
+
+### Docker not running
+
+Make sure Docker Desktop is started and the whale icon appears in your system tray. Verify with:
+
+```bash
+docker ps
+```
+
+### Port conflict
+
+Another process is using a default port. Check which port is conflicting:
+
+```bash
+lsof -i :<PORT>
+```
+
+Then stop the conflicting process or change the port in your service override.
+
+### Services failing health checks
+
+Your machine may not have enough resources. Check with `docker stats`. Consider using the `think` profile (lightest) to start:
+
+```bash
+arc run --profile think
+```
+
+### Symlink issues on macOS (Apple Silicon)
+
+If `docs/specs` shows as broken, ensure you cloned with symlink support:
+
+```bash
+git config core.symlinks true
+git checkout .
+```

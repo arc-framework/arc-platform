@@ -84,6 +84,8 @@ export default withMermaid(defineConfig({
         text: 'Guide',
         items: [
           { text: 'Getting Started',    link: '/guide/getting-started' },
+          { text: 'Why A.R.C.?',        link: '/guide/why-arc' },
+          { text: 'CLI Reference',      link: '/guide/cli-reference' },
           { text: 'LLM Testing',        link: '/guide/llm-testing' },
           { text: 'arc.yaml Reference', link: '/guide/arc-yaml-reference' },
         ],
