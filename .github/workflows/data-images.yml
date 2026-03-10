@@ -21,11 +21,6 @@ name: Data Image Pipeline
 on:
   push:
     branches: [main, dev]
-    paths:
-      - 'services/persistence/**'
-      - 'services/vector/**'
-      - 'services/storage/**'
-      - '.github/workflows/data-images.yml'
   pull_request:
     branches: [main]
     paths:
@@ -51,9 +46,9 @@ jobs:
     name: Detect Changes
     runs-on: ubuntu-latest
     outputs:
-      oracle:     ${{ steps.filter.outputs.oracle == 'true'   || github.event_name == 'workflow_dispatch' }}
-      cerebro:    ${{ steps.filter.outputs.cerebro == 'true'  || github.event_name == 'workflow_dispatch' }}
-      tardis:     ${{ steps.filter.outputs.tardis == 'true'   || github.event_name == 'workflow_dispatch' }}
+      oracle:     ${{ steps.filter.outputs.oracle == 'true'   || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+      cerebro:    ${{ steps.filter.outputs.cerebro == 'true'  || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+      tardis:     ${{ steps.filter.outputs.tardis == 'true'   || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
       push-image: ${{ steps.mode.outputs.push-image }}
     steps:
       - uses: actions/checkout@v4

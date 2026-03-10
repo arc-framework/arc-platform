@@ -20,9 +20,6 @@ name: Cortex Image Pipeline
 on:
   push:
     branches: [main, dev]
-    paths:
-      - 'services/cortex/**'
-      - '.github/workflows/cortex-images.yml'
   pull_request:
     branches: [main]
     paths:
@@ -47,7 +44,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       go:         ${{ steps.filter.outputs.go == 'true'     || github.event_name == 'workflow_dispatch' }}
-      any:        ${{ steps.filter.outputs.any == 'true'    || github.event_name == 'workflow_dispatch' }}
+      any:        ${{ steps.filter.outputs.any == 'true'    || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
       push-image: ${{ steps.mode.outputs.push-image }}
     steps:
       - uses: actions/checkout@v4

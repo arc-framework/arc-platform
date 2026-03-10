@@ -103,7 +103,7 @@ help:
 
 .PHONY: dev dev-up dev-down dev-wait dev-health dev-logs dev-status \
         dev-clean dev-nuke dev-prereqs dev-networks dev-regen dev-images \
-        scrub specs-dev
+        scrub docs docs-build docs-preview publish-all
 
 ## dev: Start all services in $(PROFILE) profile in dependency order
 dev: dev-prereqs dev-networks .make/profiles.mk .make/registry.mk dev-images dev-up dev-wait
@@ -219,7 +219,29 @@ scrub:
 	@rm -rf .make/
 	@printf "$(COLOR_OK)✓$(COLOR_OFF) Monorepo scrubbed — run 'make dev' to regenerate\n"
 
-## specs-dev: Start the VitePress specs site dev server (http://localhost:5173/arc-platform/specs-site/)
-specs-dev:
-	@printf "$(COLOR_INFO)→$(COLOR_OFF) Starting specs site dev server...\n"
-	@cd docs/specs && npm install --silent && npm run dev
+## docs: Build and run the documentation site locally (http://localhost:5173/arc-platform/docs/)
+docs:
+	@printf "$(COLOR_INFO)→$(COLOR_OFF) Starting ARC Docs dev server...\n"
+	@cd docs && npm install --silent && npm run dev
+
+## docs-build: Build the static documentation site
+docs-build:
+	@printf "$(COLOR_INFO)→$(COLOR_OFF) Building ARC Docs...\n"
+	@cd docs && npm install --silent && npm run build
+
+## docs-preview: Preview the built documentation site
+docs-preview:
+	@printf "$(COLOR_INFO)→$(COLOR_OFF) Previewing ARC Docs...\n"
+	@cd docs && npm run preview
+
+## publish-all: Trigger the full platform release pipeline (requires gh auth and VERSION=vX.Y.Z)
+publish-all:
+	@if [ -z "$(VERSION)" ]; then \
+		printf "Usage: VERSION=v0.1.0 make publish-all\n"; exit 1; \
+	fi
+	@gh auth status > /dev/null 2>&1 || { printf "gh: not logged in — run 'gh auth login'\n"; exit 1; }
+	@gh workflow view platform-release.yml > /dev/null 2>&1 || { printf "platform-release.yml not found — ensure TASK-100 is complete\n"; exit 1; }
+	@printf "$(COLOR_INFO)→$(COLOR_OFF) Triggering platform release pipeline for $(VERSION)...\n"
+	@gh workflow run platform-release.yml --ref main -f version=$(VERSION)
+	@printf "$(COLOR_OK)✓$(COLOR_OFF) Release pipeline triggered — monitor at: https://github.com/arc-framework/arc-platform/actions\n"
+

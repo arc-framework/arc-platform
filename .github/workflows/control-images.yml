@@ -21,11 +21,6 @@ name: Control Plane Image Pipeline
 on:
   push:
     branches: [main, dev]
-    paths:
-      - 'services/gateway/**'
-      - 'services/secrets/**'
-      - 'services/flags/**'
-      - '.github/workflows/control-images.yml'
   pull_request:
     branches: [main]
     paths:
@@ -51,9 +46,9 @@ jobs:
     name: Detect Changes
     runs-on: ubuntu-latest
     outputs:
-      heimdall:  ${{ steps.filter.outputs.heimdall == 'true'   || github.event_name == 'workflow_dispatch' }}
-      nick-fury: ${{ steps.filter.outputs.nick_fury == 'true'  || github.event_name == 'workflow_dispatch' }}
-      mystique:  ${{ steps.filter.outputs.mystique == 'true'   || github.event_name == 'workflow_dispatch' }}
+      heimdall:  ${{ steps.filter.outputs.heimdall == 'true'   || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+      nick-fury: ${{ steps.filter.outputs.nick_fury == 'true'  || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+      mystique:  ${{ steps.filter.outputs.mystique == 'true'   || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
       push-image: ${{ steps.mode.outputs.push-image }}
     steps:
       - uses: actions/checkout@v4

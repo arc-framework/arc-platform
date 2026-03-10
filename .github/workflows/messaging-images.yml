@@ -21,11 +21,6 @@ name: Messaging Image Pipeline
 on:
   push:
     branches: [main, dev]
-    paths:
-      - 'services/messaging/**'
-      - 'services/streaming/**'
-      - 'services/cache/**'
-      - '.github/workflows/messaging-images.yml'
   pull_request:
     branches: [main]
     paths:
@@ -51,9 +46,9 @@ jobs:
     name: Detect Changes
     runs-on: ubuntu-latest
     outputs:
-      flash:      ${{ steps.filter.outputs.flash == 'true'   || github.event_name == 'workflow_dispatch' }}
-      strange:    ${{ steps.filter.outputs.strange == 'true' || github.event_name == 'workflow_dispatch' }}
-      sonic:      ${{ steps.filter.outputs.sonic == 'true'   || github.event_name == 'workflow_dispatch' }}
+      flash:      ${{ steps.filter.outputs.flash == 'true'   || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+      strange:    ${{ steps.filter.outputs.strange == 'true' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+      sonic:      ${{ steps.filter.outputs.sonic == 'true'   || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
       push-image: ${{ steps.mode.outputs.push-image }}
     steps:
       - uses: actions/checkout@v4

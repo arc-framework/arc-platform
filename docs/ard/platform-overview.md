@@ -78,9 +78,9 @@ Timeline comparison: **Days of prep** versus **minutes to prod**.
 
 Dive into the documentation to scaffold your first platform and start composing agents immediately.
 
-- `arc` CLI walkthroughs in [the introduction docs](./intro).
-- Service-by-service breakdown in [`SERVICE.MD`](../SERVICE.MD).
-- End-to-end platform guides in [`docs/stack`](../stack.md).
+- `arc` CLI walkthroughs in [the introduction docs](/guide/getting-started).
+- Service-by-service breakdown in [`SERVICE.MD`](https://github.com/arc-framework/arc-platform/blob/main/SERVICE.MD).
+- End-to-end platform guides in [`docs/stack`](/services/).
 - Source code and community support on [GitHub](https://github.com/arc-framework).
 
 Ready to build? Run `arc new`, follow the prompts, and launch with `arc run`. Your production-ready agent platform is one command away.

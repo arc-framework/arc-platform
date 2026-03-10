@@ -23,9 +23,6 @@ name: Realtime Stack Image Pipeline
 on:
   push:
     branches: [main, dev]
-    paths:
-      - 'services/realtime/**'
-      - '.github/workflows/realtime-images.yml'
   pull_request:
     branches: [main]
     paths:
@@ -49,9 +46,9 @@ jobs:
     name: Detect Changes
     runs-on: ubuntu-latest
     outputs:
-      realtime-server:  ${{ steps.filter.outputs.realtime-server == 'true'  || github.event_name == 'workflow_dispatch' }}
-      realtime-ingress: ${{ steps.filter.outputs.realtime-ingress == 'true' || github.event_name == 'workflow_dispatch' }}
-      realtime-egress:  ${{ steps.filter.outputs.realtime-egress == 'true'  || github.event_name == 'workflow_dispatch' }}
+      realtime-server:  ${{ steps.filter.outputs.realtime-server == 'true'  || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+      realtime-ingress: ${{ steps.filter.outputs.realtime-ingress == 'true' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+      realtime-egress:  ${{ steps.filter.outputs.realtime-egress == 'true'  || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
       push-image:       ${{ steps.mode.outputs.push-image }}
     steps:
       - uses: actions/checkout@v4

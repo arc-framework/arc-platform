@@ -22,9 +22,9 @@ statically rendered site with full-text search and mermaid diagram support.
 ## Local Development
 
 ```bash
-cd docs/specs
+cd docs
 npm install       # first time only
 npm run dev
 ```
 
-The dev server starts at http://localhost:5173/arc-platform/specs-site/ with live reload enabled.
+The dev server starts at http://localhost:5173/arc-platform/docs/ with live reload enabled.

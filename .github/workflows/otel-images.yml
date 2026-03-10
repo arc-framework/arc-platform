@@ -15,10 +15,6 @@ name: OTEL Image Pipeline
 on:
   push:
     branches: [main, dev]
-    paths:
-      - 'services/otel/**'
-      - '.github/workflows/otel-images.yml'
-      - '.github/config/build-otel.json'
   pull_request:
     branches: [main]
     paths:
@@ -56,8 +52,9 @@ jobs:
       - name: Detect per-image changes
         id: detect
         run: |
-          # Manual dispatch always rebuilds all images
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          # Manual dispatch or main push always rebuilds all images
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || \
+             ([ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]); then
             for img in arc-friday arc-friday-collector arc-friday-clickhouse arc-friday-migrator arc-friday-zookeeper; do
               echo "$img=true" >> $GITHUB_OUTPUT
             done
