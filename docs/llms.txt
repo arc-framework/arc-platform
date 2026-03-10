@@ -1,0 +1,75 @@
+# A.R.C.
+
+> Agentic Reasoning Core
+
+The open-source Platform-in-a-Box for building, deploying, and orchestrating production-ready AI agents. One command. Zero weeks of infrastructure work.
+
+## Table of Contents
+
+### Guide
+
+- [Getting Started](/arc-platform/docs/guide/getting-started.md)
+- [Why A.R.C.?](/arc-platform/docs/guide/why-arc.md)
+- [CLI Reference](/arc-platform/docs/guide/cli-reference.md)
+- [LLM Testing](/arc-platform/docs/guide/llm-testing.md)
+- [arc.yaml Reference](/arc-platform/docs/guide/arc-yaml-reference.md)
+
+### Services
+
+- [Service Map](/arc-platform/docs/services.md)
+- [Reasoner — Sherlock](/arc-platform/docs/services/reasoner.md)
+- [Voice — Scarlett](/arc-platform/docs/services/voice.md)
+- [Gateway (Heimdall)](/arc-platform/docs/services/gateway.md)
+- [Secrets (Nick Fury)](/arc-platform/docs/services/vault.md)
+- [Feature Flags (Mystique)](/arc-platform/docs/services/flags.md)
+- [SQL Database (Oracle)](/arc-platform/docs/services/sql-db.md)
+- [Vector Database](/arc-platform/docs/services/vector-db.md)
+- [Object Storage (Tardis)](/arc-platform/docs/services/storage.md)
+- [Messaging (Flash)](/arc-platform/docs/services/messaging.md)
+- [Streaming (Dr. Strange)](/arc-platform/docs/services/streaming.md)
+- [Cache (Sonic)](/arc-platform/docs/services/cache.md)
+- [Realtime (Daredevil / Sentry / Scribe)](/arc-platform/docs/services/realtime.md)
+- [Observability (Friday / Friday Collector)](/arc-platform/docs/services/friday.md)
+
+### Contributing
+
+- [Architecture](/arc-platform/docs/contributing/architecture.md)
+- [Adding a New Service](/arc-platform/docs/contributing/new-service.md)
+- [Adding a New Capability](/arc-platform/docs/contributing/new-capability.md)
+- [Conventions](/arc-platform/docs/contributing/conventions.md)
+
+### Architecture
+
+- [A.R.C. AI Infrastructure — Design Document](/arc-platform/docs/ard/ARC-ENTERPRISE-AI-FRAMEWORK.md)
+- [ARD: Core + Capability Service Model](/arc-platform/docs/ard/CAPABILITY-SYSTEM.md)
+- [ARD: CLI Tier System — Platform Profile Alignment](/arc-platform/docs/ard/CLI-PLATFORM-INTEGRATION.md)
+- [Service Naming Decoupling](/arc-platform/docs/ard/CODENAME-DECOUPLING.md)
+- [Nervous System — High Level Design](/arc-platform/docs/ard/NERVOUS-SYSTEM-HLD.md)
+- [Feature: nervous-system](/arc-platform/docs/ard/NERVOUS-SYSTEM.md)
+- [A.R.C. Service Command Reference](/arc-platform/docs/ard/SERVICE-COMMANDS.md)
+- [Voice System — High-Level Design](/arc-platform/docs/ard/VOICE-HLD.md)
+- [Feature: voice-system](/arc-platform/docs/ard/VOICE-SYSTEM.md)
+- [Platform Overview](/arc-platform/docs/ard/platform-overview.md): End-to-end snapshot of the A.R.C. landing experience in documentation form.
+
+### Roadmap
+
+- [Implementation Plan: 001-otel-setup — Stand Up SigNoz as the Observability Backend](/arc-platform/docs/specs/001-otel-setup/plan.md)
+- [Implementation Plan: Cortex Bootstrap Service](/arc-platform/docs/specs/002-cortex-setup/plan.md)
+- [Implementation Plan: Messaging & Cache Services Setup](/arc-platform/docs/specs/003-messaging-setup/plan.md)
+- [Implementation Plan: Dev Setup Orchestration](/arc-platform/docs/specs/004-dev-setup/plan.md)
+- [Implementation Plan: Data Layer Services Setup](/arc-platform/docs/specs/005-data-layer/plan.md)
+- [Implementation Plan: Platform Control Plane Services Setup](/arc-platform/docs/specs/006-platform-control/plan.md)
+- [Implementation Plan: Realtime Voice Infrastructure Setup](/arc-platform/docs/specs/007-voice-stack/plan.md)
+- [Implementation Plan: Specs Documentation Site](/arc-platform/docs/specs/008-specs-site/plan.md)
+- [Implementation Plan: Sherlock Reasoning Service](/arc-platform/docs/specs/009-sherlock-reasoning/plan.md)
+- [Implementation Plan: pgvector Migration + Observability Hardening](/arc-platform/docs/specs/011-vector-setup/plan.md)
+- [Implementation Plan: Sherlock Chat API — Provider-Agnostic Layer](/arc-platform/docs/specs/012-sherlock-chat-api/plan.md)
+- [Implementation Plan: Sherlock Universal RAG API](/arc-platform/docs/specs/013-sherlock-rag-api/plan.md)
+- [Implementation Plan: decouple-service-codenames](/arc-platform/docs/specs/014-decouple-service-codenames/plan.md)
+- [Implementation Plan: Nervous System](/arc-platform/docs/specs/015-nervous-system/plan.md)
+- [Implementation Plan: Voice System](/arc-platform/docs/specs/016-voice-system/plan.md)
+- [Implementation Plan: 017-pre-release](/arc-platform/docs/specs/017-pre-release/plan.md)
+
+### Other
+
+- [Roadmap](/arc-platform/docs/specs.md)
