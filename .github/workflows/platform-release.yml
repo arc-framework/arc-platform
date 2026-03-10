@@ -73,8 +73,7 @@ jobs:
           gh workflow run voice-images.yml \
             --repo "${{ github.repository }}" \
             --ref main \
-            -f mode=release \
-            -f version=${{ needs.prepare.outputs.version }}
+            -f mode=release
 
   cortex:
     name: Dispatch cortex-images.yml
@@ -89,8 +88,7 @@ jobs:
           gh workflow run cortex-images.yml \
             --repo "${{ github.repository }}" \
             --ref main \
-            -f mode=release \
-            -f version=${{ needs.prepare.outputs.version }}
+            -f mode=release
 
   reasoner:
     name: Dispatch reasoner-images.yml
@@ -105,8 +103,7 @@ jobs:
           gh workflow run reasoner-images.yml \
             --repo "${{ github.repository }}" \
             --ref main \
-            -f mode=release \
-            -f version=${{ needs.prepare.outputs.version }}
+            -f mode=release
 
   data:
     name: Dispatch data-images.yml
@@ -121,8 +118,7 @@ jobs:
           gh workflow run data-images.yml \
             --repo "${{ github.repository }}" \
             --ref main \
-            -f mode=release \
-            -f version=${{ needs.prepare.outputs.version }}
+            -f mode=release
 
   messaging:
     name: Dispatch messaging-images.yml
@@ -137,8 +133,7 @@ jobs:
           gh workflow run messaging-images.yml \
             --repo "${{ github.repository }}" \
             --ref main \
-            -f mode=release \
-            -f version=${{ needs.prepare.outputs.version }}
+            -f mode=release
 
   otel:
     name: Dispatch otel-images.yml
@@ -153,8 +148,7 @@ jobs:
           gh workflow run otel-images.yml \
             --repo "${{ github.repository }}" \
             --ref main \
-            -f mode=release \
-            -f version=${{ needs.prepare.outputs.version }}
+            -f mode=release
 
   realtime:
     name: Dispatch realtime-images.yml
@@ -169,8 +163,7 @@ jobs:
           gh workflow run realtime-images.yml \
             --repo "${{ github.repository }}" \
             --ref main \
-            -f mode=release \
-            -f version=${{ needs.prepare.outputs.version }}
+            -f mode=release
 
   control:
     name: Dispatch control-images.yml
@@ -185,8 +178,7 @@ jobs:
           gh workflow run control-images.yml \
             --repo "${{ github.repository }}" \
             --ref main \
-            -f mode=release \
-            -f version=${{ needs.prepare.outputs.version }}
+            -f mode=release
 
   # ── Create GitHub Release with image manifest ──────────────────────────────
   release:

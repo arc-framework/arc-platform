@@ -28,8 +28,10 @@ COPY pyproject.toml ./
 RUN mkdir -p src/reasoner && touch src/reasoner/__init__.py
 
 # Install remaining deps (torch/sentence-transformers/pulsar already in base).
+# --ignore-installed: ensures all transitive deps land in /install even if the base
+# already has them — Stage 2 starts from python:3.13-slim and only gets /install.
 RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
-    pip install --prefix=/install --no-compile .
+    pip install --prefix=/install --no-compile --ignore-installed .
 
 # Copy actual source after deps are cached — source changes hit only the fast
 # install below.
