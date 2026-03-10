@@ -5,7 +5,8 @@
 # Base is rebuilt only when those heavy deps change (see Dockerfile.base).
 #
 # To test locally before the base image is pushed to GHCR:
-#   docker build -f services/reasoner/Dockerfile.base \
+#   docker buildx build --platform linux/amd64 \
+#     -f services/reasoner/Dockerfile.base \
 #     -t arc-reasoner-base:local services/reasoner/
 #   docker build --build-arg BASE=arc-reasoner-base:local \
 #     -f services/reasoner/Dockerfile services/reasoner/
