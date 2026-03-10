@@ -1,0 +1,84 @@
+name: Reasoner Base Image Pipeline
+
+# Builds arc-reasoner-base — the pre-baked layer containing torch,
+# sentence-transformers, and pulsar-client. These wheels dominate build time
+# (~30 min) on a cold cache miss in the main reasoner-images.yml workflow.
+#
+# When to rebuild:
+#   - Any dependency version change in services/reasoner/pyproject.toml
+#   - Manual dispatch
+#
+# Does NOT rebuild on source (.py) changes — source never enters the base image.
+#
+# Usage in Dockerfile:
+#   ARG BASE=ghcr.io/arc-framework/arc-reasoner-base:latest
+#   FROM ${BASE} AS builder
+#
+# Local test:
+#   docker build -f services/reasoner/Dockerfile.base \
+#     -t arc-reasoner-base:local services/reasoner/
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'services/reasoner/pyproject.toml'
+      - 'services/reasoner/Dockerfile.base'
+  workflow_dispatch:
+
+env:
+  IMAGE_PREFIX: ghcr.io/arc-framework
+
+jobs:
+
+  build-base:
+    name: Build arc-reasoner-base
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push arc-reasoner-base
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: services/reasoner
+          file: services/reasoner/Dockerfile.base
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/arc-framework/arc-reasoner-base:latest
+            ghcr.io/arc-framework/arc-reasoner-base:sha-${{ github.sha }}
+          cache-from: type=gha,scope=arc-reasoner-base
+          cache-to: type=gha,mode=max,scope=arc-reasoner-base
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            arc.service.name=arc-reasoner-base
+
+      - name: Summary
+        run: |
+          echo "## arc-reasoner-base built" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| | |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Digest** | \`${{ steps.build.outputs.digest }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Tags** | \`latest\`, \`sha-$(echo ${{ github.sha }} | cut -c1-7)\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The main \`reasoner-images.yml\` will use this base on next run." >> $GITHUB_STEP_SUMMARY

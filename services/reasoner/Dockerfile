@@ -1,37 +1,35 @@
 # syntax=docker/dockerfile:1.7
 # ── Stage 1: Python builder ────────────────────────────────────────────────────
-# python:3.13-slim (Debian): pre-built wheels are available for pulsar-client,
-# sentence-transformers (torch), and asyncpg — Alpine musl toolchain is insufficient.
-FROM python:3.13-slim AS builder
+# Uses arc-reasoner-base which pre-bakes torch, sentence-transformers, and
+# pulsar-client — the slow wheels that dominate build time on a cold cache miss.
+# Base is rebuilt only when those heavy deps change (see Dockerfile.base).
+#
+# To test locally before the base image is pushed to GHCR:
+#   docker buildx build --platform linux/amd64 \
+#     -f services/reasoner/Dockerfile.base \
+#     -t arc-reasoner-base:local services/reasoner/
+#   docker build --build-arg BASE=arc-reasoner-base:local \
+#     -f services/reasoner/Dockerfile services/reasoner/
+ARG BASE=ghcr.io/arc-framework/arc-reasoner-base:latest
+FROM ${BASE} AS builder
 
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_ROOT_USER_ACTION=ignore \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update \
-    && apt-get install -y --no-install-recommends gcc \
-    && rm -rf /var/lib/apt/lists/*
-
 WORKDIR /build
 
-# Copy only the manifest first — dependencies are only re-installed when
-# pyproject.toml changes.
+# Copy only the manifest first — remaining deps re-install only when pyproject.toml changes.
 COPY pyproject.toml ./
 
 # Stub package init allows setuptools to resolve the package name during
 # dependency resolution before the full source tree is copied in.
 RUN mkdir -p src/reasoner && touch src/reasoner/__init__.py
 
-# Install CPU-only PyTorch first — prevents pip from pulling the CUDA variant.
-# Keep the builder production-only: dev/test tooling does not belong in the
-# runtime image and adds significant build time and size.
+# Install remaining deps (torch/sentence-transformers/pulsar already in base).
 RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
-    pip install --prefix=/install --no-compile \
-      torch --index-url https://download.pytorch.org/whl/cpu \
-    && pip install --prefix=/install --no-compile .
+    pip install --prefix=/install --no-compile .
 
 # Copy actual source after deps are cached — source changes hit only the fast
 # install below.

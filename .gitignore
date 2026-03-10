@@ -135,8 +135,8 @@ docs/.docusaurus/
 docs/build/
 
 # VitePress specs site build output
-docs/specs/.vitepress/dist/
-docs/specs/.vitepress/cache/
+docs/.vitepress/dist/
+docs/.vitepress/cache/
 
 docs/specs/node_modules/
 

@@ -19,10 +19,7 @@ name: Voice Image Pipeline
 
 on:
   push:
-    branches: [main, 016-voice-system]
-    paths:
-      - 'services/voice/**'
-      - '.github/workflows/voice-images.yml'
+    branches: [main, dev]
   pull_request:
     branches: [main]
     paths:
@@ -47,7 +44,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       python:     ${{ steps.filter.outputs.python == 'true'  || github.event_name == 'workflow_dispatch' }}
-      any:        ${{ steps.filter.outputs.any == 'true'     || github.event_name == 'workflow_dispatch' }}
+      any:        ${{ steps.filter.outputs.any == 'true'     || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
       push-image: ${{ steps.mode.outputs.push-image }}
     steps:
       - uses: actions/checkout@v4

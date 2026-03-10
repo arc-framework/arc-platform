@@ -1,0 +1,246 @@
+name: Platform Release
+
+# Orchestrator for coordinated platform-wide image releases.
+# Dispatches all 8 service image workflows in parallel with mode=release,
+# then creates a GitHub Release with the full image manifest table.
+#
+# Triggers:
+#   push (platform/v*) — tag-driven release; version extracted from the tag
+#   workflow_dispatch  — manual release; version provided as input (required)
+#
+# Parallelism:
+#   prepare → [voice, cortex, reasoner, data, messaging, otel, realtime, control] (parallel)
+#   release (if: always()) waits for all 8 dispatch jobs before creating the GitHub Release
+#
+# Failure handling:
+#   continue-on-error: true on all build dispatch jobs — one failure does not block the release.
+#   The release job always runs and creates a partial manifest if any service failed.
+
+on:
+  push:
+    tags:
+      - 'platform/v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Platform version to release (e.g. v0.1.0 or v0.1.0-rc1)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+
+  # ── Extract version + detect prerelease ────────────────────────────────────
+  prepare:
+    name: Prepare Release
+    runs-on: ubuntu-latest
+    outputs:
+      version:    ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - name: Extract version and detect prerelease
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/platform/}"
+          fi
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+          if echo "$VERSION" | grep -qE '\-(rc|alpha|beta)'; then
+            echo "prerelease=true" >> $GITHUB_OUTPUT
+          else
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+          fi
+
+  # ── Parallel service image dispatches ─────────────────────────────────────
+
+  voice:
+    name: Dispatch voice-images.yml
+    needs: [prepare]
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Trigger voice-images.yml
+        run: |
+          gh workflow run voice-images.yml \
+            --repo "${{ github.repository }}" \
+            --ref main \
+            -f mode=release \
+            -f version=${{ needs.prepare.outputs.version }}
+
+  cortex:
+    name: Dispatch cortex-images.yml
+    needs: [prepare]
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Trigger cortex-images.yml
+        run: |
+          gh workflow run cortex-images.yml \
+            --repo "${{ github.repository }}" \
+            --ref main \
+            -f mode=release \
+            -f version=${{ needs.prepare.outputs.version }}
+
+  reasoner:
+    name: Dispatch reasoner-images.yml
+    needs: [prepare]
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Trigger reasoner-images.yml
+        run: |
+          gh workflow run reasoner-images.yml \
+            --repo "${{ github.repository }}" \
+            --ref main \
+            -f mode=release \
+            -f version=${{ needs.prepare.outputs.version }}
+
+  data:
+    name: Dispatch data-images.yml
+    needs: [prepare]
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Trigger data-images.yml
+        run: |
+          gh workflow run data-images.yml \
+            --repo "${{ github.repository }}" \
+            --ref main \
+            -f mode=release \
+            -f version=${{ needs.prepare.outputs.version }}
+
+  messaging:
+    name: Dispatch messaging-images.yml
+    needs: [prepare]
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Trigger messaging-images.yml
+        run: |
+          gh workflow run messaging-images.yml \
+            --repo "${{ github.repository }}" \
+            --ref main \
+            -f mode=release \
+            -f version=${{ needs.prepare.outputs.version }}
+
+  otel:
+    name: Dispatch otel-images.yml
+    needs: [prepare]
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Trigger otel-images.yml
+        run: |
+          gh workflow run otel-images.yml \
+            --repo "${{ github.repository }}" \
+            --ref main \
+            -f mode=release \
+            -f version=${{ needs.prepare.outputs.version }}
+
+  realtime:
+    name: Dispatch realtime-images.yml
+    needs: [prepare]
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Trigger realtime-images.yml
+        run: |
+          gh workflow run realtime-images.yml \
+            --repo "${{ github.repository }}" \
+            --ref main \
+            -f mode=release \
+            -f version=${{ needs.prepare.outputs.version }}
+
+  control:
+    name: Dispatch control-images.yml
+    needs: [prepare]
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Trigger control-images.yml
+        run: |
+          gh workflow run control-images.yml \
+            --repo "${{ github.repository }}" \
+            --ref main \
+            -f mode=release \
+            -f version=${{ needs.prepare.outputs.version }}
+
+  # ── Create GitHub Release with image manifest ──────────────────────────────
+  release:
+    name: Create GitHub Release
+    needs: [prepare, voice, cortex, reasoner, data, messaging, otel, realtime, control]
+    if: always()
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Build release notes
+        id: notes
+        run: |
+          VERSION="${{ needs.prepare.outputs.version }}"
+          NOTES_FILE="$(mktemp)"
+
+          printf '## Platform Release %s\n\n' "$VERSION" >> "$NOTES_FILE"
+          printf 'All service images published to GHCR. Dispatch results:\n\n' >> "$NOTES_FILE"
+          printf '| Job | Result |\n' >> "$NOTES_FILE"
+          printf '|-----|--------|\n' >> "$NOTES_FILE"
+          printf '| voice | %s |\n' "${{ needs.voice.result }}" >> "$NOTES_FILE"
+          printf '| cortex | %s |\n' "${{ needs.cortex.result }}" >> "$NOTES_FILE"
+          printf '| reasoner | %s |\n' "${{ needs.reasoner.result }}" >> "$NOTES_FILE"
+          printf '| data | %s |\n' "${{ needs.data.result }}" >> "$NOTES_FILE"
+          printf '| messaging | %s |\n' "${{ needs.messaging.result }}" >> "$NOTES_FILE"
+          printf '| otel | %s |\n' "${{ needs.otel.result }}" >> "$NOTES_FILE"
+          printf '| realtime | %s |\n' "${{ needs.realtime.result }}" >> "$NOTES_FILE"
+          printf '| control | %s |\n\n' "${{ needs.control.result }}" >> "$NOTES_FILE"
+          printf '## Image Manifest\n\n' >> "$NOTES_FILE"
+          printf '| Workflow | Images |\n' >> "$NOTES_FILE"
+          printf '|----------|---------|\n' >> "$NOTES_FILE"
+          printf '| voice-images.yml | `ghcr.io/arc-framework/arc-voice-agent:%s` |\n' "$VERSION" >> "$NOTES_FILE"
+          printf '| cortex-images.yml | `ghcr.io/arc-framework/arc-cortex:%s` |\n' "$VERSION" >> "$NOTES_FILE"
+          printf '| reasoner-images.yml | `ghcr.io/arc-framework/arc-reasoner:%s` |\n' "$VERSION" >> "$NOTES_FILE"
+          printf '| data-images.yml | `ghcr.io/arc-framework/arc-sql-db:%s`, `ghcr.io/arc-framework/arc-vector-db:%s`, `ghcr.io/arc-framework/arc-storage:%s` |\n' "$VERSION" "$VERSION" "$VERSION" >> "$NOTES_FILE"
+          printf '| messaging-images.yml | `ghcr.io/arc-framework/arc-messaging:%s`, `ghcr.io/arc-framework/arc-streaming:%s`, `ghcr.io/arc-framework/arc-cache:%s` |\n' "$VERSION" "$VERSION" "$VERSION" >> "$NOTES_FILE"
+          printf '| otel-images.yml | `ghcr.io/arc-framework/arc-friday:%s`, `ghcr.io/arc-framework/arc-friday-collector:%s`, `ghcr.io/arc-framework/arc-friday-clickhouse:%s`, `ghcr.io/arc-framework/arc-friday-migrator:%s`, `ghcr.io/arc-framework/arc-friday-zookeeper:%s` |\n' "$VERSION" "$VERSION" "$VERSION" "$VERSION" "$VERSION" >> "$NOTES_FILE"
+          printf '| realtime-images.yml | `ghcr.io/arc-framework/arc-realtime-server:%s`, `ghcr.io/arc-framework/arc-realtime-ingress:%s`, `ghcr.io/arc-framework/arc-realtime-egress:%s` |\n' "$VERSION" "$VERSION" "$VERSION" >> "$NOTES_FILE"
+          printf '| control-images.yml | `ghcr.io/arc-framework/arc-gateway:%s`, `ghcr.io/arc-framework/arc-vault:%s`, `ghcr.io/arc-framework/arc-flags:%s` |\n' "$VERSION" "$VERSION" "$VERSION" >> "$NOTES_FILE"
+
+          echo "notes-file=$NOTES_FILE" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        run: |
+          VERSION="${{ needs.prepare.outputs.version }}"
+          PRERELEASE="${{ needs.prepare.outputs.prerelease }}"
+
+          PRERELEASE_FLAG=""
+          if [ "$PRERELEASE" = "true" ]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
+
+          gh release create "platform/$VERSION" \
+            --repo "${{ github.repository }}" \
+            --title "ARC Platform $VERSION" \
+            $PRERELEASE_FLAG \
+            --notes-file "${{ steps.notes.outputs.notes-file }}"
