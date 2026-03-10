@@ -3850,6 +3850,125 @@ All functional and non-functional requirements have task coverage. All 5 previou
 ---
 
 ---
+url: /arc-platform/specs-site/016-voice-system/analysis-report.md
+---
+# Analysis Report: Voice System
+
+> **Feature**: 016-voice-system
+> **Date**: 2026-03-07 (rev 3 — all blockers and gaps resolved)
+> **Status**: READY — all blockers resolved, implementation can proceed
+
+***
+
+## Resolution Summary
+
+| Finding | Fix Applied | File |
+|---------|-------------|------|
+| BLOCKER-1 (pulsar-client wheel) | Pinned `pulsar-client==3.10.0`; cp313 wheels verified for macOS, manylinux, musllinux, Windows | tasks.md TASK-001 |
+| BLOCKER-2 (worker shutdown) | Added 5 s cancellation timeout, ordered teardown (worker → Pulsar → NATS), integration test checkpoint | tasks.md TASK-050 |
+| BLOCKER-3 (NATS timeout) | `VOICE_BRIDGE_TIMEOUT_MS` in TASK-010; error\_type mapping in TASK-040 | tasks.md (inline) |
+| BLOCKER-4 (service.yaml port) | Added `port: 8803` and piper binary path to TASK-001 acceptance | tasks.md TASK-001 |
+| GAP-1 (ErrorResponse) | Added inline to TASK-023 | tasks.md |
+| GAP-2 (HealthCheckResponse) | Added inline to TASK-023 | tasks.md |
+| GAP-3 (coverage targets) | Added per-module targets to TASK-999 | tasks.md |
+| GAP-4 (auth delegation) | Added note to FR-2/FR-3 | spec.md |
+| GAP-5 (Pulsar retention) | Added NFR-8 (7-day default retention) | spec.md |
+| MISSING-1 (latency test) | Added TASK-041 \[P] — p95 ≤ 1550 ms benchmark | tasks.md |
+| WARN-3 (error\_type Literal) | Added inline to TASK-040 | tasks.md |
+| WARN-4 (NATS subject) | TASK-010 references Spec 015 final state | tasks.md |
+
+***
+
+## Coverage Matrix
+
+| Req ID | Description | Plan Section | Task ID | Status |
+|--------|-------------|--------------|---------|--------|
+| FR-1 | Create `services/voice/` scaffold | Target Modules | TASK-001 | OK |
+| FR-2 | `POST /v1/audio/transcriptions` | REST APIs | TASK-020 | OK — auth delegation noted |
+| FR-3 | `POST /v1/audio/speech` | REST APIs | TASK-021 | OK — auth delegation noted |
+| FR-4 | Health endpoints | Health Router | TASK-022 | OK — schemas in TASK-023 |
+| FR-5 | LiveKit worker | Room Mode | TASK-040 | OK |
+| FR-6 | Bridge voice → reasoner | Room Mode | TASK-030 | OK |
+| FR-7 | Publish durable events | Events | TASK-031 | OK |
+| FR-8 | Contracts (OpenAPI + AsyncAPI) | Contracts | TASK-060 | OK |
+| FR-9 | Add voice to `reason` profile | Infra | TASK-070 | OK |
+| FR-10 | OTEL observability | Observability | TASK-012 + routers | OK |
+| FR-11 | CI/release workflows | Infra | TASK-080 | OK |
+| FR-12 | Reuse realtime infra | Dependencies | — (no new work) | OK |
+| NFR-1 | Non-root container | Constitution VIII | TASK-001 | OK |
+| NFR-2 | Default = no external creds | Constitution VI | TASK-010, 020, 021 | OK |
+| NFR-3 | Health checks (degraded not 500) | Health Router | TASK-022 | OK |
+| NFR-4 | OTEL latency metrics | Observability | TASK-012 + routers | OK |
+| NFR-5 | No secrets/audio in events | Security | TASK-023, TASK-031 | OK |
+| NFR-6 | Async contract uses streaming | Event Design | TASK-031, TASK-060 | OK |
+| NFR-7 | ruff + mypy + pytest | Quality | All Python tasks | OK |
+| NFR-8 | 7-day Pulsar retention | Events | TASK-031, TASK-060 | OK — added |
+| SC-1 | Boots in `reason` profile | Infra | TASK-070 | OK |
+| SC-2 | Transcriptions endpoint valid | REST | TASK-020 | OK |
+| SC-3 | Speech endpoint streams WAV | REST | TASK-021 | OK |
+| SC-4 | Room turn 750–1550 ms | Room Mode | TASK-041 | OK — added |
+| SC-5 | Events on arc-streaming | Events | TASK-031 | OK |
+| SC-6 | OTEL spans per turn | Observability | TASK-012 + TASK-040 | OK |
+| SC-7 | Local providers, no cloud creds | Local-First | TASK-020, TASK-021 | OK |
+
+***
+
+## Parallel Opportunities
+
+```mermaid
+graph TD
+    T001 --> T010 & T011 & T012 & T070
+    T010 & T011 & T012 --> T020 & T021 & T022 & T023
+    T023 --> T020 & T021 & T030 & T031
+    T020 & T021 & T030 & T031 --> T040
+    T040 --> T041 & T050
+    T041 & T050 --> T060
+    T060 --> T070 & T900
+    T070 --> T080
+    T080 & T900 --> T999
+```
+
+* Phase 2 (TASK-010/011/012/023): fully parallel \[4 agents]
+* Phase 3 Batch A (TASK-020/021/022): fully parallel \[3 agents]
+* Phase 3 Batch B (TASK-030/031): fully parallel \[2 agents]
+* Phase 4 (TASK-041 + TASK-050): parallel after TASK-040 \[2 agents]
+* Phase 5 (TASK-070 + TASK-080): parallel \[2 agents]; TASK-070 can start as early as TASK-001 completes
+* Phase 6 (TASK-900): starts after TASK-060
+
+Total: **18 tasks, 15 parallelizable.**
+
+***
+
+## Constitution Compliance
+
+| # | Principle | Status | Evidence |
+|---|-----------|--------|----------|
+| I | Zero-Dep CLI | N/A | No CLI changes |
+| II | Platform-in-a-Box | WARNING (justified) | `reason` profile only; model footprint too large for `think`; documented in plan.md + TASK-999 |
+| III | Modular Services | PASS | `services/voice/` self-contained |
+| IV | Two-Brain | PASS | Python owns speech intelligence; Go infra untouched |
+| V | Polyglot Standards | PASS | FastAPI + ruff + mypy + pytest |
+| VI | Local-First | PASS | `faster-whisper` + `piper` defaults; no cloud creds |
+| VII | Observability | PASS | OTEL histograms per stage; `/health` + `/health/deep` |
+| VIII | Security | PASS | Non-root Dockerfile; no secrets/audio in events or logs |
+| IX | Declarative | PASS | openapi.yaml + asyncapi.yaml are source of truth |
+| X | Stateful Ops | N/A | CLI-only principle |
+| XI | Resilience | PASS | Graceful degradation for cache/storage; VoiceTurnFailedEvent for all error paths |
+| XII | Interactive | N/A | No TUI scope |
+
+**No violations. Constitution II WARNING is justified and documented.**
+
+***
+
+## Final Assessment
+
+**READY. All blockers and gaps resolved. Proceed to `/speckit.implement`.**
+
+18 tasks total, 15 of which are parallelizable. No architectural rework needed.
+
+---
+
+---
 url: /arc-platform/specs-site/001-otel-setup/spec.md
 ---
 # Feature: 001-otel-setup — Stand Up SigNoz as the Observability Backend
@@ -7899,6 +8018,193 @@ jobs:
 | X. Stateful Ops | \[ ] | n/a | No CLI changes |
 | XI. Resilience | \[ ] | n/a | Static site — inherently resilient; GitHub Pages 99.9% SLA |
 | XII. Interactive | \[ ] | n/a | No CLI changes |
+
+---
+
+---
+url: /arc-platform/specs-site/016-voice-system/spec.md
+---
+# Feature: Voice System
+
+> **Spec**: 016-voice-system
+> **Author**: arc-framework
+> **Date**: 2026-03-06
+> **Status**: Draft
+> **ARD**: `docs/ard/VOICE-SYSTEM.md`
+> **HLD**: `docs/ard/VOICE-HLD.md`
+> **Framework**: `docs/ard/ARC-ENTERPRISE-AI-FRAMEWORK.md`
+
+## Executive Summary
+
+Build `services/voice/` as ARC's production voice orchestration service. `arc-voice-agent` will expose OpenAI-compatible STT and TTS APIs, run a LiveKit worker for room-based audio-to-audio sessions, bridge voice turns into `arc-reasoner` instead of duplicating reasoning, and publish durable voice lifecycle events for analytics, billing, and compliance. Existing realtime infrastructure in `services/realtime/` becomes a dependency, not the feature itself.
+
+## Target Modules
+
+| Module    | Path                                                | Impact                                           |
+| --------- | --------------------------------------------------- | ------------------------------------------------ |
+| Services  | `services/voice/`                                   | New — `arc-voice-agent` production voice service |
+| Services  | `services/profiles.yaml`                            | Update — add `voice` to `reason` profile         |
+| Services  | `services/realtime/`                                | Existing dependency — no new transport design    |
+| Contracts | `services/voice/contracts/`                         | New — OpenAPI + AsyncAPI                         |
+| CI/CD     | `.github/workflows/`                                | New — voice image and release workflows          |
+| Docs      | `docs/ard/VOICE-SYSTEM.md`, `docs/ard/VOICE-HLD.md` | New/updated architecture docs                    |
+
+## Framework Alignment
+
+This feature implements the voice slice of the ARC enterprise framework:
+
+* It realizes the framework's **sync flow for chat / voice**.
+* It preserves the **REST + async topic** contract model.
+* It keeps **`arc-reasoner` as the only reasoning brain**.
+* It lets teams run voice as a **sidecar** against existing infrastructure or as part of the full `reason` profile.
+
+## User Stories
+
+### Story 1 — REST speech APIs
+
+As an application developer, I want OpenAI-compatible STT and TTS endpoints so that existing clients can add speech support without custom adapters.
+
+**Acceptance Criteria**
+
+* `POST /v1/audio/transcriptions` accepts multipart audio and returns transcript text with language and duration metadata.
+* `POST /v1/audio/speech` accepts JSON text input and returns a WAV stream with duration and sample-rate headers.
+* Default providers are local-first and work without external accounts.
+* Invalid files, unsupported formats, and provider failures return typed error responses.
+
+### Story 2 — Realtime voice agent
+
+As an end user, I want to talk to ARC in a realtime room so that I can have low-latency spoken conversations with the same reasoning system used for chat.
+
+**Acceptance Criteria**
+
+* `arc-voice-agent` joins `arc-realtime` rooms as a worker and processes turns with VAD → STT → `arc-reasoner` → TTS.
+* `arc-voice-agent` uses `arc-reasoner` for reasoning and does not embed an independent LLM path.
+* End-to-end turn latency target remains within the documented budget of roughly 750–1550 ms.
+* Room-level failures publish a durable failure event and are visible in logs and traces.
+
+### Story 3 — Durable platform events
+
+As a platform operator, I want durable voice session and turn events so that analytics, billing, and compliance can subscribe without coupling to Scarlett internals.
+
+**Acceptance Criteria**
+
+* `arc-voice-agent` publishes `arc.voice.session.started`, `arc.voice.session.ended`, `arc.voice.turn.completed`, and `arc.voice.turn.failed`.
+* Event schemas are documented in `contracts/asyncapi.yaml`.
+* Events include correlation identifiers, room/session metadata, duration/latency fields, and provider outcome data.
+* Event publishing failure does not break the low-latency room response path.
+
+### Story 4 — Offline-first deployment
+
+As a platform team, I want voice to work locally with no external speech vendors so that ARC stays aligned with the local-first constitution.
+
+**Acceptance Criteria**
+
+* Default STT provider is `faster-whisper`.
+* Default TTS provider is `piper`.
+* Cloud providers are optional adapters behind interfaces.
+* The service boots in the `reason` profile with no required cloud credentials.
+
+## Requirements
+
+### Functional
+
+* \[ ] FR-1: Create `services/voice/` with `service.yaml`, `Dockerfile`, `pyproject.toml`, contracts, and `src/voice/` package.
+* \[ ] FR-2: Implement `POST /v1/audio/transcriptions` with provider abstraction and OpenAI-compatible response shape. Authentication is delegated to Heimdall (arc-gateway); standalone deployments without Heimdall must enforce bearer token validation separately.
+* \[ ] FR-3: Implement `POST /v1/audio/speech` with provider abstraction and WAV streaming response. Authentication is delegated to Heimdall (arc-gateway); standalone deployments without Heimdall must enforce bearer token validation separately.
+* \[ ] FR-4: Implement `GET /health` and `GET /health/deep` for shallow and dependency-aware checks.
+* \[ ] FR-5: Start a LiveKit worker inside `arc-voice-agent` and join `arc-realtime` rooms for audio-to-audio sessions.
+* \[ ] FR-6: Bridge voice turns to `arc-reasoner` over a configurable `arc-messaging` subject; default to `reasoner.request`.
+* \[ ] FR-7: Publish durable voice events on `arc-streaming` for session lifecycle and turn outcomes.
+* \[ ] FR-8: Add `services/voice/contracts/openapi.yaml` and `services/voice/contracts/asyncapi.yaml`.
+* \[ ] FR-9: Add `voice` to the `reason` profile in `services/profiles.yaml`.
+* \[ ] FR-10: Add observability with OTEL metrics, traces, and structured logs.
+* \[ ] FR-11: Add CI/release workflows for the voice image.
+* \[ ] FR-12: Reuse existing realtime infrastructure in `services/realtime/`; do not introduce a second transport stack.
+
+### Non-Functional
+
+* \[ ] NFR-1: `arc-voice-agent` runs as a non-root container and follows the standard service packaging pattern.
+* \[ ] NFR-2: Default deployment works without external speech vendor credentials.
+* \[ ] NFR-3: `GET /health` responds when the process is alive; `GET /health/deep` checks `arc-realtime` and `arc-messaging` connectivity and reports degraded status clearly.
+* \[ ] NFR-4: OTEL captures per-turn latency for STT, Sherlock bridge, TTS, and total pipeline time.
+* \[ ] NFR-5: Session and turn events never contain secrets or raw full-audio payloads.
+* \[ ] NFR-6: The public async contract uses `arc-streaming` topics even though internal speed-path requests use `arc-messaging`.
+* \[ ] NFR-7: The service passes `ruff`, `mypy`, and `pytest` following the same Python standards as `arc-reasoner`.
+* \[ ] NFR-8: Voice events are published to `arc-streaming` with a 7-day default Pulsar retention policy. Platform operators may configure longer retention for compliance or billing audit requirements.
+
+## Key Entities
+
+| Entity                | Description                                                             |
+| --------------------- | ----------------------------------------------------------------------- |
+| `VoiceSession`        | LiveKit room participation and lifecycle metadata                       |
+| `VoiceTurn`           | Single user utterance plus agent response metrics                       |
+| `STTPort`             | Protocol interface for transcription providers                          |
+| `TTSPort`             | Protocol interface for synthesis providers                              |
+| `LLMBridgePort`       | Protocol interface for `arc-voice-agent` ↔ `arc-reasoner` turn exchange |
+| `VoiceSessionStarted` | Durable async event for room/session start                              |
+| `VoiceTurnCompleted`  | Durable async event for successful turn completion                      |
+
+## Out of Scope
+
+* Browser or mobile SDK implementation
+* New realtime transport infrastructure beyond the already implemented LiveKit stack
+* Training or fine-tuning speech models
+* Enterprise telephony connectors beyond the base room and REST capabilities
+* Replacing `arc-reasoner` with a separate voice-native reasoning engine
+
+## Dependencies
+
+* Existing realtime transport in `services/realtime/`
+* `arc-reasoner` request/reply contracts in `services/reasoner/`
+* `arc-messaging` for low-latency internal turn exchange
+* `arc-streaming` for durable async voice events
+* `arc-cache` and `arc-storage` for optional session state and recording support
+* Architecture guidance in `docs/ard/ARC-ENTERPRISE-AI-FRAMEWORK.md`
+
+## Edge Cases
+
+| Scenario                                           | Expected Behavior                                                              |
+| -------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `arc-realtime` unavailable                         | REST APIs still boot; room mode reports degraded/unavailable                   |
+| `arc-messaging` unavailable                        | `health/deep` fails; room turns fail fast with typed error and failure event   |
+| `arc-cache` unavailable                            | Room mode continues without cached hot state                                   |
+| `arc-storage` or `arc-realtime-egress` unavailable | Sessions continue; recording/export features degrade gracefully                |
+| Local speech model cold start                      | First request is slower, but service remains healthy and emits latency metrics |
+| Subject naming migration to `arc.reasoner.request` | `arc-voice-agent` changes by config, not by code rewrite                       |
+
+## Success Criteria
+
+* \[ ] SC-1: `services/voice/` boots successfully in the `reason` profile.
+* \[ ] SC-2: `POST /v1/audio/transcriptions` returns valid transcript metadata for supported audio formats.
+* \[ ] SC-3: `POST /v1/audio/speech` streams playable WAV audio.
+* \[ ] SC-4: `arc-voice-agent` joins an `arc-realtime` room and completes a full spoken turn through `arc-reasoner`.
+* \[ ] SC-5: Voice session and turn events are emitted on `arc-streaming` with valid schema payloads.
+* \[ ] SC-6: OTEL traces show STT, `arc-reasoner` bridge, and TTS spans per turn.
+* \[ ] SC-7: Default local providers work without cloud credentials.
+
+## Docs & Links Update
+
+* \[ ] Create `docs/ard/VOICE-SYSTEM.md`
+* \[ ] Update `docs/ard/VOICE-HLD.md`
+* \[ ] Link the voice docs back to `docs/ard/ARC-ENTERPRISE-AI-FRAMEWORK.md`
+* \[ ] Add a docs update task for service references and profile documentation
+
+## Constitution Compliance
+
+| Principle             | Applies | Status  | Notes                                                                                         |
+| --------------------- | ------- | ------- | --------------------------------------------------------------------------------------------- |
+| I. Zero-Dep CLI       | \[ ]     | n/a     | No CLI runtime change                                                                         |
+| II. Platform-in-a-Box | \[x]     | WARNING | Voice is intentionally `reason` profile only because model footprint is too heavy for `think` |
+| III. Modular Services | \[x]     | PASS    | `services/voice/` is self-contained and depends on existing platform services                 |
+| IV. Two-Brain         | \[x]     | PASS    | Python owns speech intelligence; Go infra remains unchanged                                   |
+| V. Polyglot Standards | \[x]     | PASS    | FastAPI + ruff + mypy + pytest                                                                |
+| VI. Local-First       | \[x]     | PASS    | Whisper + Piper are default providers                                                         |
+| VII. Observability    | \[x]     | PASS    | OTEL metrics, traces, and health endpoints are required                                       |
+| VIII. Security        | \[x]     | PASS    | Non-root container, no secrets in logs or events                                              |
+| IX. Declarative       | \[x]     | PASS    | Contracts and service metadata are explicit                                                   |
+| X. Stateful Ops       | \[x]     | PASS    | Session state and lifecycle events are queryable through platform dependencies                |
+| XI. Resilience        | \[x]     | PASS    | Graceful degradation for storage/cache and failure events for runtime issues                  |
+| XII. Interactive      | \[ ]     | n/a     | No TUI scope                                                                                  |
 
 ---
 
@@ -12993,6 +13299,282 @@ mature community standard. If the spec count grows beyond ~50, consider adding
 ---
 
 ---
+url: /arc-platform/specs-site/016-voice-system/plan.md
+---
+# Implementation Plan: Voice System
+
+> **Spec**: 016-voice-system
+> **Date**: 2026-03-07
+
+## Summary
+
+Build `services/voice/` as `arc-voice-agent` (Scarlett) — a Python FastAPI service that exposes OpenAI-compatible STT/TTS REST APIs, runs a LiveKit worker for room-based voice sessions, and bridges all reasoning turns to `arc-reasoner` over NATS. Scarlett publishes durable voice lifecycle events to `arc-streaming` (Pulsar) for analytics and billing. Local-first by default: `faster-whisper` for STT, `piper` for TTS.
+
+## Target Modules
+
+| Module | Language | Changes |
+|--------|----------|---------|
+| `services/voice/` | Python | New — `arc-voice-agent` service scaffold, src, tests, contracts |
+| `services/profiles.yaml` | YAML | Add `voice` to `reason` profile |
+| `.github/workflows/` | YAML | New voice image build + release workflow |
+| `docs/ard/` | MDX | New `VOICE-SYSTEM.md`, update `VOICE-HLD.md` |
+
+## Technical Context
+
+| Aspect | Value |
+|--------|-------|
+| Language | Python 3.13+ |
+| Framework | FastAPI + uvicorn |
+| LiveKit | `livekit-agents` SDK (worker mode) |
+| STT (default) | `faster-whisper` (local, offline) |
+| TTS (default) | `piper-tts` (local, offline) |
+| Reasoning bridge | NATS request-reply → `arc.reasoner.request` |
+| Async events | Pulsar → `arc.voice.*` topics |
+| Observability | OTEL — `opentelemetry-api/sdk` + histogram per pipeline stage |
+| Linting | `ruff` + `mypy` |
+| Testing | `pytest` + `pytest-asyncio` |
+| Packaging | `uv` + `pyproject.toml` |
+| Pattern baseline | Mirror `services/reasoner/` layout |
+
+## Architecture
+
+### Component Overview
+
+```mermaid
+graph TB
+    subgraph arc-voice-agent ["arc-voice-agent (Scarlett)"]
+        REST["FastAPI REST\n/v1/audio/transcriptions\n/v1/audio/speech\n/health /health/deep"]
+        WORKER["LiveKit Worker\n(livekit-agents SDK)"]
+        STT["STTPort\nfaster-whisper adapter"]
+        TTS["TTSPort\npiper adapter"]
+        BRIDGE["LLMBridgePort\nNATS request-reply"]
+        EVENTS["EventPublisher\nPulsar fire-and-forget"]
+    end
+
+    CLIENT["REST Client"] -->|multipart audio / JSON text| REST
+    REST --> STT
+    REST --> TTS
+    ROOM["LiveKit Room\n(arc-realtime)"] -->|audio frames| WORKER
+    WORKER --> STT
+    STT -->|transcript| BRIDGE
+    BRIDGE -->|arc.reasoner.request| REASONER["arc-reasoner\n(Sherlock)"]
+    REASONER -->|arc.reasoner.result| BRIDGE
+    BRIDGE -->|response text| TTS
+    TTS -->|audio frames| ROOM
+    WORKER --> EVENTS
+    REST --> EVENTS
+    EVENTS -->|arc.voice.*| STREAMING["arc-streaming\n(Pulsar)"]
+
+    WORKER -.->|dep check| REALTIME["arc-realtime\n(Daredevil)"]
+    BRIDGE -.->|dep check| MESSAGING["arc-messaging\n(NATS/Flash)"]
+```
+
+### Turn Sequence (Room Mode)
+
+```mermaid
+sequenceDiagram
+    participant U as User (audio)
+    participant LK as arc-realtime
+    participant W as LiveKit Worker
+    participant S as STT (Whisper)
+    participant B as LLMBridge (NATS)
+    participant R as arc-reasoner
+    participant T as TTS (Piper)
+    participant P as Pulsar
+
+    U->>LK: audio frames (VAD)
+    LK->>W: end-of-speech segment
+    W->>S: transcribe(audio_bytes)
+    S-->>W: transcript + duration
+    W->>B: reason(transcript, session_id)
+    B->>R: arc.reasoner.request (NATS)
+    R-->>B: arc.reasoner.result
+    B-->>W: response text
+    W->>T: synthesize(text)
+    T-->>W: wav bytes
+    W->>LK: publish audio to room
+    W-)P: arc.voice.turn.completed (fire-and-forget)
+```
+
+### REST Turn Sequence
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant A as FastAPI
+    participant S as STTPort
+    participant T as TTSPort
+
+    C->>A: POST /v1/audio/transcriptions (multipart)
+    A->>S: transcribe(audio_bytes, language)
+    S-->>A: transcript, language, duration_secs
+    A-->>C: {"text": ..., "language": ..., "duration": ...}
+
+    C->>A: POST /v1/audio/speech (JSON)
+    A->>T: synthesize(text, voice)
+    T-->>A: wav_bytes, sample_rate, duration_secs
+    A-->>C: WAV stream + headers
+```
+
+## Constitution Check
+
+| # | Principle | Status | Evidence |
+|---|-----------|--------|----------|
+| I | Zero-Dep CLI | N/A | No CLI changes |
+| II | Platform-in-a-Box | WARNING (justified) | Voice model footprint too heavy for `think`; `reason` profile only — documented |
+| III | Modular Services | PASS | `services/voice/` is self-contained with own `service.yaml`, Dockerfile, health checks |
+| IV | Two-Brain | PASS | Python owns speech intelligence; Go infra untouched |
+| V | Polyglot Standards | PASS | FastAPI + ruff + mypy + pytest — mirrors reasoner baseline |
+| VI | Local-First | PASS | `faster-whisper` + `piper` default; no cloud credentials required |
+| VII | Observability | PASS | OTEL histograms (stt\_latency, bridge\_latency, tts\_latency, turn\_latency); `/health` + `/health/deep` |
+| VIII | Security | PASS | Non-root container; no secrets/audio in events; no raw audio in logs |
+| IX | Declarative | PASS | `contracts/openapi.yaml` + `contracts/asyncapi.yaml` are source of truth |
+| X | Stateful Ops | N/A | CLI-only principle; session lifecycle tracked via Pulsar events |
+| XI | Resilience | PASS | `arc-realtime` unavailable → REST still boots; `arc-messaging` down → fail-fast + event; cache/storage fail-open |
+| XII | Interactive | N/A | No TUI scope |
+
+## Project Structure
+
+```
+services/voice/
+├── service.yaml                    # arc-voice-agent metadata, deps, health
+├── Dockerfile                      # non-root, multi-stage, mirrors reasoner
+├── docker-compose.yml              # local dev compose override
+├── pyproject.toml                  # arc-voice-agent package, deps
+├── uv.lock                         # pinned lockfile
+├── voice.mk                        # Makefile targets (build, test, lint)
+├── contracts/
+│   ├── openapi.yaml                # STT + TTS + health endpoints
+│   └── asyncapi.yaml               # arc.voice.* Pulsar topics
+└── src/voice/
+    ├── __init__.py
+    ├── main.py                     # FastAPI app factory, lifespan, OTEL setup
+    ├── config.py                   # Settings (pydantic-settings, 12-factor)
+    ├── models_v1.py                # Pydantic I/O models + event schemas
+    ├── observability.py            # OTEL tracer, meter, histograms
+    ├── interfaces.py               # STTPort, TTSPort, LLMBridgePort (Protocol)
+    ├── health_router.py            # GET /health, GET /health/deep
+    ├── stt_router.py               # POST /v1/audio/transcriptions
+    ├── tts_router.py               # POST /v1/audio/speech
+    ├── worker.py                   # LiveKit worker entrypoint + room handler
+    ├── nats_bridge.py              # LLMBridgePort impl — NATS request-reply
+    ├── pulsar_events.py            # EventPublisher — Pulsar fire-and-forget
+    └── providers/
+        ├── __init__.py
+        ├── stt_whisper.py          # faster-whisper STTPort adapter
+        ├── stt_openai.py           # OpenAI STT adapter (optional)
+        ├── tts_piper.py            # piper-tts TTSPort adapter
+        └── tts_openai.py           # OpenAI TTS adapter (optional)
+tests/
+├── conftest.py                     # fixtures: mock NATS, mock Pulsar, mock providers
+├── test_stt_router.py
+├── test_tts_router.py
+├── test_health_router.py
+├── test_nats_bridge.py
+├── test_pulsar_events.py
+├── test_worker.py                  # LiveKit worker logic (mocked room)
+└── test_providers/
+    ├── test_stt_whisper.py
+    └── test_tts_piper.py
+```
+
+## Key Design Decisions
+
+### Ports & Adapters (Hexagonal)
+
+`STTPort`, `TTSPort`, `LLMBridgePort` are `typing.Protocol` interfaces in `interfaces.py` — same pattern as reasoner's `interfaces.py`. Providers are injected at startup via `config.py` provider selection, enabling easy adapter swap (local → cloud) without touching orchestration logic.
+
+### NATS Bridge vs. Direct HTTP
+
+The `LLMBridgePort` uses NATS request-reply (same `arc.reasoner.request` subject) rather than HTTP, matching the low-latency path already used by Sherlock's `nats_handler.py`. This avoids introducing a direct HTTP service-to-service dependency and reuses the existing NATS queue group.
+
+### Pulsar Events — Fire and Forget
+
+Event publishing to `arc-streaming` is always fire-and-forget using `asyncio.create_task()`. A publishing failure never blocks the room response path (mirrors reasoner's `pulsar_handler.py` pattern from Spec 015).
+
+### Worker Mode
+
+The LiveKit worker runs as a background task within the same FastAPI process (using `livekit-agents` dispatch mode). This avoids a separate process, simplifies deployment, and shares the OTEL context.
+
+### Provider Configuration
+
+```
+VOICE_STT_PROVIDER=faster-whisper   # or: openai
+VOICE_TTS_PROVIDER=piper            # or: openai
+VOICE_BRIDGE_NATS_SUBJECT=arc.reasoner.request
+VOICE_LIVEKIT_URL=ws://arc-realtime:7880
+VOICE_LIVEKIT_API_KEY=...
+VOICE_LIVEKIT_API_SECRET=...
+```
+
+## Parallel Execution Strategy
+
+```mermaid
+gantt
+    title 016 — Voice System Implementation Phases
+    dateFormat  YYYY-MM-DD
+    section Phase 1 — Scaffold
+    Service scaffold + pyproject + service.yaml + Dockerfile :p1a, 2026-03-07, 1d
+    Config + Settings + observability.py                     :p1b, after p1a, 1d
+    section Phase 2 — Parallel Core
+    STT: interfaces + whisper adapter + router + tests       :p2a, after p1b, 2d
+    TTS: interfaces + piper adapter + router + tests         :p2b, after p1b, 2d
+    Health router + deep check logic + tests                 :p2c, after p1b, 1d
+    section Phase 3 — Parallel Integration
+    NATS bridge + tests                                      :p3a, after p2a, 1d
+    Pulsar event publisher + tests                           :p3b, after p2b, 1d
+    LiveKit worker + room handler + tests                    :p3c, after p2a, 2d
+    section Phase 4 — Contracts & Wire-up
+    openapi.yaml + asyncapi.yaml                             :p4a, after p3b, 1d
+    main.py wiring + lifespan + worker launch                :p4b, after p3c, 1d
+    section Phase 5 — Infra & CI
+    docker-compose.yml + profiles.yaml update               :p5a, after p4b, 1d
+    CI workflow (build + push voice image)                   :p5b, after p4b, 1d
+    section Phase 6 — Docs
+    VOICE-SYSTEM.md + VOICE-HLD.md + framework links        :p6a, after p5a, 1d
+```
+
+**Parallelizable groups:**
+
+* Phase 2: STT track / TTS track / Health track — fully independent
+* Phase 3: NATS bridge / Pulsar events — independent; LiveKit worker depends on both STT + NATS
+* Phase 5: CI workflow / compose/profiles — independent
+* Phase 6: Docs can start as soon as contracts are stable
+
+## Reviewer Checklist
+
+* \[ ] All tasks in tasks.md completed
+* \[ ] `uv run python -m pytest tests/ -q` passes in `services/voice/`
+* \[ ] `uv run ruff check src/` passes (zero warnings)
+* \[ ] `uv run mypy src/` passes (strict)
+* \[ ] `services/voice/` starts without external credentials (local providers)
+* \[ ] `GET /health` returns 200 when process is alive
+* \[ ] `GET /health/deep` returns degraded (not 500) when `arc-realtime` is down
+* \[ ] `POST /v1/audio/transcriptions` returns valid JSON with transcript + metadata
+* \[ ] `POST /v1/audio/speech` returns WAV bytes with correct headers
+* \[ ] Voice events publish to Pulsar without blocking room path
+* \[ ] `voice` appears in `reason` profile in `profiles.yaml`
+* \[ ] `service.yaml` has correct `depends_on` and health check
+* \[ ] `Dockerfile` uses non-root user
+* \[ ] `contracts/openapi.yaml` and `contracts/asyncapi.yaml` are valid
+* \[ ] No secrets, raw audio, or PII in log output or event payloads
+* \[ ] OTEL spans visible for STT, NATS bridge, and TTS per turn
+* \[ ] Constitution II WARNING documented (reason-profile-only, model footprint)
+
+## Risks & Mitigations
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| `faster-whisper` cold start adds 2–5 s to first STT request | M | Model pre-load at startup (lifespan); emit latency metric; health check does not wait for model |
+| `piper` binary path varies by platform/container | M | Resolve `piper` path from env var `VOICE_PIPER_BIN`; Dockerfile installs to known path |
+| LiveKit `livekit-agents` dispatch model may conflict with FastAPI event loop | H | Run worker via `asyncio.create_task()` in lifespan; verify uvicorn + livekit-agents compatibility in tests |
+| NATS bridge subject migration (`reasoner.request` → `arc.reasoner.request`) | L | Bridge subject is env-configurable; default matches current Sherlock subject |
+| `pulsar-client` binary wheel unavailable for Python 3.13 | M | Mirror reasoner's Dockerfile multi-stage; pin pulsar-client version matching reasoner's uv.lock |
+| Provider import errors for optional cloud adapters | L | Lazy imports inside provider adapters; ImportError surfaced at instantiation, not import time |
+
+---
+
+---
 url: /arc-platform/specs-site/015-nervous-system/analysis-report.md
 ---
 # Pre-Implementation Audit: 015-Nervous System
@@ -17597,3 +18179,231 @@ All tasks in this phase are independent — different files, no shared state.
 | Verification | 1 | 1 | 0 |
 | Polish | 2 | 2 | 0 |
 | **Total** | **16** | **16** | **12** |
+
+---
+
+---
+url: /arc-platform/specs-site/016-voice-system/tasks.md
+---
+# Tasks: Voice System
+
+> **Spec**: 016-voice-system
+> **Date**: 2026-03-07
+
+## Task Format
+
+```
+[TASK-NNN] [P?] [MODULE] [PRIORITY] Description
+  Dependencies: [TASK-XXX] or none
+  Module: services/voice/...
+  Acceptance: Testable criteria
+  Status: [ ] pending | [~] in-progress | [x] done
+```
+
+* `[P]` = Safe for parallel agent execution
+* Priority: P1 (must), P2 (should), P3 (nice)
+
+## Dependency Graph
+
+```mermaid
+graph TD
+    T001["TASK-001\nScaffold service dir"] --> T010
+    T001 --> T011
+    T001 --> T012
+
+    T010["TASK-010\nconfig + settings"] --> T020
+    T010 --> T021
+    T010 --> T022
+    T010 --> T023
+
+    T011["TASK-011\ninterfaces.py\n(STTPort, TTSPort, LLMBridgePort)"] --> T020
+    T011 --> T021
+    T011 --> T022
+    T011 --> T023
+    T011 --> T030
+
+    T012["TASK-012\nobservability.py\n(OTEL tracer/meter/histograms)"] --> T020
+    T012 --> T021
+    T012 --> T022
+    T012 --> T023
+    T012 --> T030
+
+    T020["TASK-020 [P]\nSTT Whisper adapter + router"] --> T040
+    T021["TASK-021 [P]\nTTS Piper adapter + router"] --> T040
+    T022["TASK-022 [P]\nHealth router"] --> T040
+    T023["TASK-023 [P]\nmodels_v1.py\n(Pydantic models + events)"] --> T020
+    T023 --> T021
+    T023 --> T030
+    T023 --> T031
+
+    T030["TASK-030 [P]\nNATS bridge\n(LLMBridgePort impl)"] --> T040
+    T031["TASK-031 [P]\nPulsar event publisher"] --> T040
+
+    T040["TASK-040\nLiveKit worker\n(room handler)"] --> T050
+    T040 --> T041["TASK-041 [P]\nLoad/latency test\n(750-1550 ms SLO)"]
+    T041 --> T999
+    T050["TASK-050\nmain.py wiring\n+ lifespan"] --> T060
+
+    T060["TASK-060\nContracts\n(openapi + asyncapi)"] --> T070
+    T070["TASK-070\nDocker + compose\n+ profiles.yaml"] --> T080
+    T080["TASK-080\nCI workflow"] --> T900
+
+    T900["TASK-900 [P]\nDocs update"] --> T999
+    T080 --> T999
+    T900 --> T999
+    T999["TASK-999\nReviewer verification"]
+```
+
+## Quality Requirements
+
+| Module | Coverage | Lint |
+|--------|----------|------|
+| `services/voice/` (Python) | 75% critical / 60% core / 40% infra | `ruff` + `mypy` |
+
+***
+
+## Phase 1: Setup
+
+* \[x] \[TASK-001] \[VOICE] \[P1] Create `services/voice/` directory structure with service.yaml, Dockerfile, pyproject.toml, uv.lock placeholder, and voice.mk
+  * Dependencies: none
+  * Module: `services/voice/`
+  * Acceptance: `services/voice/service.yaml` declares `name: arc-voice-agent`, `codename: scarlett`, `port: 8803`, correct `depends_on` (messaging, streaming, realtime, friday-collector, cache); Dockerfile uses non-root user, mirrors reasoner multi-stage build, and installs `piper` binary to `/usr/local/bin/piper`; `pyproject.toml` declares `arc-voice-agent` package with fastapi, uvicorn, pydantic-settings, livekit-agents, faster-whisper, piper-tts, nats-py, `pulsar-client==3.10.0` (matches `services/reasoner/uv.lock` — cp313 wheels verified for all target platforms), opentelemetry-api/sdk deps; `uv lock` runs cleanly
+
+***
+
+## Phase 2: Foundational
+
+* \[x] \[TASK-010] \[P] \[VOICE] \[P1] Implement `src/voice/config.py` — pydantic-settings `Settings` class with all env vars
+  * Dependencies: TASK-001
+  * Module: `services/voice/src/voice/config.py`
+  * Acceptance: `Settings` covers `VOICE_STT_PROVIDER`, `VOICE_TTS_PROVIDER`, `VOICE_BRIDGE_NATS_SUBJECT` (default `arc.reasoner.request` — matches Spec 015 final state; see `services/reasoner/src/reasoner/nats_handler.py`), `VOICE_BRIDGE_TIMEOUT_MS` (default `10000`), `VOICE_LIVEKIT_URL`, `VOICE_LIVEKIT_API_KEY`, `VOICE_LIVEKIT_API_SECRET`, `VOICE_OTEL_ENDPOINT`, `VOICE_PORT` (default 8803), `VOICE_LOG_LEVEL`; all vars have sane defaults; `Settings()` instantiates with no env vars set
+
+* \[x] \[TASK-011] \[P] \[VOICE] \[P1] Implement `src/voice/interfaces.py` — `STTPort`, `TTSPort`, `LLMBridgePort` Protocol interfaces + result dataclasses
+  * Dependencies: TASK-001
+  * Module: `services/voice/src/voice/interfaces.py`
+  * Acceptance: `STTPort.transcribe(audio_bytes, language) -> TranscriptResult` defined; `TTSPort.synthesize(text, voice) -> SynthesisResult` defined; `LLMBridgePort.reason(transcript, session_id, correlation_id) -> str` defined; `TranscriptResult` has `text`, `language`, `duration_secs`; `SynthesisResult` has `wav_bytes`, `sample_rate`, `duration_secs`; `mypy` passes on the file
+
+* \[x] \[TASK-012] \[P] \[VOICE] \[P1] Implement `src/voice/observability.py` — OTEL tracer, meter, and per-stage histograms
+  * Dependencies: TASK-001
+  * Module: `services/voice/src/voice/observability.py`
+  * Acceptance: `setup_telemetry(settings)` configures OTEL exporter and returns tracer + meter; histograms defined: `voice.stt.latency_seconds`, `voice.tts.latency_seconds`, `voice.bridge.latency_seconds`, `voice.turn.latency_seconds`; `get_tracer()` / `get_meter()` accessors exported; works with no OTEL endpoint (no-op exporter fallback)
+
+* \[x] \[TASK-023] \[P] \[VOICE] \[P1] Implement `src/voice/models_v1.py` — Pydantic I/O models and event schemas
+  * Dependencies: TASK-001
+  * Module: `services/voice/src/voice/models_v1.py`
+  * Acceptance: `TranscriptionRequest`, `TranscriptionResponse` (OpenAI-compatible: `text`, `language`, `duration`); `SpeechRequest` (`model`, `input`, `voice`, `response_format`); `VoiceSessionStartedEvent`, `VoiceSessionEndedEvent`, `VoiceTurnCompletedEvent`, `VoiceTurnFailedEvent` with `session_id`, `room_id`, `correlation_id`, `timestamp`, latency/duration fields; no secrets or audio payload fields; `mypy` passes
+  * **GAP-1** `ErrorResponse(error_type: Literal['unsupported_format', 'provider_unavailable', 'invalid_input'], message: str, correlation_id: str)` — used by STT and TTS routers for 400/502 responses
+  * **GAP-2** `HealthCheckDetail(status: Literal['ok', 'degraded', 'unhealthy'], reason: str | None, latency_ms: float | None)` and `HealthCheckResponse(status: Literal['ok', 'degraded', 'unhealthy'], checks: dict[str, HealthCheckDetail])` — used by `/health/deep`
+
+***
+
+## Phase 3: Implementation
+
+### Parallel Batch A — REST Handlers
+
+* \[x] \[TASK-020] \[P] \[VOICE] \[P1] Implement faster-whisper STT adapter and `POST /v1/audio/transcriptions` router
+  * Dependencies: TASK-010, TASK-011, TASK-012, TASK-023
+  * Module: `services/voice/src/voice/providers/stt_whisper.py`, `services/voice/src/voice/stt_router.py`, `tests/test_stt_router.py`, `tests/test_providers/test_stt_whisper.py`
+  * Acceptance: `WhisperSTTAdapter` implements `STTPort`; `POST /v1/audio/transcriptions` accepts multipart `file` field; returns JSON `{text, language, duration}`; rejects unsupported MIME types with typed 400; provider failure returns typed 502; OTEL span wraps transcription; tests pass with mocked Whisper model; `ruff` + `mypy` clean
+
+* \[x] \[TASK-021] \[P] \[VOICE] \[P1] Implement piper TTS adapter and `POST /v1/audio/speech` router
+  * Dependencies: TASK-010, TASK-011, TASK-012, TASK-023
+  * Module: `services/voice/src/voice/providers/tts_piper.py`, `services/voice/src/voice/tts_router.py`, `tests/test_tts_router.py`, `tests/test_providers/test_tts_piper.py`
+  * Acceptance: `PiperTTSAdapter` implements `TTSPort`; `POST /v1/audio/speech` accepts JSON `{input, voice, model}`; returns `StreamingResponse` with `Content-Type: audio/wav`, `X-Duration-Seconds`, `X-Sample-Rate` headers; empty `input` returns 400; provider failure returns typed 502; OTEL span wraps synthesis; tests pass with mocked piper binary; `ruff` + `mypy` clean
+
+* \[x] \[TASK-022] \[P] \[VOICE] \[P1] Implement `GET /health` and `GET /health/deep` router
+  * Dependencies: TASK-010, TASK-012
+  * Module: `services/voice/src/voice/health_router.py`, `tests/test_health_router.py`
+  * Acceptance: `GET /health` returns `{status: "ok"}` 200 when process is alive (no deps checked); `GET /health/deep` checks `arc-realtime` connectivity (LiveKit API ping) and `arc-messaging` connectivity (NATS ping); returns `{status: "degraded", checks: {...}}` with 200 when deps down (not 500); individual check failures report reason; tests cover all combinations; `ruff` + `mypy` clean
+
+### Parallel Batch B — Messaging
+
+* \[x] \[TASK-030] \[P] \[VOICE] \[P1] Implement NATS bridge (`LLMBridgePort` impl) for reasoner request-reply
+  * Dependencies: TASK-011, TASK-012, TASK-023
+  * Module: `services/voice/src/voice/nats_bridge.py`, `tests/test_nats_bridge.py`
+  * Acceptance: `NATSBridge` implements `LLMBridgePort`; publishes to `VOICE_BRIDGE_NATS_SUBJECT` with `request_id` correlation; awaits `arc.reasoner.result` reply with configurable timeout; on timeout or `arc.reasoner.error` raises typed `BridgeError`; OTEL span wraps the round-trip; `_nc` connection shared via lifespan; tests use mock NATS server or `AsyncMock`; `ruff` + `mypy` clean
+
+* \[x] \[TASK-031] \[P] \[VOICE] \[P1] Implement Pulsar event publisher (fire-and-forget) for voice lifecycle events
+  * Dependencies: TASK-023
+  * Module: `services/voice/src/voice/pulsar_events.py`, `tests/test_pulsar_events.py`
+  * Acceptance: `VoiceEventPublisher` wraps Pulsar client; exposes `publish_session_started`, `publish_session_ended`, `publish_turn_completed`, `publish_turn_failed`; each wraps `asyncio.create_task()` so publishing never blocks caller; Pulsar unavailability logs warning and returns without raising; event payloads match `models_v1.py` schemas; no secrets or audio bytes in payloads; tests verify fire-and-forget behaviour (await `asyncio.sleep(0)` to drain); `ruff` + `mypy` clean
+
+***
+
+## Phase 4: Integration
+
+* \[x] \[TASK-040] \[VOICE] \[P1] Implement LiveKit worker — VAD → STT → NATSBridge → TTS → room audio
+  * Dependencies: TASK-020, TASK-021, TASK-030, TASK-031
+  * Module: `services/voice/src/voice/worker.py`, `tests/test_worker.py`
+  * Acceptance: `VoiceWorker` connects to LiveKit room as agent; VAD detects end-of-speech; calls `STTPort.transcribe()`; calls `LLMBridgePort.reason()`; calls `TTSPort.synthesize()`; publishes audio frames back to room; publishes `VoiceTurnCompletedEvent` on success and `VoiceTurnFailedEvent` on any exception; OTEL turn span wraps full pipeline; room failure publishes failure event and logs without crashing worker loop; tests mock LiveKit room and all ports; `ruff` + `mypy` clean
+  * **WARN-3** Exception → `error_type` mapping for `VoiceTurnFailedEvent`: `STTError` → `'stt_error'`; `BridgeError` with timeout → `'bridge_timeout'`; `BridgeError` with reasoner error → `'bridge_error'`; `TTSError` → `'tts_error'`; any other unhandled exception → `'unknown'`; `error_type` must be a `Literal` field in `VoiceTurnFailedEvent` (defined in TASK-023)
+
+* \[x] \[TASK-041] \[P] \[VOICE] \[P2] Load and latency validation — confirm end-to-end turn budget (750–1550 ms) under concurrent rooms
+  * Dependencies: TASK-040
+  * Module: `tests/test_latency.py` (or `tests/test_load.py`)
+  * Acceptance: Pytest benchmark or `locust` script simulates ≥3 concurrent room turns with mocked STT/TTS/NATS providers returning fixed-latency stubs; asserts p95 end-to-end turn latency ≤ 1550 ms across 50 iterations; OTEL histogram `voice.turn.latency_seconds` records each measurement; results logged to stdout for CI visibility; test is skipped (`pytest.mark.skip`) in short mode via `--no-load-test` flag
+
+* \[x] \[TASK-050] \[VOICE] \[P1] Implement `src/voice/main.py` — FastAPI app factory, lifespan, router registration, worker launch
+  * Dependencies: TASK-040, TASK-022
+  * Module: `services/voice/src/voice/main.py`
+  * Acceptance: `create_app()` factory wires routers (STT, TTS, health); lifespan starts NATS connection, Pulsar client, OTEL, then launches `VoiceWorker` as `asyncio.create_task()`; lifespan teardown cancels `VoiceWorker` task with **5 s timeout** (log error and continue if exceeded), then closes Pulsar client, then closes NATS connection (shutdown order: worker → Pulsar → NATS); integration test: pytest fixture boots the full app with `httpx.AsyncClient(app=create_app(), ..., lifespan='on')` and confirms clean startup + teardown without deadlock; `uvicorn main:create_app()` starts without error with only local env vars set; `ruff` + `mypy` clean
+
+***
+
+## Phase 5: Contracts & Infrastructure
+
+* \[x] \[TASK-060] \[P] \[VOICE] \[P1] Write `contracts/openapi.yaml` and `contracts/asyncapi.yaml`
+  * Dependencies: TASK-050
+  * Module: `services/voice/contracts/`
+  * Acceptance: `openapi.yaml` documents `/v1/audio/transcriptions`, `/v1/audio/speech`, `/health`, `/health/deep` with request/response schemas matching `models_v1.py`; `asyncapi.yaml` documents `arc.voice.session.started`, `arc.voice.session.ended`, `arc.voice.turn.completed`, `arc.voice.turn.failed` topics with full payload schemas; both files are valid YAML; schemas match what the service actually produces
+
+* \[x] \[TASK-070] \[P] \[VOICE] \[P1] Add docker-compose.yml, update `services/profiles.yaml` to add `voice` to `reason` profile
+  * Dependencies: TASK-001
+  * Module: `services/voice/docker-compose.yml`, `services/profiles.yaml`
+  * Acceptance: `services/voice/docker-compose.yml` defines `arc-voice-agent` service with correct env vars, port (8803), `depends_on` (arc-realtime, arc-messaging, arc-streaming, arc-friday-collector, arc-cache), and health check; `services/profiles.yaml` `reason` profile includes `voice`; `ultra-instinct` profile still resolves correctly (uses `*`); `make dev PROFILE=reason` starts without compose errors
+
+* \[x] \[TASK-080] \[P] \[VOICE] \[P2] Add CI workflow for voice image build, test, and release
+  * Dependencies: TASK-001
+  * Module: `.github/workflows/voice.yml`
+  * Acceptance: Workflow triggers on push to `services/voice/**` and tags `voice/v*`; runs `uv run ruff check src/`, `uv run mypy src/`, `uv run python -m pytest tests/ -q`; builds and pushes `ghcr.io/arc-framework/arc-voice-agent` on tag; mirrors structure of existing service workflows
+
+***
+
+## Phase 6: Polish
+
+* \[x] \[TASK-900] \[P] \[DOCS] \[P1] Create `docs/ard/VOICE-SYSTEM.md`, update `docs/ard/VOICE-HLD.md`, and link to framework doc
+  * Dependencies: TASK-060
+  * Module: `docs/ard/`
+  * Acceptance: `VOICE-SYSTEM.md` documents service codename (Scarlett), ports (8803), dependencies, event topics, local provider defaults, and latency budget; `VOICE-HLD.md` updated with architecture diagram reflecting final implementation; `docs/ard/ARC-ENTERPRISE-AI-FRAMEWORK.md` links to voice system doc; all internal links resolve; no broken references
+
+* \[x] \[TASK-999] \[REVIEW] \[P1] Reviewer agent verification — validate all tasks complete, quality gates met
+  * Dependencies: ALL
+  * Module: all (`services/voice/`, `services/profiles.yaml`, `.github/workflows/`, `docs/ard/`)
+  * Acceptance:
+    * All TASK-001 through TASK-900 marked `[x]` done
+    * `uv run python -m pytest tests/ -q` passes (zero failures) in `services/voice/`
+    * `uv run ruff check src/` passes (zero warnings)
+    * `uv run mypy src/` passes (no errors)
+    * `GET /health` returns 200; `GET /health/deep` returns 200 or degraded (not 500) with realtime down
+    * `POST /v1/audio/transcriptions` returns valid JSON with transcript + language + duration
+    * `POST /v1/audio/speech` returns WAV stream with correct headers
+    * `voice` present in `reason` profile in `profiles.yaml`
+    * `service.yaml` has non-root Dockerfile, correct health check, correct depends\_on
+    * `contracts/openapi.yaml` and `contracts/asyncapi.yaml` are valid and consistent with implementation
+    * No secrets, raw audio, or PII in any log output or event payload
+    * Constitution II WARNING documented (reason-profile-only, model footprint)
+    * **GAP-3** Per-module coverage targets met: `interfaces.py` ≥95%, `nats_bridge.py` ≥90%, `worker.py` ≥85%, `health_router.py` ≥80%, `stt_router.py` + `tts_router.py` ≥80%, `providers/*` ≥75%, `pulsar_events.py` ≥75%
+
+***
+
+## Progress Summary
+
+| Phase | Total | Done | Parallel |
+|-------|-------|------|----------|
+| Setup | 1 | 0 | 0 |
+| Foundational | 4 | 0 | 4 |
+| Implementation | 5 | 0 | 5 |
+| Integration | 3 | 0 | 1 |
+| Contracts & Infra | 3 | 0 | 3 |
+| Polish | 2 | 0 | 1 |
+| **Total** | **18** | **0** | **14** |
